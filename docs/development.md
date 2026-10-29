@@ -59,12 +59,28 @@ pnpm build         # type check + production build
 
 CI (`.github/workflows/ci.yml`) runs exactly these commands on pushes to `main` and on pull requests.
 
-### Infrastructure (proposed until P01-T03)
+### Infrastructure (repository root, verified)
 
 ```bash
-docker compose config --quiet
-docker compose up
+cp .env.example .env                 # once; placeholders only
+docker compose config --quiet        # validate
+docker compose up -d --wait          # PostgreSQL, Redis, Kafka with health checks
+docker compose --profile tools build backend   # shared backend image
+docker compose down                  # stop; named volumes are kept
 ```
+
+| Service | Image | Host access (loopback only) |
+| --- | --- | --- |
+| PostgreSQL | `postgres:17.11-alpine` | `127.0.0.1:${POSTGRES_HOST_PORT:-55432}` |
+| Redis | `redis:7.4.12-alpine` | `127.0.0.1:${REDIS_HOST_PORT:-56379}` |
+| Kafka (KRaft, single node) | `apache/kafka:4.3.0` | `localhost:${KAFKA_HOST_PORT:-19094}` |
+| Backend image | `python:3.12.16-slim` + uv 0.12.5 | n/a |
+
+- Containers reach each other on the private `signalops` network as `postgres:5432`, `redis:6379`, and `kafka:9092`.
+- Host ports exist so that host-run integration tests can use real infrastructure. They are bound to `127.0.0.1` and default to non-standard ports to avoid clashing with other local stacks.
+- Kafka topic auto-creation is disabled; topics are created explicitly.
+- Data lives in the named volumes `postgres-data`, `redis-data`, and `kafka-data`. `docker compose down -v` deletes them.
+- Single-node Kafka (replication factor 1) and local volumes do not protect against host or disk loss.
 
 ## Configuration
 

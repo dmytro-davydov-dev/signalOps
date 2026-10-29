@@ -26,12 +26,12 @@ PostgreSQL owns evidence, workflow progress, budgets, and the initial knowledge 
 | Field | Current value |
 | --- | --- |
 | Active phase | Phase 1 Project foundation |
-| Active task | P01-T03 (next) |
-| Last completed task | P01-T02 |
-| Latest verified commit | `05e81df` (P01-T01) |
-| Validation evidence | P01-T02: backend ruff/format/mypy/pytest and frontend lint/typecheck/test/build pass in a clean copy of tracked files; injected invalid code is rejected by each check (see work log) |
+| Active task | P01-T04 (next) |
+| Last completed task | P01-T03 |
+| Latest verified commit | `0bf47b1` (P01-T02) |
+| Validation evidence | P01-T03: `docker compose config --quiet` ok; all services healthy via `up --wait`; Kafka create/produce/consume, PostgreSQL write, and Redis write from separate client containers; PostgreSQL row and Kafka messages present after `up --force-recreate`; backend image builds and runs as uid 10001 (see work log) |
 | Blockers | None recorded |
-| Next task | P01-T03 |
+| Next task | P01-T04 |
 
 ### Scope and release boundaries
 
@@ -93,11 +93,13 @@ Start the React shell in Phase 1 and add API-backed incident views in Phase 5; P
 
 ### P01-T03 Create Docker Compose infrastructure
 
-- [ ] Complete this task.
+- [x] Complete this task.
 
 **Implementation:** Add PostgreSQL, Redis, single-node Kafka in KRaft mode, named volumes, private networking, health checks, and one shared backend image. Pin compatible versions after a startup spike; document selected versions.
 
 **Acceptance:** Kafka works from container clients; database and Redis are reachable internally; recreating containers retains database records.
+
+**Notes (2026-10-29):** `compose.yaml` lives at the repository root so `docker compose` works there; image build files live in `infra/docker/`. Pinned after a pull spike: `postgres:17.11-alpine`, `redis:7.4.12-alpine`, `apache/kafka:4.3.0` (KRaft, internal listener `kafka:9092`, controller `9093`, host listener `localhost:19094`, auto topic creation off), backend `python:3.12.16-slim` with uv 0.12.5, running as a non-root user. Deviation: stateful services also publish loopback-only host ports (defaults 55432/56379/19094, overridable in `.env`) so host-run integration tests in later phases can use real PostgreSQL/Kafka; nothing binds to public interfaces. The PostgreSQL password has no default and must come from `.env` (`cp .env.example .env`). Application services join Compose in their own tasks (API in P01-T04, workers in their phases); the backend image is reachable now through the `tools` profile.
 
 ### P01-T04 Bootstrap FastAPI and React
 
@@ -718,13 +720,23 @@ Keep these outside the release critical path unless measurements justify promoti
 
 ### 2026-10-29 — P01-T02
 - Status: completed
-- Commit: `chore: add lint, type, test checks and CI` (hash recorded in the next ledger update)
+- Commit: `0bf47b1`
 - Implemented: ruff, mypy strict, pytest config and CLI unit tests; ESLint 10, `tsc -b --noEmit`, Vitest + Testing Library with an App smoke test; GitHub Actions workflow with backend and frontend jobs; canonical commands in `docs/development.md` and `CLAUDE.md`.
 - Validation commands and results: in a clean copy (`git ls-files -co --exclude-standard`): `uv sync --locked`, `uv run ruff check .`, `uv run ruff format --check .`, `uv run mypy` (12 files, no issues), `uv run pytest` (2 passed); `pnpm install --frozen-lockfile`, `pnpm lint`, `pnpm typecheck`, `pnpm test` (1 passed), `pnpm build` all pass. Negative check with temporary invalid files: ruff check exit 1, ruff format exit 1, mypy 3 errors, pytest 1 failed, eslint exit 1, tsc 2 errors, vitest 1 failed, build exit 2. Temporary files removed.
 - Evidence or artifact references: none retained.
 - Deviations and reasons: `pnpm test` instead of `pnpm test --run`; `uv run mypy` (paths configured in pyproject) instead of `uv run mypy signalops`.
 - Remaining issues: CI not yet executed on GitHub (no remote). `.claude/settings.json` allowlist not updated for argument-less commands.
 - Next task: P01-T03
+
+### 2026-10-29 — P01-T03
+- Status: completed
+- Commit: `chore: add Docker Compose infrastructure` (hash recorded in the next ledger update)
+- Implemented: `compose.yaml` with PostgreSQL, Redis, single-node KRaft Kafka, health checks, named volumes, a private `signalops` network, loopback-only host ports; shared backend `infra/docker/backend.Dockerfile`; `.dockerignore`; `.env.example`; CI `compose` job; infrastructure section in `docs/development.md`; decisions.md Q2 resolved.
+- Validation commands and results: `docker compose config --quiet` ok; `docker compose up -d --wait` → kafka, postgres, redis healthy. From `docker compose run --rm --no-deps` client containers: `kafka-topics.sh --create` on `kafka:9092` ok, console producer (`acks=all`) sent 2 messages, console consumer received both; `psql -h postgres` created and populated a table; `redis-cli -h redis SET/GET` ok. `docker compose up -d --force-recreate --wait` replaced all container IDs; the PostgreSQL row and both Kafka messages were still readable. `docker compose ps` shows host ports bound to 127.0.0.1 only. `docker compose --profile tools build backend` ok; container prints `signalops 0.1.0` and runs as uid 10001. Smoke table, topic, and key removed afterwards.
+- Evidence or artifact references: none retained.
+- Deviations and reasons: loopback host ports for future host-run integration tests; Compose file at root rather than in `infra/`.
+- Remaining issues: CI not yet executed on GitHub (no remote).
+- Next task: P01-T04
 
 ## Work log template
 

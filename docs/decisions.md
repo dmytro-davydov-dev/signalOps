@@ -82,7 +82,7 @@ Format: **Decision**, **Reason**, **Trade-off**, **Revisit when**.
 | # | Question | Decide by |
 | --- | --- | --- |
 | Q1 | Which Python Kafka client (for example `confluent-kafka` or `aiokafka`)? It must support manual commits, idempotent producers, and delivery callbacks. | P01-T03 / P03-T01 |
-| Q2 | Exact Kafka, PostgreSQL, and Redis image versions after the startup spike | P01-T03 |
+| Q2 | ~~Exact Kafka, PostgreSQL, and Redis image versions after the startup spike~~ **Resolved (P01-T03):** `apache/kafka:4.3.0`, `postgres:17.11-alpine`, `redis:7.4.12-alpine`; see development.md | P01-T03 |
 | Q3 | Frontend query layer and routing libraries | P01-T04 |
 | Q4 | Expired or unknown SSE cursor behavior (full resync vs error) | P08-T03 |
 | Q5 | Idempotency-key storage table and retention window | P06-T01 |
