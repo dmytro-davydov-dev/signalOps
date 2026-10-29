@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "workflow_version": "v1",
+  "step_key": "investigate/telemetry",
+  "agent_role": "investigator",
+  "attempt": 1,
+  "lease_generation": 3,
+  "completed_tool_calls": [
+    "query_logs/1",
+    "get_trace_summary/1"
+  ],
+  "state": {
+    "candidate_services": [
+      "5f3e2d1c-0b9a-4876-9543-210fedcba987"
+    ],
+    "tool_calls_remaining": 4
+  }
+}

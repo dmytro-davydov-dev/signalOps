@@ -1,0 +1,46 @@
+{
+  "id": "6a7b8c9d-0e1f-4a2b-9c3d-4e5f6a7b8c9d",
+  "replay_scope": "live",
+  "title": "Checkout error rate above threshold",
+  "severity": "high",
+  "status": "open",
+  "detected_at": "2026-10-16T10:41:00Z",
+  "first_seen_at": "2026-10-16T10:39:55Z",
+  "last_seen_at": "2026-10-16T10:40:58Z",
+  "resolved_at": null,
+  "version": 1,
+  "fingerprint": "error-rate:checkout:demo",
+  "correlation_window_start": "2026-10-16T10:35:00Z",
+  "services": [
+    {
+      "service_id": "dc2bf08d-6c3c-44ea-855a-d7d42eeefb36",
+      "name": "checkout",
+      "environment": "demo",
+      "role": "primary"
+    },
+    {
+      "service_id": "5f3e2d1c-0b9a-4876-9543-210fedcba987",
+      "name": "payment",
+      "environment": "demo",
+      "role": "affected"
+    }
+  ],
+  "evidence": [
+    {
+      "signal_id": "9c8b7a69-5848-4372-a615-0f9e8d7c6b5a",
+      "kind": "log",
+      "occurred_at": "2026-10-16T10:40:00Z",
+      "severity": "error",
+      "quality_status": "accepted",
+      "relevance": 0.9
+    },
+    {
+      "signal_id": "3b4c5d6e-7f80-4192-a3b4-c5d6e7f80912",
+      "kind": "trace",
+      "occurred_at": "2026-10-16T10:40:00Z",
+      "severity": "error",
+      "quality_status": "accepted",
+      "relevance": 0.8
+    }
+  ]
+}

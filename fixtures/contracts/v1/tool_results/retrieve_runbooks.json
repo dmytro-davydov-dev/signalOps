@@ -1,0 +1,14 @@
+{
+  "evidence_cutoff_at": "2026-10-16T10:41:00Z",
+  "truncated": true,
+  "tool": "retrieve_runbooks",
+  "items": [
+    {
+      "runbook_key": "payment/connection-pool",
+      "version": "3",
+      "title": "Payment connection pool exhaustion",
+      "excerpt": "Check pool.active against pool.max. If saturated after a deployment, compare pool settings with the previous revision.",
+      "provenance": "runbooks/payment/connection-pool.md@3"
+    }
+  ]
+}

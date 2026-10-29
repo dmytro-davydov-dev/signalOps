@@ -1,0 +1,15 @@
+{
+  "trace_id": "4bf92f3577b34da6a3ce929d0e0e4736",
+  "service": "checkout",
+  "environment": "demo",
+  "operation": "POST /checkout",
+  "duration_ms": 2140,
+  "status": "error",
+  "span_count": 14,
+  "error_span_count": 2,
+  "downstream_services": [
+    "payment",
+    "inventory"
+  ],
+  "attributes": {}
+}

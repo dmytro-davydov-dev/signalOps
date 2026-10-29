@@ -1,0 +1,13 @@
+{
+  "service": "payment",
+  "environment": "demo",
+  "level": "error",
+  "message": "upstream bank-gateway call timed out after 2000 ms",
+  "trace_id": "4bf92f3577b34da6a3ce929d0e0e4736",
+  "span_id": "00f067aa0ba902b7",
+  "attributes": {
+    "http.route": "/v1/charges",
+    "pool.active": 50,
+    "pool.max": 50
+  }
+}

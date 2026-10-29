@@ -1,0 +1,31 @@
+{
+  "event_id": "e1a2b3c4-d5e6-4f70-8192-a3b4c5d6e7f8",
+  "event_type": "signal.raw",
+  "schema_version": 1,
+  "workspace_id": "82631aa1-86f5-4d37-b39f-fac74ebbdac8",
+  "source_id": "b6c72d79-7ec9-4df7-88d0-1d4332c88808",
+  "occurred_at": "2026-10-16T10:40:00Z",
+  "ingested_at": "2026-10-16T10:40:01Z",
+  "correlation_id": "checkout-latency-demo-001",
+  "causation_id": null,
+  "trace_id": "4bf92f3577b34da6a3ce929d0e0e4736",
+  "replay_run_id": null,
+  "payload": {
+    "source_kind": "structured_log",
+    "source_event_id": "payment-7f3a-000042",
+    "service_hint": "payment",
+    "record": {
+      "service": "payment",
+      "environment": "demo",
+      "level": "error",
+      "message": "upstream bank-gateway call timed out after 2000 ms",
+      "trace_id": "4bf92f3577b34da6a3ce929d0e0e4736",
+      "span_id": "00f067aa0ba902b7",
+      "attributes": {
+        "http.route": "/v1/charges",
+        "pool.active": 50,
+        "pool.max": 50
+      }
+    }
+  }
+}

@@ -24,6 +24,7 @@ from sqlalchemy import (
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
+from signalops.contracts.common import MAX_REPLAY_SCOPE_LENGTH, MAX_SOURCE_EVENT_ID_LENGTH
 from signalops.contracts.evidence import (
     QualityStatus,
     Severity,
@@ -32,7 +33,6 @@ from signalops.contracts.evidence import (
 )
 from signalops.persistence.base import Base
 from signalops.persistence.models.common import (
-    MAX_REPLAY_SCOPE_LENGTH,
     created_at,
     json_attributes,
     json_object,
@@ -41,8 +41,6 @@ from signalops.persistence.models.common import (
     replay_scope,
     uuid_pk,
 )
-
-MAX_SOURCE_EVENT_ID_LENGTH = 512
 
 
 class Workspace(Base):

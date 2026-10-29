@@ -1,0 +1,24 @@
+{
+  "event_id": "d4e5f607-1829-43a4-b5c6-d7e8f90a1b23",
+  "event_type": "processing.failed",
+  "schema_version": 1,
+  "workspace_id": "82631aa1-86f5-4d37-b39f-fac74ebbdac8",
+  "source_id": null,
+  "occurred_at": "2026-10-16T10:40:02Z",
+  "ingested_at": "2026-10-16T10:40:02Z",
+  "correlation_id": null,
+  "causation_id": null,
+  "trace_id": null,
+  "replay_run_id": null,
+  "payload": {
+    "consumer_group": "normalizer-v1",
+    "original_topic": "signals.raw.v1",
+    "original_partition": 2,
+    "original_offset": 1187,
+    "original_event_id": "f5a6b7c8-d9e0-4f12-8345-6789abcdef01",
+    "error_category": "invalid_payload",
+    "error_detail": "record.level: Input should be 'debug', 'info', 'warning', 'error' or 'critical'",
+    "failed_at": "2026-10-16T10:40:02Z",
+    "redrive_attempt_id": null
+  }
+}

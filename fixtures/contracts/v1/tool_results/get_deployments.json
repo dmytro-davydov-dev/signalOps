@@ -1,0 +1,15 @@
+{
+  "evidence_cutoff_at": "2026-10-16T10:41:00Z",
+  "truncated": false,
+  "tool": "get_deployments",
+  "items": [
+    {
+      "deployment_id": "2e3f4051-6273-4849-9abc-def012345678",
+      "signal_id": "1d2e3f40-5162-4738-89ab-cdef01234567",
+      "service_id": "5f3e2d1c-0b9a-4876-9543-210fedcba987",
+      "revision": "payment-2026.10.16-3",
+      "previous_revision": "payment-2026.10.15-1",
+      "deployed_at": "2026-10-16T10:30:00Z"
+    }
+  ]
+}

@@ -1,0 +1,15 @@
+{
+  "status": "insufficient_evidence",
+  "summary": "Checkout errors rose, but the available evidence does not identify a cause.",
+  "root_cause": null,
+  "alternatives": [],
+  "suggested_actions": [],
+  "limitations": [
+    "Only one log source reported during the window"
+  ],
+  "missing_evidence": [
+    "Trace summaries for checkout requests",
+    "Deployment events for checkout dependencies"
+  ],
+  "workflow_version": "v1"
+}

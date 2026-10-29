@@ -10,9 +10,7 @@ from sqlalchemy import DateTime, Text, func, text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
-from signalops.contracts.evidence import LIVE_REPLAY_SCOPE
-
-MAX_REPLAY_SCOPE_LENGTH = 128
+from signalops.contracts.common import LIVE_REPLAY_SCOPE
 
 
 def one_of(column: str, values: Iterable[StrEnum]) -> str:

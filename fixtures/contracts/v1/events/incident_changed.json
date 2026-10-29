@@ -1,0 +1,21 @@
+{
+  "event_id": "a1b2c3d4-e5f6-4071-8293-a4b5c6d7e8f9",
+  "event_type": "incident.changed",
+  "schema_version": 1,
+  "workspace_id": "82631aa1-86f5-4d37-b39f-fac74ebbdac8",
+  "source_id": null,
+  "occurred_at": "2026-10-16T10:41:00Z",
+  "ingested_at": "2026-10-16T10:41:00Z",
+  "correlation_id": "checkout-latency-demo-001",
+  "causation_id": "e7cacb54-6312-45e0-945b-96dd98dd3aec",
+  "trace_id": null,
+  "replay_run_id": null,
+  "payload": {
+    "incident_id": "6a7b8c9d-0e1f-4a2b-9c3d-4e5f6a7b8c9d",
+    "incident_version": 1,
+    "change": "created",
+    "status": "open",
+    "severity": "high",
+    "replay_scope": "live"
+  }
+}

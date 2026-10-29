@@ -1,0 +1,11 @@
+{
+  "service": "payment",
+  "environment": "demo",
+  "revision": "payment-2026.10.16-3",
+  "previous_revision": "payment-2026.10.15-1",
+  "change_summary": "Reduce bank-gateway connection pool from 100 to 50",
+  "attributes": {
+    "pipeline": "demo-cd",
+    "commit": "9f2c1e7"
+  }
+}

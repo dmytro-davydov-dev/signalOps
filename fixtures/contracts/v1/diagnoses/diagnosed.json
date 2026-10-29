@@ -1,0 +1,31 @@
+{
+  "status": "diagnosed",
+  "summary": "Checkout failures correlate with the payment deployment that halved the bank-gateway connection pool.",
+  "root_cause": {
+    "service_id": "5f3e2d1c-0b9a-4876-9543-210fedcba987",
+    "service_name": "payment",
+    "failure_type": "connection_pool_exhaustion",
+    "confidence": 0.82,
+    "evidence_signal_ids": [
+      "9c8b7a69-5848-4372-a615-0f9e8d7c6b5a",
+      "1d2e3f40-5162-4738-89ab-cdef01234567"
+    ]
+  },
+  "alternatives": [
+    {
+      "hypothesis": "Database outage",
+      "assessment": "Not supported: no database errors appear in the evidence window."
+    }
+  ],
+  "suggested_actions": [
+    {
+      "action": "Review pool settings and consider reverting the payment deployment",
+      "requires_approval": true
+    }
+  ],
+  "limitations": [
+    "No database connection metrics were available"
+  ],
+  "missing_evidence": [],
+  "workflow_version": "v1"
+}

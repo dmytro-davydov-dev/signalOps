@@ -1,0 +1,17 @@
+{
+  "evidence_cutoff_at": "2026-10-16T10:41:00Z",
+  "truncated": false,
+  "tool": "get_service_dependencies",
+  "items": [
+    {
+      "from_service_id": "dc2bf08d-6c3c-44ea-855a-d7d42eeefb36",
+      "to_service_id": "5f3e2d1c-0b9a-4876-9543-210fedcba987",
+      "relation": "DEPENDS_ON",
+      "valid_from": "2026-10-01T00:00:00Z",
+      "valid_to": null,
+      "confidence": 0.95,
+      "hops": 1,
+      "provenance_signal_id": "3b4c5d6e-7f80-4192-a3b4-c5d6e7f80912"
+    }
+  ]
+}

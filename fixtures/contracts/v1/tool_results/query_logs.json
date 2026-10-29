@@ -1,0 +1,16 @@
+{
+  "evidence_cutoff_at": "2026-10-16T10:41:00Z",
+  "truncated": false,
+  "tool": "query_logs",
+  "items": [
+    {
+      "signal_id": "9c8b7a69-5848-4372-a615-0f9e8d7c6b5a",
+      "service_id": "5f3e2d1c-0b9a-4876-9543-210fedcba987",
+      "occurred_at": "2026-10-16T10:40:00Z",
+      "severity": "error",
+      "message": "upstream bank-gateway call timed out after 2000 ms",
+      "trace_id": "4bf92f3577b34da6a3ce929d0e0e4736",
+      "quality_status": "accepted"
+    }
+  ]
+}

@@ -1,0 +1,18 @@
+{
+  "evidence_cutoff_at": "2026-10-16T10:41:00Z",
+  "truncated": false,
+  "tool": "get_trace_summary",
+  "items": [
+    {
+      "signal_id": "3b4c5d6e-7f80-4192-a3b4-c5d6e7f80912",
+      "trace_id": "4bf92f3577b34da6a3ce929d0e0e4736",
+      "service_id": "dc2bf08d-6c3c-44ea-855a-d7d42eeefb36",
+      "occurred_at": "2026-10-16T10:40:00Z",
+      "operation": "POST /checkout",
+      "duration_ms": 2140,
+      "status": "error",
+      "span_count": 14,
+      "error_span_count": 2
+    }
+  ]
+}

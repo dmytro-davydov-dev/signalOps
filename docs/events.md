@@ -1,6 +1,6 @@
 # Kafka event contracts
 
-> Status: planned design. The source is [SignalOps_Implementation_Plan.md](SignalOps_Implementation_Plan.md) §4. Topic provisioning is roadmap task P03-T01, and typed contracts are P02-T04 and P02-T05.
+> Status: envelope and payload contracts implemented in `backend/signalops/contracts/events.py` (P02-T04); valid examples for every event type are in [`fixtures/contracts/v1/events/`](../fixtures/contracts/v1/events/). The source is [SignalOps_Implementation_Plan.md](SignalOps_Implementation_Plan.md) §4. JSON Schema export and compatibility rules are P02-T05; producer settings are P03-T01.
 
 ## Topics
 
@@ -46,18 +46,46 @@
 | `event_id` | UUID that stays stable across republish and redrive. Consumers deduplicate on it. |
 | `event_type`, `schema_version` | Select the Pydantic payload model. Unsupported versions are quarantined. |
 | `workspace_id` | Required on every event. |
-| `source_id` | UUID for signal events. Optional for non-source domain events (P02-T04). |
+| `source_id` | UUID, required for `signal.raw` and `signal.normalized`, optional for other domain events. |
 | `occurred_at`, `ingested_at` | UTC, RFC 3339. |
 | `correlation_id`, `causation_id` | Tracing across the pipeline. `causation_id` is a nullable UUID. |
-| `replay_run_id` | `null` for live traffic. Otherwise it identifies the isolated evaluation run. |
+| `replay_run_id` | `null` for live traffic (replay scope `live`). Otherwise the evaluation run UUID; evidence is stored under replay scope `replay:<uuid>`. |
 | `payload` | Raw payloads are adapter-specific. Normalized events carry evidence **IDs**, not large payload copies. |
+
+## Event types
+
+| `event_type` | Topic | Payload model (v1) |
+| --- | --- | --- |
+| `signal.raw` | `signals.raw.v1` | `RawSignalPayload`: source kind, `source_event_id`, optional service hint, adapter record (≤ 64 KiB) |
+| `signal.normalized` | `signals.normalized.v1` | `NormalizedSignalPayload`: signal and service IDs, kind, quality status |
+| `incident.changed` | `incidents.changed.v1` | `IncidentChangedPayload`: incident ID and version, change kind, status, severity, replay scope |
+| `investigation.requested` | `investigations.requested.v1` | `InvestigationRequestedPayload`: investigation and incident IDs, request key, trigger, workflow version |
+| `investigation.completed` | `investigations.completed.v1` | `InvestigationCompletedPayload`: terminal status, optional diagnosis status |
+| `processing.failed` | `processing.failed.v1` | `ProcessingFailedPayload`: consumer group, original topic/partition/offset/event ID, error category and redacted detail |
+
+Raw adapter records are validated by the normalizer against `contracts/adapters.py` (`StructuredLogInput`, `TraceSummaryInput`, `DeploymentInput`). Fields those models do not define are moved into `attributes`; a name present both as an unknown field and inside `attributes` is rejected.
+
+## Decoding
+
+`decode_event(bytes)` validates a message value and raises `ContractError` with one of these categories. Error details list field locations and messages only, never input values, so they can go on `processing.failed.v1`.
+
+| Category | Cause |
+| --- | --- |
+| `oversized` | Message value above 256 KiB (checked before parsing; `encode()` applies the same limit) |
+| `malformed_json` | Not UTF-8 JSON |
+| `unknown_event_type` | Missing or unrecognized `event_type` |
+| `unsupported_version` | Known type, but no payload model for that `schema_version` |
+| `invalid_envelope` | Header field invalid: malformed UUID, naive or numeric timestamp, missing `source_id` on a signal event, non-integer version |
+| `invalid_payload` | Payload fails its model |
+
+Timestamps must be RFC 3339 strings with an offset; they are converted to UTC and serialized with `Z`.
 
 ## Versioning rules
 
 - Each event type has a Pydantic model. JSON Schemas are exported and fixtures are checked in CI.
 - Within `v1`, only **additive, optional** fields are allowed.
 - Breaking changes get a new versioned topic or schema version plus an explicit adapter.
-- Unknown fields in a supported envelope are kept in `attributes`, never dropped silently.
+- Envelopes and payloads ignore unknown fields, so a v1 consumer accepts additive fields from a newer producer. Unknown fields in raw adapter records are kept in `attributes`, never dropped silently.
 
 ## Delivery rules
 

@@ -1,0 +1,21 @@
+{
+  "id": "37575f37-98af-4cb8-a875-26c3dde75ec7",
+  "workspace_id": "82631aa1-86f5-4d37-b39f-fac74ebbdac8",
+  "source_id": "b6c72d79-7ec9-4df7-88d0-1d4332c88808",
+  "service_id": null,
+  "source_event_id": "unknown-host-000007",
+  "replay_scope": "live",
+  "kind": "log",
+  "occurred_at": "2026-10-16T10:39:55Z",
+  "ingested_at": "2026-10-16T10:40:01Z",
+  "severity": "warning",
+  "message": "retrying request to payment",
+  "trace_id": null,
+  "attributes": {
+    "host": "10.0.4.17"
+  },
+  "quality_status": "degraded",
+  "quality_flags": [
+    "missing_service"
+  ]
+}

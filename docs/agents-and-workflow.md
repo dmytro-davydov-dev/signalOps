@@ -79,26 +79,35 @@ Redis rate limits never replace the durable PostgreSQL budget ledger.
 
 ## Diagnosis contract
 
+Implemented as `Diagnosis` in `backend/signalops/contracts/diagnosis.py` (P02-T04). Valid examples: [`diagnosed.json`](../fixtures/contracts/v1/diagnoses/diagnosed.json) and [`insufficient_evidence.json`](../fixtures/contracts/v1/diagnoses/insufficient_evidence.json).
+
 ```json
 {
   "status": "diagnosed",
-  "summary": "Checkout failures correlate with the new payment deployment.",
+  "summary": "Checkout failures correlate with the payment deployment that halved the bank-gateway connection pool.",
   "root_cause": {
-    "service": "payment",
+    "service_id": "5f3e2d1c-0b9a-4876-9543-210fedcba987",
+    "service_name": "payment",
     "failure_type": "connection_pool_exhaustion",
     "confidence": 0.82,
-    "evidence_signal_ids": ["<signal uuid>", "<signal uuid>"]
+    "evidence_signal_ids": [
+      "9c8b7a69-5848-4372-a615-0f9e8d7c6b5a",
+      "1d2e3f40-5162-4738-89ab-cdef01234567"
+    ]
   },
   "alternatives": [
-    {"hypothesis": "Database outage", "assessment": "Not supported by observed database health"}
+    {"hypothesis": "Database outage", "assessment": "Not supported: no database errors appear in the evidence window."}
   ],
   "suggested_actions": [
-    {"action": "Review pool settings and consider reverting the deployment", "requires_approval": true}
+    {"action": "Review pool settings and consider reverting the payment deployment", "requires_approval": true}
   ],
   "limitations": ["No database connection metrics were available"],
+  "missing_evidence": [],
   "workflow_version": "v1"
 }
 ```
+
+The contract rejects unknown fields (no free-form reasoning field), caps list lengths and text sizes, requires 1–50 unique evidence UUIDs for a diagnosed result, and requires `missing_evidence` for an abstention.
 
 Validation checks that:
 

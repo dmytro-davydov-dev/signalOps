@@ -31,6 +31,7 @@ from sqlalchemy import (
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
+from signalops.contracts.common import MAX_KEY_LENGTH, MAX_REPLAY_SCOPE_LENGTH
 from signalops.contracts.workflow import (
     TERMINAL_INVESTIGATION_STATUSES,
     AgentRole,
@@ -47,7 +48,6 @@ from signalops.contracts.workflow import (
 )
 from signalops.persistence.base import Base
 from signalops.persistence.models.common import (
-    MAX_REPLAY_SCOPE_LENGTH,
     created_at,
     json_attributes,
     json_object,
@@ -57,8 +57,6 @@ from signalops.persistence.models.common import (
     replay_scope,
     uuid_pk,
 )
-
-MAX_KEY_LENGTH = 256
 
 
 def nonnegative(column: str) -> str:

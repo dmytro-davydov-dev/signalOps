@@ -23,10 +23,10 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import Mapped, mapped_column
 
+from signalops.contracts.common import MAX_REPLAY_SCOPE_LENGTH
 from signalops.contracts.graph import GraphNodeType, GraphRelation
 from signalops.persistence.base import Base
 from signalops.persistence.models.common import (
-    MAX_REPLAY_SCOPE_LENGTH,
     created_at,
     json_attributes,
     json_object,
