@@ -1,0 +1,51 @@
+# Secrets and local environment
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Claude Code personal overrides
+.claude/settings.local.json
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+build/
+dist/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+
+# Node / frontend
+node_modules/
+apps/web/dist/
+apps/web/coverage/
+*.tsbuildinfo
+.vite/
+npm-debug.log*
+pnpm-debug.log*
+
+# Docker / local data
+docker-compose.override.yml
+compose.override.yaml
+*.local.yml
+
+# Evaluation and benchmark outputs (retain reports deliberately, not by default)
+/artifacts/
+/benchmarks/output/
+
+# Logs and editors
+*.log
+.idea/
+.vscode/*
+!.vscode/extensions.json
+.DS_Store
+Thumbs.db
