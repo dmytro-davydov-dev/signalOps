@@ -14,8 +14,10 @@
     "test:watch": "vitest"
   },
   "dependencies": {
+    "@tanstack/react-query": "^5",
     "react": "^19",
-    "react-dom": "^19"
+    "react-dom": "^19",
+    "react-router": "^7"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

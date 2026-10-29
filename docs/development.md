@@ -44,7 +44,21 @@ uv run signalops --version
 uv run ruff check .           # lint
 uv run ruff format --check .  # formatting
 uv run mypy                   # strict type check of backend/signalops and tests
-uv run pytest                 # tests
+uv run pytest                 # unit tests; integration tests are skipped
+
+# Integration tests against the running Compose infrastructure
+set -a; . ./.env; set +a
+SIGNALOPS_INTEGRATION=1 uv run pytest tests/integration
+```
+
+Run the API on the host against Compose infrastructure:
+
+```bash
+set -a; . ./.env; set +a
+export SIGNALOPS_DATABASE_URL="postgresql+psycopg://$POSTGRES_USER:$POSTGRES_PASSWORD@localhost:$POSTGRES_HOST_PORT/$POSTGRES_DB"
+export SIGNALOPS_REDIS_URL="redis://localhost:$REDIS_HOST_PORT/0"
+export SIGNALOPS_KAFKA_BOOTSTRAP_SERVERS="localhost:$KAFKA_HOST_PORT"
+SIGNALOPS_API_PORT=8011 uv run signalops api   # 8010 is taken by the api container
 ```
 
 ### Frontend (`apps/web`, verified)
@@ -55,6 +69,7 @@ pnpm lint          # ESLint, type-aware, zero warnings allowed
 pnpm typecheck     # tsc -b --noEmit
 pnpm test          # Vitest, single run (pnpm test:watch for watch mode)
 pnpm build         # type check + production build
+pnpm dev           # Vite dev server; proxies /health/ and /v1/ to SIGNALOPS_API_URL (default http://127.0.0.1:8010)
 ```
 
 CI (`.github/workflows/ci.yml`) runs exactly these commands on pushes to `main` and on pull requests.
@@ -64,8 +79,8 @@ CI (`.github/workflows/ci.yml`) runs exactly these commands on pushes to `main` 
 ```bash
 cp .env.example .env                 # once; placeholders only
 docker compose config --quiet        # validate
-docker compose up -d --wait          # PostgreSQL, Redis, Kafka with health checks
-docker compose --profile tools build backend   # shared backend image
+docker compose up -d --build --wait  # infrastructure, api, frontend
+docker compose --profile tools build backend   # shared backend image only
 docker compose down                  # stop; named volumes are kept
 ```
 
@@ -74,7 +89,17 @@ docker compose down                  # stop; named volumes are kept
 | PostgreSQL | `postgres:17.11-alpine` | `127.0.0.1:${POSTGRES_HOST_PORT:-55432}` |
 | Redis | `redis:7.4.12-alpine` | `127.0.0.1:${REDIS_HOST_PORT:-56379}` |
 | Kafka (KRaft, single node) | `apache/kafka:4.3.0` | `localhost:${KAFKA_HOST_PORT:-19094}` |
-| Backend image | `python:3.12.16-slim` + uv 0.12.5 | n/a |
+| API (`signalops api`) | backend image: `python:3.12.16-slim` + uv 0.12.5 | `http://127.0.0.1:${API_HOST_PORT:-8010}` |
+| Frontend | `node:24.19.0-alpine` build, `nginx:1.28.3-alpine` serve | `http://127.0.0.1:${WEB_HOST_PORT:-8090}` |
+
+Useful URLs once the stack is up:
+
+- UI: `http://127.0.0.1:8090/` (system health at `/status`)
+- Liveness: `http://127.0.0.1:8010/health/live` (process is up; no dependency checks)
+- Readiness: `http://127.0.0.1:8010/health/ready` (200 when PostgreSQL, Redis, and Kafka all answer within the timeout; 503 with per-dependency error categories otherwise)
+- OpenAPI: `http://127.0.0.1:8010/docs`
+
+nginx serves the built UI and proxies `/health/` and `/v1/` to the API, resolving the `api` container per request so a stopped API returns 502 immediately. UI routes therefore never use the `/health/` or `/v1/` prefixes.
 
 - Containers reach each other on the private `signalops` network as `postgres:5432`, `redis:6379`, and `kafka:9092`.
 - Host ports exist so that host-run integration tests can use real infrastructure. They are bound to `127.0.0.1` and default to non-standard ports to avoid clashing with other local stacks.
@@ -84,7 +109,22 @@ docker compose down                  # stop; named volumes are kept
 
 ## Configuration
 
-- Environment variables are documented in an `.env.example` file with placeholders, arriving in P01-T05.
+Backend processes read `SIGNALOPS_`-prefixed variables (`backend/signalops/config.py`). Compose sets them for containers from `.env`.
+
+| Variable | Default | Notes |
+| --- | --- | --- |
+| `SIGNALOPS_DATABASE_URL` | none (required) | `postgresql+psycopg://…`; contains a credential, never logged |
+| `SIGNALOPS_REDIS_URL` | `redis://localhost:56379/0` | |
+| `SIGNALOPS_KAFKA_BOOTSTRAP_SERVERS` | `localhost:19094` | `kafka:9092` inside Compose |
+| `SIGNALOPS_LOG_LEVEL` | `INFO` | JSON logs on stdout |
+| `SIGNALOPS_ENVIRONMENT` | `development` | `development`, `test`, `production` |
+| `SIGNALOPS_API_HOST` / `SIGNALOPS_API_PORT` | `0.0.0.0` / `8000` | |
+| `SIGNALOPS_CORS_ORIGINS` | empty | JSON list; only needed when the UI is served from another origin |
+| `SIGNALOPS_READINESS_TIMEOUT_SECONDS` | `2.0` | per-dependency probe limit |
+| `SIGNALOPS_MODEL_PROVIDER` | `fake` | only `fake` is accepted until P07-T01 |
+
+The frontend reads `VITE_API_BASE_URL` at build time (empty means same origin).
+
 - Never commit real secrets. Source configuration stores secret references, not credentials.
 
 ## Conventions

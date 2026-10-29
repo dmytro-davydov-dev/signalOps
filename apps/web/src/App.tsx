@@ -1,7 +1,16 @@
+import { QueryClientProvider } from "@tanstack/react-query";
+import { useState } from "react";
+import { createBrowserRouter, RouterProvider } from "react-router";
+import { createQueryClient } from "./queryClient";
+import { routes } from "./routes";
+
+const router = createBrowserRouter(routes);
+
 export function App() {
+  const [queryClient] = useState(createQueryClient);
   return (
-    <main>
-      <h1>SignalOps</h1>
-    </main>
+    <QueryClientProvider client={queryClient}>
+      <RouterProvider router={router} />
+    </QueryClientProvider>
   );
 }

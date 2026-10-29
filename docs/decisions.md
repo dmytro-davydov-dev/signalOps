@@ -81,9 +81,9 @@ Format: **Decision**, **Reason**, **Trade-off**, **Revisit when**.
 
 | # | Question | Decide by |
 | --- | --- | --- |
-| Q1 | Which Python Kafka client (for example `confluent-kafka` or `aiokafka`)? It must support manual commits, idempotent producers, and delivery callbacks. | P01-T03 / P03-T01 |
+| Q1 | ~~Which Python Kafka client?~~ **Resolved (P01-T04):** `confluent-kafka` (librdkafka): manual offset commits, idempotent producer, per-message delivery callbacks. Blocking calls run in worker threads from async code. | P01-T03 / P03-T01 |
 | Q2 | ~~Exact Kafka, PostgreSQL, and Redis image versions after the startup spike~~ **Resolved (P01-T03):** `apache/kafka:4.3.0`, `postgres:17.11-alpine`, `redis:7.4.12-alpine`; see development.md | P01-T03 |
-| Q3 | Frontend query layer and routing libraries | P01-T04 |
+| Q3 | ~~Frontend query layer and routing libraries~~ **Resolved (P01-T04):** TanStack Query 5 for server data, React Router 7 (data router) for routing | P01-T04 |
 | Q4 | Expired or unknown SSE cursor behavior (full resync vs error) | P08-T03 |
 | Q5 | Idempotency-key storage table and retention window | P06-T01 |
 | Q6 | Diagnosis status ↔ investigation terminal status mapping | P02-T05 |

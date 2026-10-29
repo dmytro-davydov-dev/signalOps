@@ -26,12 +26,12 @@ PostgreSQL owns evidence, workflow progress, budgets, and the initial knowledge 
 | Field | Current value |
 | --- | --- |
 | Active phase | Phase 1 Project foundation |
-| Active task | P01-T04 (next) |
-| Last completed task | P01-T03 |
-| Latest verified commit | `0bf47b1` (P01-T02) |
-| Validation evidence | P01-T03: `docker compose config --quiet` ok; all services healthy via `up --wait`; Kafka create/produce/consume, PostgreSQL write, and Redis write from separate client containers; PostgreSQL row and Kafka messages present after `up --force-recreate`; backend image builds and runs as uid 10001 (see work log) |
+| Active task | P01-T05 (next) |
+| Last completed task | P01-T04 |
+| Latest verified commit | `1a84ca7` (P01-T03) |
+| Validation evidence | P01-T04: backend 11 unit tests + 2 integration tests against Compose pass; containerized readiness returns 503 naming the stopped dependency for each of redis/postgres/kafka and 200 after restart; frontend 8 tests including unreachable, HTTP 502, invalid body, and stale-refresh states; lint/type/build pass (see work log) |
 | Blockers | None recorded |
-| Next task | P01-T04 |
+| Next task | P01-T05 |
 
 ### Scope and release boundaries
 
@@ -103,11 +103,19 @@ Start the React shell in Phase 1 and add API-backed incident views in Phase 5; P
 
 ### P01-T04 Bootstrap FastAPI and React
 
-- [ ] Complete this task.
+- [x] Complete this task.
 
 **Implementation:** Implement API configuration, structured logging, liveness/readiness endpoints, and lifespan-managed clients. Add React routing, layout, API client configuration, loading/error components, and a health view.
 
 **Acceptance:** Readiness reflects missing required dependencies; UI renders an API error usefully rather than crashing.
+
+**Notes (2026-10-29):**
+- Backend: `pydantic-settings` configuration with the `SIGNALOPS_` prefix (`database_url` required, `model_provider` restricted to `fake`); JSON logging on stdout, uvicorn included; `create_app()` factory whose lifespan opens an async SQLAlchemy engine (psycopg, bounded pool), an async Redis client, and a confluent-kafka `AdminClient`, and closes them on shutdown. `GET /health/live` never touches dependencies. `GET /health/ready` probes PostgreSQL, Redis, and Kafka concurrently with a per-check limit and returns 503 with error categories only (exception class or `timeout`), never driver messages, which can contain hosts or credentials.
+- Kafka client chosen: `confluent-kafka` (decisions.md Q1). Frontend libraries: TanStack Query 5 and React Router 7 (Q3).
+- Frontend: layout with navigation, overview, `/status` health view, not-found page, route error boundary, typed `getJson` client with error kinds (`network`, `http`, `invalid_response`) and a 10 s timeout, loading/error/stale states. A failed refetch keeps the last data visible and marks it stale (TanStack v5 sets `status: "error"` while keeping data).
+- Compose gains `api` (backend image, `signalops api`) and `frontend` (nginx serving the build, proxying `/health/` and `/v1/`). The UI route is `/status`, not `/health`, because nginx treats `/health/` as an API prefix. nginx resolves `api` per request so a stopped API yields an immediate 502 instead of a 14 s DNS stall (measured before the fix).
+- Starlette deprecates `httpx` for `TestClient`; tests use `httpx2`. `pytest-asyncio` runs async integration tests.
+- Not done here: no real-browser check of the UI. The error rendering is verified by component tests and by curl against nginx.
 
 ### P01-T05 Define development profiles and commands
 
@@ -730,13 +738,23 @@ Keep these outside the release critical path unless measurements justify promoti
 
 ### 2026-10-29 — P01-T03
 - Status: completed
-- Commit: `chore: add Docker Compose infrastructure` (hash recorded in the next ledger update)
+- Commit: `1a84ca7`
 - Implemented: `compose.yaml` with PostgreSQL, Redis, single-node KRaft Kafka, health checks, named volumes, a private `signalops` network, loopback-only host ports; shared backend `infra/docker/backend.Dockerfile`; `.dockerignore`; `.env.example`; CI `compose` job; infrastructure section in `docs/development.md`; decisions.md Q2 resolved.
 - Validation commands and results: `docker compose config --quiet` ok; `docker compose up -d --wait` → kafka, postgres, redis healthy. From `docker compose run --rm --no-deps` client containers: `kafka-topics.sh --create` on `kafka:9092` ok, console producer (`acks=all`) sent 2 messages, console consumer received both; `psql -h postgres` created and populated a table; `redis-cli -h redis SET/GET` ok. `docker compose up -d --force-recreate --wait` replaced all container IDs; the PostgreSQL row and both Kafka messages were still readable. `docker compose ps` shows host ports bound to 127.0.0.1 only. `docker compose --profile tools build backend` ok; container prints `signalops 0.1.0` and runs as uid 10001. Smoke table, topic, and key removed afterwards.
 - Evidence or artifact references: none retained.
 - Deviations and reasons: loopback host ports for future host-run integration tests; Compose file at root rather than in `infra/`.
 - Remaining issues: CI not yet executed on GitHub (no remote).
 - Next task: P01-T04
+
+### 2026-10-29 — P01-T04
+- Status: completed
+- Commit: `feat: bootstrap FastAPI service and React shell` (hash recorded in the next ledger update)
+- Implemented: `config.py`, `logs.py`, `dependencies.py` (clients + readiness checks), `contracts/health.py`, `api/app.py`, `api/health.py`, `signalops api` command; unit and opt-in integration tests; React layout, routing, query client, API client, loading/error components, health view and tests; `api` and `frontend` Compose services, web Dockerfile, nginx config; docs for commands, URLs, and environment variables; decisions Q1 and Q3 resolved.
+- Validation commands and results: `uv run ruff check .`, `uv run ruff format --check .`, `uv run mypy` (23 files) pass; `uv run pytest` 11 passed, 2 skipped; `SIGNALOPS_INTEGRATION=1 uv run pytest tests/integration` 2 passed against Compose (ready; unreachable Redis reported while PostgreSQL and Kafka stay ok). `docker compose up -d --build --wait` → all 5 services healthy. Stopping redis, postgres, kafka in turn: `/health/live` 200 each time, `/health/ready` 503 with `ConnectionError`, `OperationalError`, `timeout` for the stopped one only; 200 after restart. API logs are JSON and do not contain the database password. Frontend `pnpm lint`, `pnpm typecheck`, `pnpm test` (8 passed), `pnpm build` pass. Through nginx: `/status` 200 HTML, `/health/ready` proxied; with the API stopped `/health/ready` returns 502 in about 1 ms and `/status` still 200. `docker compose build api frontend` ok.
+- Evidence or artifact references: none retained.
+- Deviations and reasons: UI health route is `/status` to keep it out of the proxied `/health/` namespace.
+- Remaining issues: no real-browser run of the UI; CI not yet executed on GitHub.
+- Next task: P01-T05
 
 ## Work log template
 

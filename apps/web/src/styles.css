@@ -1,0 +1,78 @@
+:root {
+  --bg: #f7f8fa;
+  --surface: #ffffff;
+  --text: #1b1f24;
+  --muted: #5b6470;
+  --border: #d9dde3;
+  --accent: #2357d6;
+  --ok: #1a7f37;
+  --error: #c62828;
+  --warn: #9a6700;
+  color-scheme: light dark;
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+  line-height: 1.5;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0f1216;
+    --surface: #171b21;
+    --text: #e6e9ee;
+    --muted: #9aa3ae;
+    --border: #2b313a;
+    --accent: #7aa2ff;
+    --ok: #4cc26b;
+    --error: #ff6b6b;
+    --warn: #e3b341;
+  }
+}
+
+* { box-sizing: border-box; }
+
+body { margin: 0; background: var(--bg); color: var(--text); }
+
+.topbar {
+  display: flex;
+  align-items: center;
+  gap: 2rem;
+  padding: 0.75rem 1.5rem;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+}
+
+.brand { font-weight: 700; }
+
+.topbar nav { display: flex; gap: 1rem; }
+.topbar a { color: var(--muted); text-decoration: none; }
+.topbar a.active { color: var(--accent); font-weight: 600; }
+
+.content { max-width: 960px; margin: 0 auto; padding: 1.5rem; }
+
+a { color: var(--accent); }
+
+table { width: 100%; border-collapse: collapse; background: var(--surface); }
+caption { text-align: left; color: var(--muted); padding-bottom: 0.5rem; }
+th, td { text-align: left; padding: 0.5rem 0.75rem; border-bottom: 1px solid var(--border); }
+
+.ok { color: var(--ok); }
+.error { color: var(--error); }
+
+.badge { display: inline-block; font-weight: 600; padding: 0.25rem 0.75rem; border-radius: 999px; border: 1px solid; }
+.badge-ok { color: var(--ok); }
+.badge-error { color: var(--error); }
+
+.state { padding: 1rem; border-radius: 6px; background: var(--surface); border: 1px solid var(--border); }
+.state-error { border-color: var(--error); }
+.state-error h2 { margin-top: 0; color: var(--error); }
+.state-stale { border-color: var(--warn); color: var(--warn); }
+.hint { color: var(--muted); }
+
+button {
+  font: inherit;
+  padding: 0.4rem 1rem;
+  border-radius: 6px;
+  border: 1px solid var(--accent);
+  background: var(--accent);
+  color: var(--surface);
+  cursor: pointer;
+}

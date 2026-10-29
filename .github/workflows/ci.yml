@@ -56,4 +56,4 @@ jobs:
       - uses: actions/checkout@v5
       - run: cp .env.example .env
       - run: docker compose config --quiet
-      - run: docker compose --profile tools build backend
+      - run: docker compose build api frontend

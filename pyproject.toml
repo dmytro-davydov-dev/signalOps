@@ -4,7 +4,16 @@ version = "0.1.0"
 description = "Turns noisy telemetry into evidence-backed software incident diagnoses."
 readme = "README.md"
 requires-python = ">=3.12,<3.13"
-dependencies = []
+dependencies = [
+    "confluent-kafka>=2.16.1",
+    "fastapi>=0.162.0",
+    "psycopg[binary]>=3.3.6",
+    "pydantic>=2.14.1",
+    "pydantic-settings>=2.16.2",
+    "redis>=8.1.0",
+    "sqlalchemy[asyncio]>=2.1.6",
+    "uvicorn[standard]>=0.54.0",
+]
 
 [project.scripts]
 signalops = "signalops.cli:main"
@@ -18,8 +27,10 @@ packages = ["backend/signalops"]
 
 [dependency-groups]
 dev = [
+    "httpx2>=2.16.0",
     "mypy>=2.4.1",
     "pytest>=9.2.0",
+    "pytest-asyncio>=1.4.1",
     "ruff>=0.17.3",
 ]
 
@@ -47,3 +58,6 @@ warn_unreachable = true
 testpaths = ["tests"]
 addopts = ["-ra", "--strict-markers", "--strict-config"]
 xfail_strict = true
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+markers = ["integration: requires the Compose infrastructure (SIGNALOPS_INTEGRATION=1)"]
