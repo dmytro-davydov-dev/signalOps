@@ -19,6 +19,9 @@ RUN uv sync --locked --no-dev --no-install-project
 COPY backend ./backend
 RUN uv sync --locked --no-dev
 
+COPY alembic.ini ./
+COPY migrations ./migrations
+
 RUN useradd --system --uid 10001 --home-dir /app signalops
 USER signalops
 

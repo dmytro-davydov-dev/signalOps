@@ -4,7 +4,7 @@ SignalOps turns noisy telemetry into evidence-backed software incident diagnoses
 
 It ingests logs, trace summaries, and deployment events, detects incidents with deterministic time-window rules, and runs bounded, budgeted agent investigations. Each investigation returns a validated diagnosis that cites evidence, or an explicit *insufficient evidence* result. A replay-based evaluation lab scores diagnoses against injected faults.
 
-> **Status: planned, not implemented.** This repository holds the design and delivery plan. No application code, Compose stack, or measured results exist yet. Everything below describes intended behavior. See the [progress ledger](docs/development_roadmap.md#progress-ledger) for actual progress.
+> **Status: Phase 1 of 12 complete (project foundation).** The Compose stack, API health endpoints, migrations, topic provisioning, and a React shell run today. Ingestion, detection, investigations, and evaluation are not built yet; the sections below describe the intended system. See the [progress ledger](docs/development_roadmap.md#progress-ledger) for actual progress.
 
 ## What it does
 
@@ -59,14 +59,22 @@ Planning sources:
 
 ## Quick start
 
-None yet. Bootstrapping is roadmap task **P01-T01**. The intended developer experience:
+Requires Docker with Compose v2. No model API key is needed: only the deterministic fake provider exists.
 
-- A clean checkout starts with `docker compose up`.
-- It needs **no paid model key**, because the fake model provider is the default.
-- Migrations and topic creation run as one-shot services.
-- Optional profiles (`demo`, `evaluation`, `observability`) keep the default startup light.
+```bash
+cp .env.example .env              # placeholders; change POSTGRES_PASSWORD if you like
+docker compose up -d --build --wait
+```
 
-[Development](docs/development.md) lists the proposed commands. They will be confirmed when Phase 1 lands.
+This starts PostgreSQL, Redis, and single-node Kafka, runs the one-shot `migrate` and `init-topics` jobs, then starts the API and UI:
+
+- UI: <http://127.0.0.1:8090/> (system health at `/status`)
+- API readiness: <http://127.0.0.1:8010/health/ready>
+- API docs: <http://127.0.0.1:8010/docs>
+
+Host ports are bound to `127.0.0.1` and can be changed in `.env`. Stop with `docker compose down`; add `-v` only if you want to delete the data volumes.
+
+For local development without containers (uv, pnpm, checks, integration tests), see [Development](docs/development.md).
 
 ## Scope
 

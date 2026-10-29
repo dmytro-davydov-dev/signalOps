@@ -25,13 +25,13 @@ PostgreSQL owns evidence, workflow progress, budgets, and the initial knowledge 
 
 | Field | Current value |
 | --- | --- |
-| Active phase | Phase 1 Project foundation |
-| Active task | P01-T05 (next) |
-| Last completed task | P01-T04 |
-| Latest verified commit | `1a84ca7` (P01-T03) |
-| Validation evidence | P01-T04: backend 11 unit tests + 2 integration tests against Compose pass; containerized readiness returns 503 naming the stopped dependency for each of redis/postgres/kafka and 200 after restart; frontend 8 tests including unreachable, HTTP 502, invalid body, and stale-refresh states; lint/type/build pass (see work log) |
+| Active phase | Phase 2 Persistence and contracts (not started) |
+| Active task | None |
+| Last completed task | P01-T05 (Phase 1 gate passed) |
+| Latest verified commit | `16431b8` (P01-T04); P01-T05 commit hash to be recorded at the start of the next task |
+| Validation evidence | Phase 1 gate: a clean copy of tracked files with `.env` copied from `.env.example` (no model key) started as a separate Compose project on fresh volumes; migrate and init-topics exited 0, six topics created with planned partitions and retention, `alembic_version` = `0001_baseline`, API ready 200, UI 200; second `up` re-ran both jobs idempotently. Backend 14 unit + 4 integration tests, frontend 8 tests, all lint/type/build checks pass (see P01-T05 work log) |
 | Blockers | None recorded |
-| Next task | P01-T05 |
+| Next task | P02-T01 |
 
 ### Scope and release boundaries
 
@@ -119,15 +119,24 @@ Start the React shell in Phase 1 and add API-backed incident views in Phase 5; P
 
 ### P01-T05 Define development profiles and commands
 
-- [ ] Complete this task.
+- [x] Complete this task.
 
 **Implementation:** Add one-shot migration and topic-init commands plus optional demo, evaluation, and observability profiles. Document environment variables and use fake model mode by default.
 
 **Acceptance:** The default startup does not require the full OpenTelemetry Demo or a paid model key.
 
+**Notes (2026-10-29):**
+- `signalops migrate` runs Alembic to head programmatically (URL passed as a config attribute, never written to a file); `migrations/` has an `env.py`, a typed revision template, and an empty `0001_baseline`. `alembic.ini` supports `uv run alembic ...` for developers. `persistence/base.py` defines the declarative `Base` with a constraint naming convention.
+- `signalops init-topics` creates the six plan topics (signal topics 3 partitions, domain topics 1; retention raw 3 days, others 7 days) and fails instead of altering an existing topic whose partition count differs. Retention for the four domain topics and `processing.failed.v1` is not specified in the plan; 7 days was chosen to match normalized signals. This overlaps P03-T01, which still owns producer settings, keys, and delivery callbacks.
+- Compose runs `migrate` and `init-topics` as one-shot services; `api` waits for both to complete successfully. All backend services share one environment anchor with `SIGNALOPS_MODEL_PROVIDER=fake`; no model key exists anywhere in configuration.
+- **Deviation:** the `demo`, `evaluation`, and `observability` profiles are documented as reserved names (docs/development.md) but contain no services yet, because the programs they would run (demo producer P04-T01, evaluation runner P10-T02, dashboards P11-T01) do not exist. Placeholder services were not added. Each owning task adds its service under the reserved profile. The existing `tools` profile exposes the bare backend image.
+- Removed the fixed Compose network name so separate projects (for example a clean-start check) do not share a network.
+
 **Phase gate:** All tasks above are checked, acceptance evidence is recorded in the ledger, and the phase outcome is demonstrated against real infrastructure where relevant.
 
 **Suggested phase commit:** `chore: bootstrap SignalOps workspace`. Split this into task-sized commits as needed.
+
+**Phase 1 gate (2026-10-29): passed.** All five tasks are checked with evidence in the work log. Outcome demonstrated: a clean copy starts PostgreSQL, Redis, Kafka, migrations, topic provisioning, the API, and the UI without model credentials (P01-T05 work log). Open items carried forward: CI has not run on GitHub because there is no remote; no real-browser UI run yet; reserved profiles are empty until their owning tasks.
 
 ## Phase 2 Persistence and contracts
 
@@ -748,13 +757,23 @@ Keep these outside the release critical path unless measurements justify promoti
 
 ### 2026-10-29 — P01-T04
 - Status: completed
-- Commit: `feat: bootstrap FastAPI service and React shell` (hash recorded in the next ledger update)
+- Commit: `16431b8`
 - Implemented: `config.py`, `logs.py`, `dependencies.py` (clients + readiness checks), `contracts/health.py`, `api/app.py`, `api/health.py`, `signalops api` command; unit and opt-in integration tests; React layout, routing, query client, API client, loading/error components, health view and tests; `api` and `frontend` Compose services, web Dockerfile, nginx config; docs for commands, URLs, and environment variables; decisions Q1 and Q3 resolved.
 - Validation commands and results: `uv run ruff check .`, `uv run ruff format --check .`, `uv run mypy` (23 files) pass; `uv run pytest` 11 passed, 2 skipped; `SIGNALOPS_INTEGRATION=1 uv run pytest tests/integration` 2 passed against Compose (ready; unreachable Redis reported while PostgreSQL and Kafka stay ok). `docker compose up -d --build --wait` → all 5 services healthy. Stopping redis, postgres, kafka in turn: `/health/live` 200 each time, `/health/ready` 503 with `ConnectionError`, `OperationalError`, `timeout` for the stopped one only; 200 after restart. API logs are JSON and do not contain the database password. Frontend `pnpm lint`, `pnpm typecheck`, `pnpm test` (8 passed), `pnpm build` pass. Through nginx: `/status` 200 HTML, `/health/ready` proxied; with the API stopped `/health/ready` returns 502 in about 1 ms and `/status` still 200. `docker compose build api frontend` ok.
 - Evidence or artifact references: none retained.
 - Deviations and reasons: UI health route is `/status` to keep it out of the proxied `/health/` namespace.
 - Remaining issues: no real-browser run of the UI; CI not yet executed on GitHub.
 - Next task: P01-T05
+
+### 2026-10-29 — P01-T05
+- Status: completed
+- Commit: `chore: add migrate and init-topics one-shot jobs` (hash to be recorded at the start of the next task)
+- Implemented: `signalops migrate` and `signalops init-topics` commands; Alembic environment, template, baseline revision, `alembic.ini`; declarative `Base`; topic catalogue with idempotent provisioning and partition mismatch detection; Compose one-shot `migrate` and `init-topics` services gating `api`; shared backend environment anchor; `.env.example` and docs for environment variables, startup order, profiles, and migrations; README quick start.
+- Validation commands and results: `uv run ruff check .`, `uv run ruff format --check .`, `uv run mypy` (28 files) pass; `uv run pytest` 14 passed, 4 skipped; `SIGNALOPS_INTEGRATION=1 uv run pytest tests/integration` 4 passed (migration to head twice in a throwaway database; topic create, idempotent rerun, partition mismatch error; readiness). `uv run alembic current` → `0001_baseline (head)`, `uv run alembic check` → no new operations. Clean-start check in a separate Compose project from a clean copy with only `.env.example`: `grep` found no API key settings; `up --build --wait` in 27 s; `init-topics` created 6 topics; `kafka-topics --describe` shows 3/3/1/1/1/1 partitions; `retention.ms` 259200000 (raw) and 604800000 (normalized); `alembic_version` = `0001_baseline`; API ready 200, UI `/status` 200, UI-proxied readiness 200; second `up` re-ran both jobs with exit 0 and no topics created. The throwaway project and its volumes were removed; dev volumes untouched. Frontend `pnpm lint`, `pnpm typecheck`, `pnpm test` (8 passed), `pnpm build` pass; `docker compose config --quiet` ok.
+- Evidence or artifact references: none retained.
+- Deviations and reasons: reserved profiles without services (see task notes); 7-day retention for topics the plan does not specify.
+- Remaining issues: first `init-topics` run crashed on a log field named `created` (reserved `LogRecord` attribute) after creating the topics; fixed and covered by a unit test.
+- Next task: P02-T01
 
 ## Work log template
 

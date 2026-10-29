@@ -13,3 +13,17 @@ def test_version_flag_prints_package_version(capsys: pytest.CaptureFixture[str])
 
 def test_missing_command_returns_usage_error() -> None:
     assert main([]) == 1
+
+
+def test_init_topics_command_logs_result(monkeypatch: pytest.MonkeyPatch) -> None:
+    import signalops.streaming.topics as topics
+
+    monkeypatch.setenv("SIGNALOPS_DATABASE_URL", "postgresql+psycopg://u@db/x")
+    monkeypatch.setattr(topics, "ensure_topics", lambda admin: ["signals.raw.v1"])
+    from signalops.config import get_settings
+
+    get_settings.cache_clear()
+    try:
+        assert main(["init-topics"]) == 0
+    finally:
+        get_settings.cache_clear()

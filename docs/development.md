@@ -1,6 +1,6 @@
 # Development guide
 
-> Status: Phase 1 in progress. Commands marked *verified* run in this repository and in CI; the rest are still proposed.
+> Status: Phase 1 complete. All commands below are verified in this repository.
 
 ## Repository layout
 
@@ -24,7 +24,7 @@ signalops/
   docs/                       This documentation
 ```
 
-## Prerequisites (expected)
+## Prerequisites
 
 - Docker with Compose v2
 - [uv](https://docs.astral.sh/uv/) for Python
@@ -79,8 +79,10 @@ CI (`.github/workflows/ci.yml`) runs exactly these commands on pushes to `main` 
 ```bash
 cp .env.example .env                 # once; placeholders only
 docker compose config --quiet        # validate
-docker compose up -d --build --wait  # infrastructure, api, frontend
+docker compose up -d --build --wait  # infrastructure, one-shot jobs, api, frontend
 docker compose --profile tools build backend   # shared backend image only
+docker compose run --rm migrate      # re-run migrations on demand
+docker compose run --rm init-topics  # re-run topic provisioning on demand
 docker compose down                  # stop; named volumes are kept
 ```
 
@@ -98,6 +100,31 @@ Useful URLs once the stack is up:
 - Liveness: `http://127.0.0.1:8010/health/live` (process is up; no dependency checks)
 - Readiness: `http://127.0.0.1:8010/health/ready` (200 when PostgreSQL, Redis, and Kafka all answer within the timeout; 503 with per-dependency error categories otherwise)
 - OpenAPI: `http://127.0.0.1:8010/docs`
+
+Startup order: `postgres` and `kafka` become healthy → the one-shot `migrate` (`signalops migrate`, Alembic upgrade to head) and `init-topics` (`signalops init-topics`) jobs run to completion → `api` starts → `frontend` starts. Both jobs are idempotent and run on every `up`. `init-topics` creates missing topics from `backend/signalops/streaming/topics.py` and fails if an existing topic has a different partition count, instead of altering it, because that would change key ordering.
+
+### Profiles
+
+The default `docker compose up` needs no paid model key and does not start the OpenTelemetry Demo. Optional profiles are reserved for later tasks; they currently contain no services:
+
+| Profile | Will contain | Added in |
+| --- | --- | --- |
+| `demo` | Deterministic demo producer; optional instrumented demo application | P04-T01, P10-T03 |
+| `evaluation` | Evaluation runner for isolated replays | P10-T02 |
+| `observability` | Metrics and dashboards | P11-T01 |
+| `tools` | The bare backend image (`signalops --version`), used to build or run ad hoc commands | P01-T03 (exists) |
+
+### Migrations
+
+```bash
+set -a; . ./.env; set +a
+export SIGNALOPS_DATABASE_URL="postgresql+psycopg://$POSTGRES_USER:$POSTGRES_PASSWORD@localhost:$POSTGRES_HOST_PORT/$POSTGRES_DB"
+uv run alembic current
+uv run alembic revision --autogenerate -m "describe change"   # review the file before applying
+uv run alembic upgrade head
+```
+
+Revisions live in `migrations/versions/`; `0001_baseline` is an empty starting point. ORM models must use `signalops.persistence.base.Base`, whose naming convention keeps constraint names stable.
 
 nginx serves the built UI and proxies `/health/` and `/v1/` to the API, resolving the `api` container per request so a stopped API returns 502 immediately. UI routes therefore never use the `/health/` or `/v1/` prefixes.
 
@@ -121,7 +148,10 @@ Backend processes read `SIGNALOPS_`-prefixed variables (`backend/signalops/confi
 | `SIGNALOPS_API_HOST` / `SIGNALOPS_API_PORT` | `0.0.0.0` / `8000` | |
 | `SIGNALOPS_CORS_ORIGINS` | empty | JSON list; only needed when the UI is served from another origin |
 | `SIGNALOPS_READINESS_TIMEOUT_SECONDS` | `2.0` | per-dependency probe limit |
-| `SIGNALOPS_MODEL_PROVIDER` | `fake` | only `fake` is accepted until P07-T01 |
+| `SIGNALOPS_MODEL_PROVIDER` | `fake` | only `fake` is accepted until P07-T01; no model key is read |
+| `SIGNALOPS_MIGRATIONS_PATH` | `migrations` | Alembic environment, relative to the working directory |
+
+Compose-level variables in `.env` (see `.env.example`): `POSTGRES_DB`, `POSTGRES_USER`, `POSTGRES_PASSWORD` (required, no default), the loopback host ports `POSTGRES_HOST_PORT`, `REDIS_HOST_PORT`, `KAFKA_HOST_PORT`, `API_HOST_PORT`, `WEB_HOST_PORT`, and `SIGNALOPS_LOG_LEVEL`.
 
 The frontend reads `VITE_API_BASE_URL` at build time (empty means same origin).
 

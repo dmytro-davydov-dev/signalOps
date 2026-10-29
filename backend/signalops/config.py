@@ -30,6 +30,9 @@ class Settings(BaseSettings):
 
     readiness_timeout_seconds: float = Field(default=2.0, gt=0, le=30)
 
+    # Relative to the working directory: the repository root locally, /app in the image.
+    migrations_path: str = "migrations"
+
     # Only the deterministic fake provider exists until P07-T01.
     model_provider: Literal["fake"] = "fake"
 
