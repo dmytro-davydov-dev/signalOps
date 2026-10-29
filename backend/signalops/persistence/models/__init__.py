@@ -8,6 +8,8 @@ from signalops.persistence.models.evidence import (
     Source,
     Workspace,
 )
+from signalops.persistence.models.graph import GraphEdge, GraphNode
+from signalops.persistence.models.reliability import ConsumerReceipt, OutboxEvent
 from signalops.persistence.models.workflow import (
     AgentStep,
     Incident,
@@ -22,13 +24,17 @@ from signalops.persistence.models.workflow import (
 
 __all__ = [
     "AgentStep",
+    "ConsumerReceipt",
     "Deployment",
+    "GraphEdge",
+    "GraphNode",
     "Incident",
     "IncidentService",
     "IncidentSignal",
     "Investigation",
     "Job",
     "LlmCall",
+    "OutboxEvent",
     "ProgressEvent",
     "Service",
     "Signal",

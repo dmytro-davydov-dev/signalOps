@@ -1,6 +1,6 @@
 # Data model
 
-> Status: the source and evidence tables (`0002_source_evidence`, P02-T01) and the incident and workflow tables (`0003_incident_workflow`, P02-T02) are migrated; ORM models are in `backend/signalops/persistence/models/`. The graph, reliability, and evaluation sections are still logical design from [SignalOps_Implementation_Plan.md](SignalOps_Implementation_Plan.md) §5 and become migrations in P02-T03 to P02-T06.
+> Status: the source and evidence tables (`0002_source_evidence`, P02-T01), the incident and workflow tables (`0003_incident_workflow`, P02-T02), and the graph and reliability tables (`0004_graph_reliability`, P02-T03) are migrated; ORM models are in `backend/signalops/persistence/models/`. The evaluation tables are still logical design from [SignalOps_Implementation_Plan.md](SignalOps_Implementation_Plan.md) §5 and become migrations in Phase 10.
 
 ## Conventions
 
@@ -99,23 +99,32 @@ Store structured findings, never unrestricted private model reasoning. Roadmap t
 
 | Table | Key fields and constraints |
 | --- | --- |
-| `graph_nodes` | `node_type` (`service`, `deployment`, `incident`, `runbook`), `external_key`, `properties`. `UNIQUE(workspace_id, node_type, external_key)` |
-| `graph_edges` | `from_node_id`, `to_node_id`, `relation` (`DEPENDS_ON`, `DEPLOYED_TO`, `AFFECTS`, `DOCUMENTED_BY`), `valid_from`, `valid_to`, `confidence`, `provenance_signal_id`, `properties` |
+| `graph_nodes` | `workspace_id`, `replay_scope`, `node_type` (`service`, `deployment`, `incident`, `runbook`), `external_key` (1–512 chars), nullable `service_id` / `deployment_id` / `incident_id`, `properties` object, `created_at`. `UNIQUE(workspace_id, replay_scope, node_type, external_key)` named `uq_graph_nodes_identity` |
+| `graph_edges` | `workspace_id`, `replay_scope`, `from_node_id` ≠ `to_node_id`, `relation` (`DEPENDS_ON`, `DEPLOYED_TO`, `AFFECTS`, `DOCUMENTED_BY`), `valid_from`, `valid_to` (NULL or > `valid_from`), `confidence` in [0, 1], `provenance_signal_id`, `properties` object, `created_at` |
+
+**Scope safety:** both edge endpoints reference `graph_nodes(workspace_id, replay_scope, id)` (`fk_graph_edges_from_node`, `fk_graph_edges_to_node`), so an edge cannot dangle, cross workspaces, or join two replay runs; deleting a node with edges is rejected. `provenance_signal_id` references `signals(workspace_id, replay_scope, id)`.
+
+**Entity nodes:** `node_type` is polymorphic, so each entity type has its own foreign key: `service_id` to `services(workspace_id, id)`, `deployment_id` to `deployments(workspace_id, replay_scope, id)`, `incident_id` to `incidents(workspace_id, replay_scope, id)`. The `ck_graph_nodes_entity_reference` CHECK requires exactly the column matching `node_type` (none for `runbook`) and makes `external_key` equal to that row's ID, so an entity has at most one node per replay scope. Runbooks are not database rows; their `external_key` is the runbook path.
 
 - Traversals are bounded recursive CTEs: at most **3 hops**, with cycle prevention and row limits.
 - Queries are "as of" the incident time, filtered by `valid_from` and `valid_to`.
 - Several observations can support one edge. The projector coalesces duplicates and keeps provenance.
 - An observed dependency or a correlation is not proof of causation.
+- The schema rejects self-loops only; longer cycles are prevented by the traversal.
+
+**Deviations from the plan (P02-T03):** `replay_scope` on nodes and edges, so replay graphs stay isolated from the live graph (CLAUDE.md requires replay scope across graph traversals); the typed entity reference columns, because the conventions forbid unchecked polymorphic IDs; `created_at` on nodes and edges; `deployments` gains `UNIQUE(workspace_id, replay_scope, id)` as the node reference target. Edge uniqueness and coalescing of repeated observations are left to the projector (P05-T04), which owns the merge rule.
 
 ## Reliability and evaluation
 
 | Table | Key fields and constraints |
 | --- | --- |
-| `consumer_receipts` | PK `(consumer_group, event_id)`, `processed_at` |
-| `outbox_events` | `aggregate_id`, `aggregate_version`, `topic`, `message_key`, `envelope`, `published_at`, `attempts`. `UNIQUE(aggregate_id, aggregate_version, topic)` |
+| `consumer_receipts` | PK `(consumer_group, event_id)`, `consumer_group` 1–256 chars, `processed_at` |
+| `outbox_events` | `aggregate_id`, `aggregate_version` ≥ 1, `topic` (1–256 chars), `message_key` (nonempty), `envelope` object, `created_at`, `published_at` (NULL while pending, otherwise ≥ `created_at`), `attempts` ≥ 0. `UNIQUE(aggregate_id, aggregate_version, topic)` |
 | `evaluation_scenarios` | `name`, `version`, `dataset_ref`, `injection_spec`, `expected_outcome`. `UNIQUE(name, version)` |
 | `evaluation_runs` | `scenario_id`, `system_variant`, `workflow_version`, `model_config`, `prompt_versions`, `dataset_hash`, `seed`, `metrics` |
 | `evaluation_cases` | `run_id`, `case_key`, `investigation_id`, `expected_outcome`, `observed_outcome`, `scores`. `UNIQUE(run_id, case_key)` |
+
+Receipts and outbox rows are infrastructure records without a workspace: the event they describe carries its scope in the envelope. The publisher's pending query (`WHERE published_at IS NULL ORDER BY created_at LIMIT n`) is served by the partial index alone; an integration test checks the plan with 20,000 rows. No `processed_at` index yet; receipt retention cleanup adds one when it exists.
 
 The investigation runtime's database role has **no access** to evaluation ground truth (`expected_outcome`, `injection_spec`).
 

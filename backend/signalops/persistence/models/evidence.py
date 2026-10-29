@@ -160,6 +160,8 @@ class Deployment(Base):
             ],
         ),
         UniqueConstraint("signal_id"),
+        # Target for graph nodes in the same replay scope.
+        UniqueConstraint("workspace_id", "replay_scope", "id"),
         CheckConstraint(nonempty("revision"), name="revision_nonempty"),
         CheckConstraint(json_object("attributes"), name="attributes_object"),
         Index(
