@@ -85,11 +85,11 @@ Use fake-provider mode for development and ordinary CI. Do not start paid model 
 
 ## Validation
 
-Discover commands from pyproject.toml, package.json, lockfiles, Compose, and CI. The following are proposed bootstrap conventions, not commands guaranteed to exist yet:
-- Backend from its configured project directory: `uv run ruff check .`, `uv run ruff format --check .`, `uv run mypy signalops`, `uv run pytest`.
-- Frontend from `apps/web`: `pnpm lint`, `pnpm typecheck`, `pnpm test --run`, `pnpm build`.
+Canonical commands (see `docs/development.md`; CI runs the same set):
+- Backend from the repository root: `uv run ruff check .`, `uv run ruff format --check .`, `uv run mypy`, `uv run pytest`.
+- Frontend from `apps/web`: `pnpm lint`, `pnpm typecheck`, `pnpm test`, `pnpm build`.
 - Compose from the root when its file is there: `docker compose config --quiet`.
-Adjust to actual repository paths and scripts, and document canonical commands during Phase 1.
+If scripts change, update this list, `docs/development.md`, and CI together.
 
 Run checks appropriate to the change; do not run costly full benchmarks for a small edit. Add meaningful failure/concurrency tests where behavior requires them.
 - Use real PostgreSQL/Kafka for transaction, offset, and redelivery guarantees.

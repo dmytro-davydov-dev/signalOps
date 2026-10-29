@@ -1,8 +1,8 @@
 # Development guide
 
-> Status: **proposed**. The repository is not bootstrapped yet (next task: P01-T01). The commands below are conventions from [CLAUDE.md](../CLAUDE.md), not verified scripts. Phase 1 replaces this note with the canonical commands.
+> Status: Phase 1 in progress. Commands marked *verified* run in this repository and in CI; the rest are still proposed.
 
-## Repository layout (planned)
+## Repository layout
 
 ```text
 signalops/
@@ -32,38 +32,38 @@ signalops/
 
 No model provider key is needed. Fake-provider mode is the default.
 
-## Bootstrap commands (verified)
+## Commands
 
-The Python project is defined by the root `pyproject.toml` (package source in `backend/signalops`, Python 3.12 via `.python-version`). The frontend package lives in `apps/web`.
+The Python project is defined by the root `pyproject.toml` (package source in `backend/signalops`, Python 3.12 via `.python-version`), so backend commands run from the repository root. The frontend package lives in `apps/web`.
+
+### Backend (repository root, verified)
 
 ```bash
-# Backend (repository root)
-uv sync
+uv sync --locked              # install from uv.lock
 uv run signalops --version
-
-# Frontend (apps/web)
-pnpm install --frozen-lockfile
-pnpm build
+uv run ruff check .           # lint
+uv run ruff format --check .  # formatting
+uv run mypy                   # strict type check of backend/signalops and tests
+uv run pytest                 # tests
 ```
 
-## Proposed commands
+### Frontend (`apps/web`, verified)
 
 ```bash
-# Infrastructure (repository root)
+pnpm install --frozen-lockfile
+pnpm lint          # ESLint, type-aware, zero warnings allowed
+pnpm typecheck     # tsc -b --noEmit
+pnpm test          # Vitest, single run (pnpm test:watch for watch mode)
+pnpm build         # type check + production build
+```
+
+CI (`.github/workflows/ci.yml`) runs exactly these commands on pushes to `main` and on pull requests.
+
+### Infrastructure (proposed until P01-T03)
+
+```bash
 docker compose config --quiet
 docker compose up
-
-# Backend (from its configured project directory)
-uv run ruff check .
-uv run ruff format --check .
-uv run mypy signalops
-uv run pytest
-
-# Frontend (apps/web)
-pnpm lint
-pnpm typecheck
-pnpm test --run
-pnpm build
 ```
 
 ## Configuration

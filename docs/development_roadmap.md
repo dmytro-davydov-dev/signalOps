@@ -26,12 +26,12 @@ PostgreSQL owns evidence, workflow progress, budgets, and the initial knowledge 
 | Field | Current value |
 | --- | --- |
 | Active phase | Phase 1 Project foundation |
-| Active task | P01-T02 (next) |
-| Last completed task | P01-T01 |
-| Latest verified commit | None |
-| Validation evidence | P01-T01: `uv sync --locked`, `uv run signalops --version`, subpackage imports, `pnpm install --frozen-lockfile`, `pnpm build` pass; `git check-ignore` confirms env files, `.venv`, `node_modules`, `dist` excluded |
+| Active task | P01-T03 (next) |
+| Last completed task | P01-T02 |
+| Latest verified commit | `05e81df` (P01-T01) |
+| Validation evidence | P01-T02: backend ruff/format/mypy/pytest and frontend lint/typecheck/test/build pass in a clean copy of tracked files; injected invalid code is rejected by each check (see work log) |
 | Blockers | None recorded |
-| Next task | P01-T02 |
+| Next task | P01-T03 |
 
 ### Scope and release boundaries
 
@@ -83,11 +83,13 @@ Start the React shell in Phase 1 and add API-backed incident views in Phase 5; P
 
 ### P01-T02 Set up development checks
 
-- [ ] Complete this task.
+- [x] Complete this task.
 
 **Implementation:** Configure Python formatting/linting and type checks, TypeScript checking, frontend linting, pytest, and a frontend test runner. Add CI for these checks and the frontend production build.
 
 **Acceptance:** A clean checkout passes CI; intentionally invalid code is rejected by the relevant check.
+
+**Notes (2026-10-29):** Backend: ruff (lint + format), mypy `--strict` over `backend/signalops` and `tests`, pytest. Frontend: ESLint 10 flat config with `typescript-eslint` strict type-checked rules, React hooks and React refresh plugins (ESLint 9 was installed first but is deprecated); Vitest 3 + Testing Library on jsdom. `pnpm test` runs once (`vitest run`) because pnpm does not forward `pnpm test --run`; `pnpm test:watch` is the watch mode. CI is `.github/workflows/ci.yml`. It has not run on GitHub yet because the repository has no remote; validated by running the same steps in a clean copy of the tracked files. Canonical commands are recorded in `docs/development.md` and `CLAUDE.md`. `.claude/settings.json` still allowlists only the `* `-suffixed forms (for example `uv run mypy *`), so the argument-less canonical commands may prompt; changing that file is left to the user.
 
 ### P01-T03 Create Docker Compose infrastructure
 
@@ -706,13 +708,23 @@ Keep these outside the release critical path unless measurements justify promoti
 
 ### 2026-10-29 — P01-T01
 - Status: completed
-- Commit: `chore: create repository layout` (hash recorded in the next ledger update)
+- Commit: `05e81df`
 - Implemented: directory layout, root `pyproject.toml` + `uv.lock`, backend package with subpackage stubs and `signalops` CLI, Vite/React/TS app in `apps/web` with `pnpm-lock.yaml`, bootstrap commands in `docs/development.md`.
 - Validation commands and results: `uv sync --locked` ok; `uv run signalops --version` → `signalops 0.1.0`; subpackage imports ok; `pnpm install --frozen-lockfile` ok; `pnpm build` ok; `git check-ignore` on `.env`, `.env.local`, `.venv`, `apps/web/node_modules`, `apps/web/dist` all ignored, `.env.example` not ignored.
 - Evidence or artifact references: none retained.
 - Deviations and reasons: root-level Python project (see task notes).
 - Remaining issues: none.
 - Next task: P01-T02
+
+### 2026-10-29 — P01-T02
+- Status: completed
+- Commit: `chore: add lint, type, test checks and CI` (hash recorded in the next ledger update)
+- Implemented: ruff, mypy strict, pytest config and CLI unit tests; ESLint 10, `tsc -b --noEmit`, Vitest + Testing Library with an App smoke test; GitHub Actions workflow with backend and frontend jobs; canonical commands in `docs/development.md` and `CLAUDE.md`.
+- Validation commands and results: in a clean copy (`git ls-files -co --exclude-standard`): `uv sync --locked`, `uv run ruff check .`, `uv run ruff format --check .`, `uv run mypy` (12 files, no issues), `uv run pytest` (2 passed); `pnpm install --frozen-lockfile`, `pnpm lint`, `pnpm typecheck`, `pnpm test` (1 passed), `pnpm build` all pass. Negative check with temporary invalid files: ruff check exit 1, ruff format exit 1, mypy 3 errors, pytest 1 failed, eslint exit 1, tsc 2 errors, vitest 1 failed, build exit 2. Temporary files removed.
+- Evidence or artifact references: none retained.
+- Deviations and reasons: `pnpm test` instead of `pnpm test --run`; `uv run mypy` (paths configured in pyproject) instead of `uv run mypy signalops`.
+- Remaining issues: CI not yet executed on GitHub (no remote). `.claude/settings.json` allowlist not updated for argument-less commands.
+- Next task: P01-T03
 
 ## Work log template
 
