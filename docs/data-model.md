@@ -1,6 +1,6 @@
 # Data model
 
-> Status: logical design, not migrations. The source is [SignalOps_Implementation_Plan.md](SignalOps_Implementation_Plan.md) §5. Migrations come in roadmap Phase 2 (P02-T01 to P02-T06). Fields may be refined when migrations and integration checks validate them.
+> Status: the source and evidence tables (`0002_source_evidence`, P02-T01) and the incident and workflow tables (`0003_incident_workflow`, P02-T02) are migrated; ORM models are in `backend/signalops/persistence/models/`. The graph, reliability, and evaluation sections are still logical design from [SignalOps_Implementation_Plan.md](SignalOps_Implementation_Plan.md) §5 and become migrations in P02-T03 to P02-T06.
 
 ## Conventions
 
@@ -39,11 +39,15 @@ erDiagram
 | Table | Key fields and constraints |
 | --- | --- |
 | `workspaces` | `id`, `name`, `created_at` |
-| `sources` | `workspace_id`, `name`, `kind`, `config` JSONB (secret **references** only), `enabled`. `UNIQUE(workspace_id, name)` |
-| `services` | `workspace_id`, `name`, `environment`, `attributes`. `UNIQUE(workspace_id, name, environment)` |
-| `signals` | `source_id`, nullable `service_id`, `source_event_id`, `kind`, `occurred_at`, `ingested_at`, `severity`, `message`, `trace_id`, `attributes`, `quality_status`, `quality_flags`, `replay_scope` (default `'live'`). `UNIQUE(source_id, replay_scope, source_event_id)` |
-| `deployments` | `service_id`, `signal_id` UNIQUE, `revision`, `deployed_at`, `attributes` |
-| `signal_aggregates` | `service_id`, `replay_scope`, `metric_name`, `window_start`, `window_end`, `sample_count`, `error_count`, `value_sum`, `histogram`. `UNIQUE(service_id, replay_scope, metric_name, window_start)` |
+| `sources` | `workspace_id`, `name`, `kind` (`structured_log`, `trace_summary`, `deployment`), `config` JSONB object (secret **references** only), `enabled`, `created_at`. `UNIQUE(workspace_id, name)` |
+| `services` | `workspace_id`, `name`, `environment`, `attributes`, `created_at`. `UNIQUE(workspace_id, name, environment)` |
+| `signals` | `workspace_id`, `source_id`, nullable `service_id`, `source_event_id` (1–512 chars), `kind` (`log`, `trace`, `deployment`), `occurred_at`, `ingested_at`, `severity` (`debug`, `info`, `warning`, `error`, `critical`), `message`, `trace_id`, `attributes` (object), `quality_status` (`accepted`, `degraded`, `quarantined`), `quality_flags` (array), `replay_scope` (1–128 chars, default `'live'`). `UNIQUE(source_id, replay_scope, source_event_id)` |
+| `deployments` | `workspace_id`, `service_id`, `signal_id` UNIQUE, `replay_scope`, `revision`, `deployed_at`, `attributes`. `(workspace_id, replay_scope, service_id, signal_id)` must match the cited signal |
+| `signal_aggregates` | `workspace_id`, `service_id`, `replay_scope`, `metric_name`, `window_start`, `window_end` (> start), `sample_count`, `error_count` (`0 ≤ error_count ≤ sample_count`), `value_sum`, `histogram`. `UNIQUE(service_id, replay_scope, metric_name, window_start)` |
+
+**Workspace safety:** each workspace-owned reference is a composite foreign key that includes `workspace_id` (targets expose `UNIQUE(workspace_id, id)`), so a signal cannot cite a source or service from another workspace. A NULL `service_id` skips the service check. Enumerations live in `signalops.contracts.evidence`; adding a value requires a migration that widens the CHECK constraint. Foreign keys use the default `RESTRICT` behaviour: evidence is never cascade-deleted.
+
+**Deviations from the plan (P02-T01):** `deployments` gains `replay_scope` so deployment queries can be scoped without joining `signals`, and `deployments` and `signal_aggregates` gain `workspace_id` for the composite keys. The aggregate unique constraint is named `uq_signal_aggregates_window` because the conventional name exceeds PostgreSQL's 63-character limit.
 
 **Identity:**
 
@@ -56,25 +60,38 @@ erDiagram
 
 | Table | Key fields and constraints |
 | --- | --- |
-| `incidents` | `replay_scope`, `fingerprint`, `correlation_window_start`, `title`, `severity`, `status`, `detected_at`, `first_seen_at`, `last_seen_at`, `resolved_at`, `version`. `UNIQUE(workspace_id, replay_scope, fingerprint, correlation_window_start)` |
-| `incident_services` | PK `(incident_id, service_id)`, `role` |
-| `incident_signals` | PK `(incident_id, signal_id)`, `relevance` |
-| `investigations` | `incident_id`, `request_key` UNIQUE, `status`, `workflow_version`, `budget_microusd`, `reserved_microusd`, `spent_microusd`, `max_steps`, `deadline_at`, `diagnosis` JSONB, `version` |
-| `jobs` | `investigation_id` UNIQUE, `status`, `available_at`, `attempts`, `max_attempts`, `lease_owner`, `lease_until`, `lease_generation`, `last_error` |
-| `agent_steps` | `step_key`, `agent_role`, `status`, `attempt`, `input`, `output`, `checkpoint`, `lease_generation`. `UNIQUE(investigation_id, step_key)` |
-| `tool_calls` | `call_key`, `tool_name`, `arguments`, `result_ref`, `status`, `duration_ms`. `UNIQUE(agent_step_id, call_key)` |
-| `llm_calls` | `attempt`, `provider`, `model`, `prompt_version`, `request_hash`, `status`, tokens, `reserved_microusd`, `cost_microusd`, `latency_ms`, `provider_request_id`. `UNIQUE(agent_step_id, attempt)` |
-| `progress_events` | `id bigint identity` (the SSE cursor), `investigation_id`, `event_type`, `payload`, `created_at` |
+| `incidents` | `workspace_id`, `replay_scope` (1–128 chars), `fingerprint`, `correlation_window_start`, `title`, `severity` (`low`, `medium`, `high`, `critical`), `status` (`open`, `resolved`), `detected_at`, `first_seen_at` ≤ `last_seen_at`, `resolved_at` (set exactly when resolved), `version` ≥ 1. `UNIQUE(workspace_id, replay_scope, fingerprint, correlation_window_start)` named `uq_incidents_correlation` |
+| `incident_services` | PK `(incident_id, service_id)`, `workspace_id`, `role` (`primary`, `affected`) |
+| `incident_signals` | PK `(incident_id, signal_id)`, `workspace_id`, `replay_scope`, `relevance` in [0, 1] |
+| `investigations` | `workspace_id`, `incident_id`, `replay_scope`, `request_key` UNIQUE (1–256 chars), `status`, `workflow_version`, `evidence_cutoff_at`, `budget_microusd`, `reserved_microusd`, `spent_microusd` (all ≥ 0), `max_steps` > 0, `created_at` < `deadline_at`, `completed_at` (set exactly in terminal states), `diagnosis` JSONB object (only when `completed` or `insufficient_evidence`), `version` ≥ 1 |
+| `jobs` | `investigation_id` UNIQUE, `status`, `available_at`, `0 ≤ attempts ≤ max_attempts` (default 3), `lease_owner` and `lease_until` (set together, exactly while `running`), `lease_generation` ≥ 0, `last_error` JSONB object |
+| `agent_steps` | `investigation_id`, `step_key` (1–256 chars), `agent_role`, `status`, `attempt` ≥ 0, `input`, `output`, `checkpoint` (JSONB objects), `lease_generation`, `started_at` (required once not `pending`), `completed_at` (set exactly when `completed`, `failed`, or `skipped`); `completed` requires `output`. `UNIQUE(investigation_id, step_key)` |
+| `tool_calls` | `agent_step_id`, `call_key` (1–256 chars), `tool_name` (the five read-only tools), `arguments` object, `result_ref`, `status` (`running`, `succeeded`, `failed`), `duration_ms` ≥ 0. `UNIQUE(agent_step_id, call_key)` |
+| `llm_calls` | `agent_step_id`, `attempt` ≥ 1, `provider`, `model`, `prompt_version`, `request_hash`, `status` (`pending`, `succeeded`, `failed`, `unknown`), tokens ≥ 0, `reserved_microusd`, `cost_microusd`, `cost_basis` (`actual`, `estimated`, `unknown`), `latency_ms`, `provider_request_id`. `UNIQUE(agent_step_id, attempt)` |
+| `progress_events` | `id bigint identity` (the SSE cursor), `investigation_id`, `event_type` (1–128 chars), `payload` object, `created_at` |
+
+**Scope safety:** `incident_signals` and `investigations` reference `incidents(workspace_id, replay_scope, id)`, and `incident_signals` also references `signals(workspace_id, replay_scope, id)`, so an incident cannot cite evidence from another workspace or replay run and an investigation always shares its incident's scope. `incident_services` uses `(workspace_id, …)` keys to both parents. Jobs, steps, calls, and progress events inherit scope through `investigation_id`.
+
+**Budget:** all three amounts are nonnegative. No CHECK enforces `reserved + spent ≤ budget`: the gateway's reservation is a conditional `UPDATE` that enforces the ceiling, and an actual provider charge above a reservation must still be recordable.
+
+**LLM call cost:** a `pending` call has no `cost_basis`; any outcome has one. `actual` and `estimated` carry `cost_microusd`; `unknown` (always used for the ambiguous `unknown` status) carries none and the investigation keeps the reservation. `succeeded` requires a known cost.
+
+**Optimistic versions:** `incidents.version` and `investigations.version` are the SQLAlchemy `version_id_col`, so ORM updates include `WHERE version = :old` and raise `StaleDataError` when another writer got there first. Core updates must add the same predicate.
+
+**JSONB NULLs:** nullable JSONB columns use `none_as_null=True`; otherwise SQLAlchemy writes Python `None` as the JSON value `null`, which fails the object checks.
+
+**Deviations from the plan (P02-T02):** `workspace_id` and `replay_scope` on `investigations` and `incident_signals` and `workspace_id` on `incident_services` (composite keys); `investigations.evidence_cutoff_at` (tools and the UI need the cutoff; the plan states it elsewhere but not as a column); `llm_calls.cost_basis` (actual versus estimated versus unknown cost); `created_at` on jobs, steps, tool and LLM calls; `agent_steps.started_at` nullable because pending steps have not started. Incident status, severity, and service role values are not specified by the plan; these are initial choices that P05-T03 may widen with a new revision.
 
 ### State machines
 
-The persistence layer enforces these states and their allowed transitions:
+Allowed transitions are enforced in PostgreSQL by the `enforce_status_transition()` trigger function (one `status_transition` trigger per table, firing only when `status` changes) and mirror the maps in `signalops.contracts.workflow`. A rejected change raises `check_violation` with constraint name `ck_<table>_status_transition`. Unchanged status is always allowed (for example a reclaimed lease stays `running`). Alembic autogenerate does not see triggers; `test_*_transitions` compares every state pair in the database against the Python maps.
 
-| Entity | States |
+| Entity | Allowed changes |
 | --- | --- |
-| Investigation | `queued`, `running`, `completed`, `insufficient_evidence`, `failed`, `cancelled`, `budget_exceeded` |
-| Job | `queued`, `running`, `succeeded`, `failed`, `cancelled` |
-| Agent step | `pending`, `running`, `completed`, `failed`, `skipped` |
+| Incident | `open → resolved`, `resolved → open` |
+| Investigation | `queued → running / failed / cancelled`; `running →` any terminal state (`completed`, `insufficient_evidence`, `failed`, `cancelled`, `budget_exceeded`). Terminal states are final |
+| Job | `queued → running / failed / cancelled`; `running → queued` (delayed retry) `/ succeeded / failed / cancelled`. Terminal states are final |
+| Agent step | `pending → running / skipped`; `running → completed / failed`; `failed → running` (retry). `completed` and `skipped` are final |
 
 Store structured findings, never unrestricted private model reasoning. Roadmap task P02-T05 defines how diagnosis status maps to investigation terminal status.
 

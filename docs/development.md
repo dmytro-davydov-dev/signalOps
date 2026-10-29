@@ -124,7 +124,7 @@ uv run alembic revision --autogenerate -m "describe change"   # review the file 
 uv run alembic upgrade head
 ```
 
-Revisions live in `migrations/versions/`; `0001_baseline` is an empty starting point. ORM models must use `signalops.persistence.base.Base`, whose naming convention keeps constraint names stable.
+Revisions live in `migrations/versions/` (`0001_baseline` is empty; `0002_source_evidence` adds the source and evidence tables; `0003_incident_workflow` adds incident and workflow tables and status-transition triggers). ORM models live in `backend/signalops/persistence/models/`, must use `signalops.persistence.base.Base` (whose naming convention keeps constraint names stable), and must be imported from `signalops.persistence.models` so Alembic sees them. Generate revisions against a throwaway database at the previous head, review them, and keep names under 63 characters (pass an explicit `name=` when the convention would exceed it). The integration test `test_migrations_match_models` fails if models and revisions drift. Autogenerate ignores triggers and functions, so add them by hand and cover them with tests.
 
 nginx serves the built UI and proxies `/health/` and `/v1/` to the API, resolving the `api` container per request so a stopped API returns 502 immediately. UI routes therefore never use the `/health/` or `/v1/` prefixes.
 

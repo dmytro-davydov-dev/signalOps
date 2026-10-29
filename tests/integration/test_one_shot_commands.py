@@ -1,33 +1,15 @@
 import uuid
-from collections.abc import Iterator
 
 import pytest
+from alembic.script import ScriptDirectory
 from confluent_kafka.admin import AdminClient
-from pydantic import SecretStr
-from sqlalchemy import create_engine, make_url, text
+from sqlalchemy import create_engine, text
 
 from signalops.config import Settings
-from signalops.persistence.migrations import upgrade_to_head
+from signalops.persistence.migrations import alembic_config, upgrade_to_head
 from signalops.streaming.topics import TopicMismatchError, TopicSpec, ensure_topics
 
 pytestmark = pytest.mark.integration
-
-
-@pytest.fixture
-def scratch_database(infra_settings: Settings) -> Iterator[Settings]:
-    """A throwaway database so migration tests never touch the dev schema."""
-    url = make_url(infra_settings.validated_database_url())
-    name = f"signalops_test_{uuid.uuid4().hex[:12]}"
-    admin = create_engine(url, isolation_level="AUTOCOMMIT")
-    with admin.connect() as conn:
-        conn.execute(text(f'CREATE DATABASE "{name}"'))
-    try:
-        scratch_url = url.set(database=name).render_as_string(hide_password=False)
-        yield infra_settings.model_copy(update={"database_url": SecretStr(scratch_url)})
-    finally:
-        with admin.connect() as conn:
-            conn.execute(text(f'DROP DATABASE "{name}" WITH (FORCE)'))
-        admin.dispose()
 
 
 def test_migrate_reaches_head_and_is_repeatable(scratch_database: Settings) -> None:
@@ -37,7 +19,8 @@ def test_migrate_reaches_head_and_is_repeatable(scratch_database: Settings) -> N
     with engine.connect() as conn:
         versions = conn.execute(text("SELECT version_num FROM alembic_version")).scalars().all()
     engine.dispose()
-    assert versions == ["0001_baseline"]
+    head = ScriptDirectory.from_config(alembic_config(scratch_database)).get_current_head()
+    assert versions == [head]
 
 
 def test_ensure_topics_creates_then_verifies_idempotently(infra_settings: Settings) -> None:
