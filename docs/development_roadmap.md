@@ -25,13 +25,13 @@ PostgreSQL owns evidence, workflow progress, budgets, and the initial knowledge 
 
 | Field | Current value |
 | --- | --- |
-| Active phase | Not started |
-| Active task | None |
-| Last completed task | None |
+| Active phase | Phase 1 Project foundation |
+| Active task | P01-T02 (next) |
+| Last completed task | P01-T01 |
 | Latest verified commit | None |
-| Validation evidence | None |
+| Validation evidence | P01-T01: `uv sync --locked`, `uv run signalops --version`, subpackage imports, `pnpm install --frozen-lockfile`, `pnpm build` pass; `git check-ignore` confirms env files, `.venv`, `node_modules`, `dist` excluded |
 | Blockers | None recorded |
-| Next task | P01-T01 |
+| Next task | P01-T02 |
 
 ### Scope and release boundaries
 
@@ -73,11 +73,13 @@ Start the React shell in Phase 1 and add API-backed incident views in Phase 5; P
 
 ### P01-T01 Create the repository layout
 
-- [ ] Complete this task.
+- [x] Complete this task.
 
 **Implementation:** Create apps/web, backend/signalops, migrations, fixtures, tests, infra, and docs. Add README, .gitignore, Python project configuration, frontend package configuration, and lockfiles.
 
 **Acceptance:** Backend and frontend imports/builds work from documented commands; generated files and secrets are excluded.
+
+**Notes (2026-10-29):** The Python project is the root `pyproject.toml` (hatchling, package source `backend/signalops`, Python 3.12 pinned in `.python-version`, `signalops` console entry point) rather than a `backend/`-scoped project, so lint/type/test commands run from the root and cover `tests/` and `migrations/` too. Frontend is Vite 7 + React 19 + TypeScript 5.9 with pnpm 9; newer majors were deliberately not adopted. Planning files remain in `docs/` (see decisions.md Q11).
 
 ### P01-T02 Set up development checks
 
@@ -699,6 +701,18 @@ Keep these outside the release critical path unless measurements justify promoti
 - Cloud deployment, Kubernetes, multi-broker Kafka, and disaster recovery across hosts.
 - Additional model providers and a separately deployed gateway.
 - Autonomous remediation, which requires a new action-permission and verification design.
+
+## Work log
+
+### 2026-10-29 — P01-T01
+- Status: completed
+- Commit: `chore: create repository layout` (hash recorded in the next ledger update)
+- Implemented: directory layout, root `pyproject.toml` + `uv.lock`, backend package with subpackage stubs and `signalops` CLI, Vite/React/TS app in `apps/web` with `pnpm-lock.yaml`, bootstrap commands in `docs/development.md`.
+- Validation commands and results: `uv sync --locked` ok; `uv run signalops --version` → `signalops 0.1.0`; subpackage imports ok; `pnpm install --frozen-lockfile` ok; `pnpm build` ok; `git check-ignore` on `.env`, `.env.local`, `.venv`, `apps/web/node_modules`, `apps/web/dist` all ignored, `.env.example` not ignored.
+- Evidence or artifact references: none retained.
+- Deviations and reasons: root-level Python project (see task notes).
+- Remaining issues: none.
+- Next task: P01-T02
 
 ## Work log template
 

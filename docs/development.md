@@ -32,6 +32,20 @@ signalops/
 
 No model provider key is needed. Fake-provider mode is the default.
 
+## Bootstrap commands (verified)
+
+The Python project is defined by the root `pyproject.toml` (package source in `backend/signalops`, Python 3.12 via `.python-version`). The frontend package lives in `apps/web`.
+
+```bash
+# Backend (repository root)
+uv sync
+uv run signalops --version
+
+# Frontend (apps/web)
+pnpm install --frozen-lockfile
+pnpm build
+```
+
 ## Proposed commands
 
 ```bash
