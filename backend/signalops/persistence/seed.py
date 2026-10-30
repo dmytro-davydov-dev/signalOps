@@ -55,6 +55,7 @@ DEMO_SERVICES = (
     SeedService(
         uuid.UUID("57988918-06d9-4f40-82a2-48ed0c9c0adf"), "bank-gateway", DEMO_ENVIRONMENT
     ),
+    SeedService(uuid.UUID("0c4f6b1e-3a8d-4e27-9b5c-6d2a1f8e7c30"), "orders-db", DEMO_ENVIRONMENT),
 )
 
 

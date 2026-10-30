@@ -1,0 +1,19 @@
+{
+  "scenario": "downstream-timeout",
+  "generator_version": 1,
+  "seed": 42,
+  "start": "2026-10-16T10:30:00Z",
+  "end": "2026-10-16T10:40:00Z",
+  "synthetic": true,
+  "expected_incident": true,
+  "fault_start": "2026-10-16T10:34:00Z",
+  "fault_end": "2026-10-16T10:38:00Z",
+  "root_cause_service": "bank-gateway",
+  "affected_services": [
+    "bank-gateway",
+    "checkout",
+    "payment"
+  ],
+  "record_count": 991,
+  "dataset_hash": "92f1ca3fe04ebe72874d5eacf008b3af15c6498e1bfdfa38563b6545097c4ead"
+}

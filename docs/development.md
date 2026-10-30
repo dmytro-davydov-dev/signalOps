@@ -48,6 +48,7 @@ uv run pytest                 # unit tests; integration tests are skipped
 uv run signalops export-schemas          # regenerate JSON Schemas, OpenAPI, generated UI contracts
 uv run signalops export-schemas --check  # exit 1 if they are out of date (pytest checks this too)
 uv run signalops seed                    # create or verify the demo catalog (needs SIGNALOPS_DATABASE_URL)
+uv run signalops demo-generate downstream-timeout --out signals.jsonl --labels labels.json  # synthetic dataset
 uv run signalops outbox-publisher        # publish pending outbox rows until SIGINT/SIGTERM
 uv run signalops redrive-record --topic T --partition P --offset O  # republish one quarantined record
 uv run signalops redrive-outbox EVENT_ID # make one quarantined outbox row due again
@@ -115,7 +116,7 @@ The default `docker compose up` needs no paid model key and does not start the O
 
 | Profile | Will contain | Added in |
 | --- | --- | --- |
-| `demo` | Deterministic demo producer; optional instrumented demo application | P04-T01, P10-T03 |
+| `demo` | Demo producer service that posts generated records to ingestion; optional instrumented demo application | P04-T02, P10-T03 |
 | `evaluation` | Evaluation runner for isolated replays | P10-T02 |
 | `observability` | Metrics and dashboards | P11-T01 |
 | `tools` | The bare backend image (`signalops --version`), used to build or run ad hoc commands | P01-T03 (exists) |
@@ -183,7 +184,8 @@ The frontend reads `VITE_API_BASE_URL` at build time (empty means same origin).
 - **Timestamps** are UTC-aware. Source event IDs are stable, domain IDs are UUIDs, and money is stored in integer units.
 - **Migrations:** every constraint and index goes through an Alembic revision. Review generated revisions before applying them.
 - **Database access:** processes build their engine with `persistence.database.create_engine` (bounded pool, server-side timeouts, UTC sessions). A unit of work is `async with database.transaction() as session:`; it commits when the block ends and rolls back every write when it raises. Repositories (`persistence/repositories/`) take that session and never commit, roll back, or open their own transactions. Keep the block free of model calls, broker publication, and other slow I/O.
-- **Seed data:** `signalops seed` (`persistence/seed.py`) creates the demo workspace, one source per adapter kind, and the services `checkout`, `payment`, `inventory`, `bank-gateway` with fixed IDs that match `fixtures/contracts/v1`. It is idempotent and raises `CatalogConflictError` instead of overwriting a row whose identity matches but whose values differ.
+- **Seed data:** `signalops seed` (`persistence/seed.py`) creates the demo workspace, one source per adapter kind, and the services `checkout`, `payment`, `inventory`, `bank-gateway`, `orders-db` with fixed IDs that match `fixtures/contracts/v1`. It is idempotent and raises `CatalogConflictError` instead of overwriting a row whose identity matches but whose values differ.
+- **Demo data:** `signalops demo-generate SCENARIO` (`demo/generator.py`) writes a deterministic synthetic dataset for the seeded demo sources: checkout, inventory, orders-db, payment, and bank-gateway traffic with noise, trace-linked logs and trace summaries, and a versioned deployment. Scenarios are `healthy` and `downstream-timeout` (bank-gateway latency makes payment time out between 40% and 80% of the run). Defaults: seed 42, start `2026-10-16T10:30:00Z`, 600 s. `--out` gets JSON Lines of ingestion records (`source_id`, `source_event_id`, `occurred_at`, `payload`); `--labels` gets the evaluator labels in a separate file, and nothing that identifies the scenario or fault is written into a record. `fixtures/scenarios/v1/*.labels.json` pin each scenario's dataset hash; a unit test regenerates and compares. If a generator change is intended, regenerate those files with `--labels` (and bump `GENERATOR_VERSION` when old datasets must stay distinguishable). Posting the records to the ingestion API arrives with P04-T02.
 - **Frontend:** server data lives in the query layer, interaction state in components and hooks. Handle loading, empty, stale, disconnected, failed, and insufficient-evidence states.
 - **No new infrastructure** (Kubernetes, a graph database, an agent framework, a new service) without a concrete requirement recorded in [decisions.md](decisions.md).
 

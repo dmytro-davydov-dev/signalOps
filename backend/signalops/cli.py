@@ -20,6 +20,22 @@ def build_parser() -> argparse.ArgumentParser:
     commands.add_parser(
         "seed", help="create or verify the deterministic demo workspace catalog, then exit"
     )
+    demo = commands.add_parser(
+        "demo-generate",
+        help="write a deterministic synthetic telemetry dataset as JSON Lines, then exit",
+    )
+    demo.add_argument("scenario", choices=["healthy", "downstream-timeout"])
+    demo.add_argument("--seed", type=int, default=42, help="random seed (default 42)")
+    demo.add_argument("--start", help="UTC start time, RFC 3339 (default 2026-10-16T10:30:00Z)")
+    demo.add_argument(
+        "--duration-s", type=int, default=600, help="length of the dataset in seconds"
+    )
+    demo.add_argument(
+        "--out", required=True, help="signals file (JSON Lines of ingestion records); - for stdout"
+    )
+    demo.add_argument(
+        "--labels", help="separate file for evaluator labels; never mixed into the signals"
+    )
     redrive = commands.add_parser(
         "redrive-record",
         help="republish one quarantined record to its topic with a new redrive attempt ID",
@@ -207,6 +223,43 @@ def run_redrive_outbox(args: argparse.Namespace) -> int:
     return 0
 
 
+def run_demo_generate(args: argparse.Namespace) -> int:
+    from datetime import datetime, timedelta
+    from pathlib import Path
+
+    from signalops.demo.generator import DEFAULT_START, Scenario, generate, serialize_records
+
+    start = DEFAULT_START
+    if args.start is not None:
+        start = datetime.fromisoformat(args.start)
+        if start.tzinfo is None:
+            print("--start must include a UTC offset", file=sys.stderr)
+            return 2
+    try:
+        dataset = generate(
+            Scenario(args.scenario),
+            seed=args.seed,
+            start=start,
+            duration=timedelta(seconds=args.duration_s),
+        )
+    except ValueError as error:
+        print(error, file=sys.stderr)
+        return 2
+    signals = serialize_records(dataset.records)
+    if args.out == "-":
+        sys.stdout.buffer.write(signals)
+        sys.stdout.flush()
+    else:
+        Path(args.out).write_bytes(signals)
+    if args.labels is not None:
+        Path(args.labels).write_text(dataset.labels.model_dump_json(indent=2) + "\n")
+    print(
+        f"{dataset.labels.record_count} records, sha256 {dataset.labels.dataset_hash}",
+        file=sys.stderr,
+    )
+    return 0
+
+
 def run_export_schemas(args: argparse.Namespace) -> int:
     from signalops.contracts.export import BreakingChangeError, stale_paths, write_all
 
@@ -239,6 +292,8 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     if args.command == "export-schemas":
         return run_export_schemas(args)
+    if args.command == "demo-generate":
+        return run_demo_generate(args)
     if args.command == "redrive-record":
         return run_redrive_record(args)
     if args.command == "redrive-outbox":

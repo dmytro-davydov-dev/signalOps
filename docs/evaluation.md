@@ -10,14 +10,14 @@ Find out whether agent investigations actually beat simpler approaches. Correctn
 
 | Family | Notes |
 | --- | --- |
-| Downstream timeout | First fixture, built in P04-T01 |
+| Downstream timeout | `downstream-timeout`, built in P04-T01 (`signalops demo-generate`) |
 | Connection pool exhaustion | |
 | Deployment regression | Exercises the deployment investigator |
 | Memory pressure | |
-| Healthy traffic with noisy warnings | Should produce **no** incident or diagnosis |
+| Healthy traffic with noisy warnings | `healthy`, built in P04-T01. Should produce **no** incident or diagnosis |
 | Mixed and insufficient-evidence variants | Tests abstention quality |
 
-- Scenarios are versioned under `fixtures/` with a fixed seed and a dataset hash.
+- Scenarios are versioned under `fixtures/` with a fixed seed and a dataset hash. `fixtures/scenarios/v1/<scenario>.labels.json` holds the labels and hash; the records are regenerated from the seed rather than committed. Both P04-T01 scenarios are development variants; held-out variants come with P10-T03.
 - **Development** variants and **held-out** variants are kept separate. Prompts are never tuned on the reporting set.
 - Synthetic replay is labelled synthetic. Real fault demonstrations run through the optional `demo` profile.
 

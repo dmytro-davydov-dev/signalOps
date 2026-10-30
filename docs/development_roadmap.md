@@ -25,13 +25,13 @@ PostgreSQL owns evidence, workflow progress, budgets, and the initial knowledge 
 
 | Field | Current value |
 | --- | --- |
-| Active phase | Phase 4 Ingestion and data quality (not started); Phase 3 gate passed |
+| Active phase | Phase 4 Ingestion and data quality; Phase 3 gate passed |
 | Active task | None |
-| Last completed task | P03-T05 |
-| Latest verified commit | `aac21fd` (P03-T04); P03-T05 pending commit, validated against the working tree |
-| Validation evidence | P03-T05: against Compose PostgreSQL and Kafka, a runner stopped while applying the second of five records commits offset 2 and closes; a restarted runner applies records 3–5, leaving 5 receipts and committed offset 5. `report_stats` shows lag 2 after one of three records, 6 after four more are produced, and 0 after draining. A partition paused for a 300 s retry is revoked by leaving the group: the retry is dropped, the pause lifted, and after rejoining both records are applied once (without the resume, the reassigned partition is never fetched). A stop between outbox rounds publishes version 1 and leaves version 2 pending for the next process; `outbox stats` reports published/failed counts and the backlog's oldest age. `SIGNALOPS_INTEGRATION=1 uv run pytest` 447 passed. Earlier evidence is in the work log |
+| Last completed task | P04-T01 |
+| Latest verified commit | `7d6490f` (P03-T05); P04-T01 pending commit, validated against the working tree |
+| Validation evidence | P04-T01: `generate` with seed 42 reproduces the committed dataset hashes (healthy 931 records `8163ba51…`, downstream-timeout 991 records `92f1ca3f…`); the same seed gives identical bytes and another seed a different hash. All records validate against their adapter contracts and seeded services; serialized signals contain no label words or scenario names; fault records share their shapes with healthy ones. Downstream-timeout has 49 payment timeout logs inside the window and at most 5 outside. `SIGNALOPS_INTEGRATION=1 uv run pytest` 465 passed. Earlier evidence is in the work log |
 | Blockers | None recorded |
-| Next task | P04-T01 |
+| Next task | P04-T02 |
 
 ### Scope and release boundaries
 
@@ -350,11 +350,22 @@ Start the React shell in Phase 1 and add API-backed incident views in Phase 5; P
 
 ### P04-T01 Build a deterministic demo producer
 
-- [ ] Complete this task.
+- [x] Complete this task.
 
 **Implementation:** Generate checkout, payment, and database signals with realistic noise, stable event IDs, trace relationships, and versioned deployment events. Start with healthy and downstream-timeout fixtures.
 
 **Acceptance:** A fixed seed produces reproducible data; the runtime sees signals without evaluator labels.
+
+**Notes (2026-10-30):**
+- `demo/generator.py`: `generate(scenario, seed, start, duration)` returns `DemoDataset(records, labels)`. Records are ingestion batch items (`source_id`, `source_event_id`, `occurred_at`, `payload`) for the three seeded demo sources; every payload is built through its adapter contract. `signalops demo-generate SCENARIO --out FILE [--labels FILE] [--seed] [--start] [--duration-s]` writes JSON Lines and, separately, the labels.
+- Traffic: one checkout request every 1.5–4.5 s calls inventory, orders-db, and payment → bank-gateway. Each request emits a trace summary per service under one trace ID; logs carry that trace ID and a span ID. Noise: background warnings (flag cache, cache hit ratio, GC pauses, connection-reset retries), debug health checks, slow queries (3%), missing SKUs (1%), rare isolated payment timeouts (0.4%), and one unrelated inventory deployment at 15% of the run with a `previous_revision`.
+- Scenarios: `healthy`, and `downstream-timeout`, where between 40% and 80% of the run 75% of bank-gateway calls outlast payment's 2000 ms timeout and the rest are slow. Labels: window, root cause `bank-gateway`, affected services, `expected_incident`, record count, and the dataset's SHA-256.
+- Determinism: `random.Random(seed)` using only `random()` and `getrandbits`; millisecond timestamps; canonical JSON (sorted keys, compact). `source_event_id` is `{service}-{log|span|deploy}-{sha256(scenario:seed:n)[:20]}`, unique across datasets without naming the scenario.
+- Label separation: labels never go into a record. Unit tests reject label words or scenario names anywhere in the serialized signals and check that every record shape (source, service, attribute keys) in the fault dataset also occurs in healthy traffic, so a field cannot mark fault records.
+- **Decision:** only labels and the dataset hash are committed (`fixtures/scenarios/v1/*.labels.json`); records are regenerated from the seed (about 1,000 records per 10-minute run). The fixture test regenerates and compares the hash.
+- **Decision:** added `orders-db` to the seeded catalog so database signals resolve to a known service instead of being flagged unknown.
+- **Deviation:** no Kafka or HTTP publishing and no Compose `demo` service yet. Records target `POST /v1/ingest/{source_id}`, which P04-T02 builds; the poster and the `demo` profile service belong there. Bypassing ingestion by writing raw envelopes to Kafka would skip credentials and redaction.
+- Left: P04-T04 malformed/skewed/late fixtures; remaining fault families and held-out variants (P10-T03).
 
 ### P04-T02 Implement authenticated batch ingestion
 
@@ -973,13 +984,23 @@ Keep these outside the release critical path unless measurements justify promoti
 
 ### 2026-10-30 — P03-T05
 - Status: completed
-- Commit: pending (validated against the working tree); P03-T04 committed as `aac21fd`
+- Commit: `7d6490f`
 - Implemented: `ConsumerStats`, `ConsumerRunner.report_stats`, lag, `subscribe` with rebalance callbacks (retry state dropped and pause lifted on revoke/lost), stop-aware `run` with a final report; `create_consumer` no longer subscribes; `OutboxRepository.backlog` and `OutboxBacklog`; `OutboxPublisher.report_stats`, `PublishSummary.__add__`, stop between rounds; setting `SIGNALOPS_STREAMING_STATS_INTERVAL_MS`; Compose `stop_grace_period` for `outbox-publisher`; tests: new unit cases in `tests/unit/test_consumer.py` and `test_outbox.py`, `tests/integration/test_streaming_lifecycle.py`, two outbox integration cases, call sites updated for `subscribe`; docs (reliability, development).
 - Validation commands and results: `uv run ruff check .`, `uv run ruff format --check .`, `uv run mypy` (80 files) pass; `uv run pytest` 265 passed, 182 skipped; `uv run signalops export-schemas --check` ok; with `.env` sourced, `SIGNALOPS_INTEGRATION=1 uv run pytest` 447 passed; `docker compose config --quiet` ok. On the host against Compose, `.venv/bin/signalops outbox-publisher` with a 1 s stats interval logged `outbox stats` each second and, on SIGTERM, a final line and `outbox publisher stopped`, exit 0. Negative checks: removing the resume on revoke failed 2 unit tests and the integration revoke test (the reassigned partition was never fetched); keeping retry state on revoke failed the same 3; removing the stop check between outbox rounds failed the stop integration test; all restored and re-run green. Frontend unchanged, not re-run. Containers were not rebuilt.
 - Evidence or artifact references: none retained.
 - Deviations and reasons: logs instead of a metrics endpoint (acceptance allows either; metrics are P11-T01); see task notes.
 - Remaining issues: no consumer entry command yet (P04-T02); failed offset commits are not retried on revoke.
 - Next task: P04-T01
+
+### 2026-10-30 — P04-T01
+- Status: completed
+- Commit: pending (validated against the working tree)
+- Implemented: `backend/signalops/demo/generator.py` (`Scenario`, `DemoRecord`, `ScenarioLabels`, `generate`, `serialize_records`); `signalops demo-generate`; `orders-db` service in the demo seed; `fixtures/scenarios/v1/healthy.labels.json` and `downstream-timeout.labels.json`; `tests/unit/test_demo_generator.py`; docs (development, evaluation). Ledger now records `7d6490f` for P03-T05.
+- Validation commands and results: `uv run ruff check .`, `uv run ruff format --check .`, `uv run mypy` (83 files) pass; `uv run pytest` 283 passed, 182 skipped; with `.env` sourced, `SIGNALOPS_INTEGRATION=1 uv run pytest` 465 passed. `uv run signalops seed` twice against the dev database: services now include `orders-db`. Negative checks: an unseeded `random.Random()` failed 5 tests (fixture hashes, reproducibility, CLI); writing the scenario/seed into log attributes failed the no-label tests and fixture hashes; a fault-only attribute on payment logs failed the shared-shape test and the downstream-timeout hash; all restored and re-run green. Frontend and Compose unchanged, not re-run.
+- Evidence or artifact references: `fixtures/scenarios/v1/`.
+- Deviations and reasons: no publishing or Compose `demo` service until the ingestion endpoint exists (P04-T02); records are not committed, only labels and hashes (see task notes).
+- Remaining issues: none for this task.
+- Next task: P04-T02
 
 ## Work log template
 
