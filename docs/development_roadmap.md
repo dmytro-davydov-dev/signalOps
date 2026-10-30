@@ -27,11 +27,11 @@ PostgreSQL owns evidence, workflow progress, budgets, and the initial knowledge 
 | --- | --- |
 | Active phase | Phase 3 Streaming reliability (in progress) |
 | Active task | None |
-| Last completed task | P03-T02 |
-| Latest verified commit | `f438f0f` (P03-T01); P03-T02 pending commit, validated against the working tree |
-| Validation evidence | P03-T02: against Compose PostgreSQL and Kafka, a consumer that dies after the database commit but before the offset commit leaves one effect and no committed offset; the restarted member receives the record again, hits the receipt, adds no effect, and commits offset 1. The same event published twice yields one effect and committed offset 2. A handler failure on the second of three records rolls back its receipt and outbox row and leaves the committed offset at 1; a healthy restart processes records 2 and 3 once each and commits 3. `SIGNALOPS_INTEGRATION=1 uv run pytest` 388 passed. Earlier evidence is in the work log |
+| Last completed task | P03-T03 |
+| Latest verified commit | `82da93b` (P03-T02); P03-T03 pending commit, validated against the working tree |
+| Validation evidence | P03-T03: against Compose PostgreSQL and Kafka, a publisher that dies after the broker acknowledges but before marking leaves the row pending; the next poll republishes it with the same event ID, marks it (`attempts` 1), and the topic holds two copies that a `TransactionalProcessor` consumer applies once (APPLIED, DUPLICATE). A row for a missing topic stays pending with `attempts` 1. A failed version 1 holds back version 2 of the same aggregate while another aggregate publishes; after the fix both go out in version order. `SIGNALOPS_INTEGRATION=1 uv run pytest` 395 passed. Earlier evidence is in the work log |
 | Blockers | None recorded |
-| Next task | P03-T03 |
+| Next task | P03-T04 |
 
 ### Scope and release boundaries
 
@@ -287,11 +287,19 @@ Start the React shell in Phase 1 and add API-backed incident views in Phase 5; P
 
 ### P03-T03 Implement the outbox publisher
 
-- [ ] Complete this task.
+- [x] Complete this task.
 
 **Implementation:** Poll committed pending rows, publish using the stored event ID/key, and mark delivery after acknowledgement. Start with one publisher and preserve aggregate version order. Avoid holding a database transaction open during broker calls.
 
 **Acceptance:** A crash after publication but before marking delivery republishes safely; failed delivery leaves the row pending.
+
+**Notes (2026-10-30):**
+- `streaming/outbox.py`: `OutboxPublisher.publish_once` reads up to `SIGNALOPS_OUTBOX_BATCH_SIZE` pending rows in one short transaction, publishes outside any transaction through `EventProducer` (in a worker thread), and marks results in a second short transaction per round. `run(stop)` loops and waits `SIGNALOPS_OUTBOX_IDLE_INTERVAL_MS` only after a poll that published nothing. Entry command `signalops outbox-publisher` (SIGINT/SIGTERM stop it); Compose service `outbox-publisher` with `restart: unless-stopped`.
+- Messages carry the stored topic, key, and envelope; the envelope is re-serialized from JSONB, so key order can differ from the original bytes. Consumers decode by field, so this is harmless.
+- Order: rows go out in rounds, each aggregate's lowest pending version first; an aggregate with a failed row sits out the rest of the batch. `OutboxRepository.add` now sets `created_at = clock_timestamp()` instead of the transaction-start `now()`, so a version allocated later under the aggregate's row lock also sorts later across batches. That depends on writers allocating versions under a lock; P05 writers must do so.
+- `attempts` is incremented on each recorded attempt, including the one that marks the row published. A crash after the ack records no attempt.
+- **Deviation:** no single-publisher enforcement (for example an advisory lock). Compose runs one instance; a second instance would duplicate and could reorder. Revisit if the publisher is ever scaled.
+- A permanently rejected row stays pending and blocks its aggregate, retried every idle interval. Quarantine and backoff are P03-T04. Outbox age and lag metrics are P03-T05.
 
 ### P03-T04 Implement retry and failure handling
 
@@ -921,6 +929,16 @@ Keep these outside the release critical path unless measurements justify promoti
 - Deviations and reasons: see task notes (failures stop the runner until P03-T04; one record at a time per consumer).
 - Remaining issues: none for this task.
 - Next task: P03-T03
+
+### 2026-10-30 — P03-T03
+- Status: completed
+- Commit: pending (validated against the working tree)
+- Implemented: `OutboxRepository.pending`, `mark_published`, `record_failed_attempts`, and `clock_timestamp()` for `created_at` in `add`; `streaming/outbox.py` (`OutboxPublisher`, `publish_rounds`, `outgoing_message`, `PublishSummary`); settings `SIGNALOPS_OUTBOX_BATCH_SIZE` and `SIGNALOPS_OUTBOX_IDLE_INTERVAL_MS`; `signalops outbox-publisher` and its Compose service; `tests/unit/test_outbox.py` (round ordering, stored message fields); `tests/integration/test_outbox_publisher.py` (crash after ack, failed delivery, aggregate ordering); the pending-query plan test now uses the repository's order; docs (reliability, events, development).
+- Validation commands and results: `uv run ruff check .`, `uv run ruff format --check .`, `uv run mypy` (73 files) pass; `uv run pytest` 226 passed, 169 skipped; with `.env` sourced, `SIGNALOPS_INTEGRATION=1 uv run pytest` 395 passed; `docker compose config --quiet` ok; `signalops outbox-publisher` on the host against Compose exited 0 on SIGTERM. Negative checks: marking every row published regardless of delivery failed the failed-delivery and ordering integration tests; ignoring the failed-aggregate block failed the ordering test; both restored and re-run green. Frontend unchanged, not re-run. The Compose `outbox-publisher` container was not built or started.
+- Evidence or artifact references: none retained.
+- Deviations and reasons: see task notes (no single-publisher enforcement).
+- Remaining issues: rejected rows block their aggregate until P03-T04.
+- Next task: P03-T04
 
 ## Work log template
 

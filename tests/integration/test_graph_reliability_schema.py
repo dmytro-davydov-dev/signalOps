@@ -369,9 +369,11 @@ def test_new_outbox_event_is_pending(engine: Engine) -> None:
     assert row.attempts == 0
 
 
+# Same filter and order as OutboxRepository.pending.
 PENDING_LOOKUP = text(
     "SELECT id, aggregate_id, aggregate_version, topic, message_key, envelope "
-    "FROM outbox_events WHERE published_at IS NULL ORDER BY created_at LIMIT 100"
+    "FROM outbox_events WHERE published_at IS NULL "
+    "ORDER BY created_at, aggregate_version LIMIT 100"
 )
 
 

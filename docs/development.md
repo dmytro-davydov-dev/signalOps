@@ -48,6 +48,7 @@ uv run pytest                 # unit tests; integration tests are skipped
 uv run signalops export-schemas          # regenerate JSON Schemas, OpenAPI, generated UI contracts
 uv run signalops export-schemas --check  # exit 1 if they are out of date (pytest checks this too)
 uv run signalops seed                    # create or verify the demo catalog (needs SIGNALOPS_DATABASE_URL)
+uv run signalops outbox-publisher        # publish pending outbox rows until SIGINT/SIGTERM
 
 # Integration tests against the running Compose infrastructure
 set -a; . ./.env; set +a
@@ -104,7 +105,7 @@ Useful URLs once the stack is up:
 - Readiness: `http://127.0.0.1:8010/health/ready` (200 when PostgreSQL, Redis, and Kafka all answer within the timeout; 503 with per-dependency error categories otherwise)
 - OpenAPI: `http://127.0.0.1:8010/docs`
 
-Startup order: `postgres` and `kafka` become healthy → the one-shot `migrate` (`signalops migrate`, Alembic upgrade to head) and `init-topics` (`signalops init-topics`) jobs run to completion → `api` starts → `frontend` starts. Both jobs are idempotent and run on every `up`. `init-topics` creates missing topics from `backend/signalops/streaming/topics.py` and fails if an existing topic has a different partition count, instead of altering it, because that would change key ordering.
+Startup order: `postgres` and `kafka` become healthy → the one-shot `migrate` (`signalops migrate`, Alembic upgrade to head) and `init-topics` (`signalops init-topics`) jobs run to completion → `api` and `outbox-publisher` start → `frontend` starts. Both jobs are idempotent and run on every `up`. `init-topics` creates missing topics from `backend/signalops/streaming/topics.py` and fails if an existing topic has a different partition count, instead of altering it, because that would change key ordering.
 
 ### Profiles
 
@@ -147,6 +148,8 @@ Backend processes read `SIGNALOPS_`-prefixed variables (`backend/signalops/confi
 | `SIGNALOPS_REDIS_URL` | `redis://localhost:56379/0` | |
 | `SIGNALOPS_KAFKA_BOOTSTRAP_SERVERS` | `localhost:19094` | `kafka:9092` inside Compose |
 | `SIGNALOPS_KAFKA_DELIVERY_TIMEOUT_MS` | `30000` | librdkafka `message.timeout.ms`: one message's send including internal retries; after it the caller gets a `timeout` result |
+| `SIGNALOPS_OUTBOX_BATCH_SIZE` | `100` | Pending outbox rows read per publisher poll |
+| `SIGNALOPS_OUTBOX_IDLE_INTERVAL_MS` | `500` | Publisher wait after a poll that published nothing (empty or all failed) |
 | `SIGNALOPS_LOG_LEVEL` | `INFO` | JSON logs on stdout |
 | `SIGNALOPS_ENVIRONMENT` | `development` | `development`, `test`, `production` |
 | `SIGNALOPS_API_HOST` / `SIGNALOPS_API_PORT` | `0.0.0.0` / `8000` | |

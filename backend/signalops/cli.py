@@ -14,6 +14,9 @@ def build_parser() -> argparse.ArgumentParser:
     commands.add_parser("migrate", help="apply database migrations up to head, then exit")
     commands.add_parser("init-topics", help="create or verify Kafka topics, then exit")
     commands.add_parser(
+        "outbox-publisher", help="publish committed outbox rows to Kafka until stopped"
+    )
+    commands.add_parser(
         "seed", help="create or verify the deterministic demo workspace catalog, then exit"
     )
     export = commands.add_parser(
@@ -109,6 +112,42 @@ def run_seed() -> int:
     return 0
 
 
+def run_outbox_publisher() -> int:
+    import asyncio
+    import signal
+
+    from signalops.config import get_settings
+    from signalops.logs import configure_logging
+    from signalops.persistence.database import Database, create_engine
+    from signalops.streaming.outbox import OutboxPublisher
+    from signalops.streaming.producer import EventProducer
+
+    settings = get_settings()
+    configure_logging(settings.log_level)
+
+    async def publish() -> None:
+        stop = asyncio.Event()
+        loop = asyncio.get_running_loop()
+        for signum in (signal.SIGINT, signal.SIGTERM):
+            loop.add_signal_handler(signum, stop.set)
+        engine = create_engine(settings)
+        producer = EventProducer(settings, client_id="signalops-outbox-publisher")
+        publisher = OutboxPublisher(
+            Database.from_engine(engine),
+            producer,
+            batch_size=settings.outbox_batch_size,
+            idle_interval_seconds=settings.outbox_idle_interval_ms / 1000,
+        )
+        try:
+            await publisher.run(stop)
+        finally:
+            producer.close()
+            await engine.dispose()
+
+    asyncio.run(publish())
+    return 0
+
+
 def run_export_schemas(args: argparse.Namespace) -> int:
     from signalops.contracts.export import BreakingChangeError, stale_paths, write_all
 
@@ -132,6 +171,7 @@ COMMANDS = {
     "migrate": run_migrate,
     "init-topics": run_init_topics,
     "seed": run_seed,
+    "outbox-publisher": run_outbox_publisher,
 }
 
 

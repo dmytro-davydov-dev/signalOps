@@ -42,9 +42,12 @@ publish each with stored event_id and key   -- outside any transaction
 on ack: UPDATE published_at
 ```
 
-- A single publisher in the MVP keeps each aggregate's events in order.
-- A crash after the ack but before `published_at` is set causes a republish. Consumers deduplicate.
-- A failed delivery leaves the row pending.
+- Implemented in `streaming/outbox.py` (`OutboxPublisher`, run by `signalops outbox-publisher`) with `OutboxRepository.pending`, `mark_published`, and `record_failed_attempts`. Verified against Compose PostgreSQL and Kafka by `tests/integration/test_outbox_publisher.py`.
+- A single publisher in the MVP keeps each aggregate's events in order. Compose runs one `outbox-publisher`; nothing yet prevents a second instance, which would publish duplicates and could reorder.
+- Within a batch, rows go out in rounds: each aggregate's lowest pending version first, all its topics together. An aggregate whose row fails sits out the rest of the batch, so a later version is never acknowledged before an earlier one.
+- `OutboxRepository.add` sets `created_at` with `clock_timestamp()`, so when versions are allocated under the aggregate's row lock, a later version also sorts later across batches.
+- A crash after the ack but before `published_at` is set causes a republish with the same event ID and key. Consumers deduplicate.
+- A failed delivery leaves the row pending and increments `attempts` (also incremented when the row is marked published). A permanently rejected row blocks its aggregate until P03-T04 adds quarantine.
 
 ## Job leases
 
@@ -78,7 +81,7 @@ These come from the plan's §13. Each needs a meaningful automated or scripted c
 
 - [ ] Contract fixtures: missing fields, unsupported versions, malformed timestamps, oversized payloads, contradictory service identity.
 - [x] Duplicate Kafka message plus a crash between DB commit and offset commit leaves one logical effect (P03-T02).
-- [ ] Outbox crash after broker ack causes a harmless duplicate.
+- [x] Outbox crash after broker ack causes a harmless duplicate (P03-T03).
 - [ ] Worker killed after one step: lease expiry, checkpoint reuse, stale-writer rejection.
 - [ ] Provider throttling, ambiguous timeout, malformed output, parallel budget exhaustion.
 - [ ] Redis restart mid-investigation: durable work survives and SSE catches up.

@@ -26,6 +26,10 @@ class Settings(BaseSettings):
     # Upper bound on one message's send, including librdkafka's internal retries.
     # A message not acknowledged by then is reported to the caller as failed.
     kafka_delivery_timeout_ms: int = Field(default=30_000, ge=1_000, le=300_000)
+    # Rows the outbox publisher reads per poll, and its wait after an empty or
+    # fully failed poll.
+    outbox_batch_size: int = Field(default=100, ge=1, le=1_000)
+    outbox_idle_interval_ms: int = Field(default=500, ge=50, le=60_000)
 
     api_host: str = "0.0.0.0"  # noqa: S104 - container listener; Compose publishes on loopback.
     api_port: int = Field(default=8000, ge=1, le=65535)

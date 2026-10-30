@@ -121,6 +121,15 @@ services:
       retries: 6
       start_period: 10s
 
+  # One instance only: a single publisher keeps each aggregate's events in order.
+  outbox-publisher:
+    <<: *backend
+    command: ["outbox-publisher"]
+    restart: unless-stopped
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+      init-topics: { condition: service_completed_successfully }
+
   frontend:
     image: signalops-web:local
     build:
