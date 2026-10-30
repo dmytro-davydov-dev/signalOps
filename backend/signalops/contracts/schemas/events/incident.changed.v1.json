@@ -1,0 +1,198 @@
+{
+  "$defs": {
+    "EventType": {
+      "enum": [
+        "signal.raw",
+        "signal.normalized",
+        "incident.changed",
+        "investigation.requested",
+        "investigation.completed",
+        "processing.failed"
+      ],
+      "title": "EventType",
+      "type": "string"
+    },
+    "IncidentChange": {
+      "enum": [
+        "created",
+        "updated",
+        "resolved",
+        "reopened"
+      ],
+      "title": "IncidentChange",
+      "type": "string"
+    },
+    "IncidentChangedPayload": {
+      "properties": {
+        "change": {
+          "$ref": "#/$defs/IncidentChange"
+        },
+        "incident_id": {
+          "format": "uuid",
+          "title": "Incident Id",
+          "type": "string"
+        },
+        "incident_version": {
+          "minimum": 1,
+          "title": "Incident Version",
+          "type": "integer"
+        },
+        "replay_scope": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[a-z0-9][a-z0-9._:-]*$",
+          "title": "Replay Scope",
+          "type": "string"
+        },
+        "severity": {
+          "$ref": "#/$defs/IncidentSeverity"
+        },
+        "status": {
+          "$ref": "#/$defs/IncidentStatus"
+        }
+      },
+      "required": [
+        "incident_id",
+        "incident_version",
+        "change",
+        "status",
+        "severity",
+        "replay_scope"
+      ],
+      "title": "IncidentChangedPayload",
+      "type": "object"
+    },
+    "IncidentSeverity": {
+      "enum": [
+        "low",
+        "medium",
+        "high",
+        "critical"
+      ],
+      "title": "IncidentSeverity",
+      "type": "string"
+    },
+    "IncidentStatus": {
+      "enum": [
+        "open",
+        "resolved"
+      ],
+      "title": "IncidentStatus",
+      "type": "string"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "properties": {
+    "causation_id": {
+      "anyOf": [
+        {
+          "format": "uuid",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Causation Id"
+    },
+    "correlation_id": {
+      "anyOf": [
+        {
+          "maxLength": 256,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]*$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Correlation Id"
+    },
+    "event_id": {
+      "format": "uuid",
+      "title": "Event Id",
+      "type": "string"
+    },
+    "event_type": {
+      "$ref": "#/$defs/EventType"
+    },
+    "ingested_at": {
+      "format": "date-time",
+      "title": "Ingested At",
+      "type": "string"
+    },
+    "occurred_at": {
+      "format": "date-time",
+      "title": "Occurred At",
+      "type": "string"
+    },
+    "payload": {
+      "$ref": "#/$defs/IncidentChangedPayload"
+    },
+    "replay_run_id": {
+      "anyOf": [
+        {
+          "format": "uuid",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Replay Run Id"
+    },
+    "schema_version": {
+      "minimum": 1,
+      "title": "Schema Version",
+      "type": "integer"
+    },
+    "source_id": {
+      "anyOf": [
+        {
+          "format": "uuid",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Source Id"
+    },
+    "trace_id": {
+      "anyOf": [
+        {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]*$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Trace Id"
+    },
+    "workspace_id": {
+      "format": "uuid",
+      "title": "Workspace Id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "event_id",
+    "event_type",
+    "schema_version",
+    "workspace_id",
+    "occurred_at",
+    "ingested_at",
+    "payload"
+  ],
+  "title": "EventEnvelope[IncidentChangedPayload]",
+  "type": "object"
+}

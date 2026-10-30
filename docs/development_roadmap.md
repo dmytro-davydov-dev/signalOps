@@ -27,11 +27,11 @@ PostgreSQL owns evidence, workflow progress, budgets, and the initial knowledge 
 | --- | --- |
 | Active phase | Phase 2 Persistence and contracts (in progress) |
 | Active task | None |
-| Last completed task | P02-T04 |
-| Latest verified commit | `45a1b18` (P02-T03); P02-T04 pending commit, validated against the working tree |
-| Validation evidence | P02-T04: 99 new contract tests in `tests/contract/` (all 20 fixtures round-trip exactly; unsupported event and checkpoint versions, malformed UUIDs, naive/numeric/impossible timestamps, oversized envelopes, records, messages, attributes, and rows fail with explicit categories or validation errors; error details exclude input values). Two deliberate validator removals each made a test fail. Full suite with integration 260 passed; `alembic check` no drift. P02-T03 and earlier evidence is in the work log |
+| Last completed task | P02-T05 |
+| Latest verified commit | `7cf9c28` (P02-T04); P02-T05 pending commit, validated against the working tree |
+| Validation evidence | P02-T05: contract tests 176 passed (status mapping over every investigation × diagnosis status for the API body and completed event; schema freshness; refusal of breaking rewrites; additive change accepted; 10 checker cases; every committed schema compatible with itself). Integration: every status × diagnosis combination accepted or rejected by `ck_investigations_diagnosis_status` exactly as the Python map says. Frontend status module tests pass. Full suite with integration 338 passed; dev database upgraded to `0005_diagnosis_status_mapping`, `alembic check` no drift. P02-T04 and earlier evidence is in the work log |
 | Blockers | None recorded |
-| Next task | P02-T05 |
+| Next task | P02-T06 |
 
 ### Scope and release boundaries
 
@@ -210,11 +210,20 @@ Start the React shell in Phase 1 and add API-backed incident views in Phase 5; P
 
 ### P02-T05 Define API and event compatibility rules
 
-- [ ] Complete this task.
+- [x] Complete this task.
 
 **Implementation:** Export JSON Schemas and OpenAPI into versioned files. Define additive optional changes, unknown-field preservation in source attributes, and new-version handling for breaking changes. Document diagnosis status versus investigation terminal status mapping.
 
 **Acceptance:** A completed investigation may contain diagnosed output; insufficient_evidence maps consistently across API, persistence, and UI.
+
+**Notes (2026-10-29):**
+- Status mapping (decision Q6): one to one. `completed` ⇔ `diagnosed`, `insufficient_evidence` ⇔ `insufficient_evidence`, no diagnosis for any other status. Single source: `DIAGNOSIS_STATUS_BY_INVESTIGATION_STATUS` in `contracts/investigations.py`, used by `InvestigationView` (API body), `InvestigationCompletedPayload`, the persistence CHECK text, and the generated `apps/web/src/api/generated/investigationStatus.ts`, which `apps/web/src/api/investigationStatus.ts` presents ("Insufficient evidence" has its own `abstained` tone, distinct from failures).
+- Revision `0005_diagnosis_status_mapping` (hand-written; autogenerate ignores CHECK changes) replaces `ck_investigations_diagnosis_status`. The no-diagnosis clause is phrased as "status not in the diagnosis-bearing set" so an unknown status is still reported by `ck_investigations_status` (PostgreSQL reports CHECKs in name order). A completed investigation without a diagnosis is now rejected.
+- `signalops export-schemas` (`contracts/export.py`) writes 20 JSON Schemas under `backend/signalops/contracts/schemas/` (`<family>/<name>.v<N>.json`, draft 2020-12, sorted keys), `schemas/openapi.v1.json`, `schemas/investigations/status-mapping.v1.json`, and the generated TS module. `--check` reports stale or orphaned files; a pytest test does the same, so CI needs no new step.
+- `contracts/compatibility.py` reports structural breaks (removed property, newly required property, type change, removed enum/const value, removed union alternative), resolving `$ref`s. `export-schemas` refuses to rewrite an existing schema with a break and writes nothing unless `--allow-breaking`. Tightened bounds are not detected (documented as a review responsibility). Removing a field from an adapter record model is flagged even though old data would land in `attributes`; the check is deliberately conservative.
+- Compatibility rules documented in docs/events.md ("Versioning rules"); mapping in docs/api.md and docs/data-model.md.
+- **Deviations:** the investigation API body (`InvestigationView`) and investigation fixtures were added here, ahead of P06/P07, because the acceptance needs an API-side contract. `InvestigationCompletedPayload` now enforces the mapping (a tightening of a v1 payload that no producer emits yet). OpenAPI currently lists only the health routes; planned route bodies are exported as standalone schemas.
+- Left to later tasks: the investigation endpoint itself (P06/P07) and its UI views (P08); usage cost-basis fields on `InvestigationView` (P07-T02).
 
 ### P02-T06 Add migrations and repository boundaries
 
@@ -839,13 +848,23 @@ Keep these outside the release critical path unless measurements justify promoti
 
 ### 2026-10-29 — P02-T04
 - Status: completed
-- Commit: pending (validated against the working tree)
+- Commit: `7cf9c28`
 - Implemented: contract modules `common.py`, `events.py`, `adapters.py`, `incidents.py`, `checkpoints.py`, `tools.py`, `diagnosis.py`, and models added to `evidence.py`; shared length limits moved from persistence to contracts; 20 fixtures in `fixtures/contracts/v1/` (removed `fixtures/.gitkeep`); `tests/contract/test_contract_fixtures.py` and `test_contract_failures.py`; events and diagnosis docs.
 - Validation commands and results: `uv run ruff check .`, `uv run ruff format --check .`, `uv run mypy` (52 files) pass; `uv run pytest tests/contract` 99 passed; with `.env` sourced, `SIGNALOPS_INTEGRATION=1 uv run pytest` 260 passed. First fixture run failed six event round-trips because the test re-validated through `EventEnvelope[EventPayload]` instead of `decode_event` (test fixed). Negative check: removing the numeric-timestamp guard and the abstention root-cause check each failed exactly one test; both restored. `uv run alembic current` → `0004_graph_reliability (head)`, `uv run alembic check` → no new upgrade operations. Frontend and Compose unchanged, not re-run.
 - Evidence or artifact references: `fixtures/contracts/v1/`.
 - Deviations and reasons: see task notes (diagnosis service reference and `missing_evidence`, replay scope derivation, chosen size limits).
 - Remaining issues: none for this task.
 - Next task: P02-T05
+
+### 2026-10-29 — P02-T05
+- Status: completed
+- Commit: pending (validated against the working tree)
+- Implemented: `contracts/investigations.py` (mapping, `InvestigationView`, `terminal_status_for`), `contracts/compatibility.py`, `contracts/export.py`, `signalops export-schemas [--check] [--allow-breaking]`; mapping enforced in `InvestigationCompletedPayload` and the persistence model; revision `0005_diagnosis_status_mapping`; exported schemas and OpenAPI under `backend/signalops/contracts/schemas/`; generated `apps/web/src/api/generated/investigationStatus.ts` plus `investigationStatus.ts` and its test; investigation fixtures; `tests/contract/test_status_mapping.py`, `test_schema_export.py`; integration mapping test and terminal-state helpers updated; docs (events, api, data-model, decisions Q6, development).
+- Validation commands and results: `uv run ruff check .`, `uv run ruff format --check .`, `uv run mypy` (57 files) pass; `uv run pytest` 190 passed, 148 skipped; with `.env` sourced, `SIGNALOPS_INTEGRATION=1 uv run pytest` 338 passed. First integration run failed `test_enumerations_reject_unknown_values[Investigation-status]` because the new CHECK rejected unknown statuses before the enumeration check; rule rephrased in model and migration (equality of the two texts checked). `uv run signalops export-schemas --check` exit 0. Negative checks: removing `span_id` from `StructuredLogInput` made `export-schemas` exit 1 ("property removed") and the freshness tests fail; mapping `budget_exceeded` to a diagnosis in Python without a migration failed the database mapping test; both restored. `docker compose run --rm --build migrate` upgraded the dev database `0004_graph_reliability -> 0005_diagnosis_status_mapping`; `alembic check` no new operations; API `/health/ready` 200. Frontend `pnpm lint`, `pnpm typecheck`, `pnpm test` (13 passed), `pnpm build` pass. `docker compose config --quiet` ok.
+- Evidence or artifact references: `backend/signalops/contracts/schemas/`, `fixtures/contracts/v1/investigations/`.
+- Deviations and reasons: see task notes (early `InvestigationView`, tightened completed payload, health-only OpenAPI).
+- Remaining issues: none for this task.
+- Next task: P02-T06
 
 ## Work log template
 

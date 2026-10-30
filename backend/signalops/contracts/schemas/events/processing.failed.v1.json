@@ -1,0 +1,221 @@
+{
+  "$defs": {
+    "ContractErrorCategory": {
+      "enum": [
+        "oversized",
+        "malformed_json",
+        "unknown_event_type",
+        "unsupported_version",
+        "invalid_envelope",
+        "invalid_payload"
+      ],
+      "title": "ContractErrorCategory",
+      "type": "string"
+    },
+    "EventType": {
+      "enum": [
+        "signal.raw",
+        "signal.normalized",
+        "incident.changed",
+        "investigation.requested",
+        "investigation.completed",
+        "processing.failed"
+      ],
+      "title": "EventType",
+      "type": "string"
+    },
+    "ProcessingFailedPayload": {
+      "properties": {
+        "consumer_group": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]*$",
+          "title": "Consumer Group",
+          "type": "string"
+        },
+        "error_category": {
+          "$ref": "#/$defs/ContractErrorCategory"
+        },
+        "error_detail": {
+          "maxLength": 2048,
+          "minLength": 1,
+          "title": "Error Detail",
+          "type": "string"
+        },
+        "failed_at": {
+          "format": "date-time",
+          "title": "Failed At",
+          "type": "string"
+        },
+        "original_event_id": {
+          "anyOf": [
+            {
+              "format": "uuid",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Original Event Id"
+        },
+        "original_offset": {
+          "minimum": 0,
+          "title": "Original Offset",
+          "type": "integer"
+        },
+        "original_partition": {
+          "minimum": 0,
+          "title": "Original Partition",
+          "type": "integer"
+        },
+        "original_topic": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]*$",
+          "title": "Original Topic",
+          "type": "string"
+        },
+        "redrive_attempt_id": {
+          "anyOf": [
+            {
+              "format": "uuid",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Redrive Attempt Id"
+        }
+      },
+      "required": [
+        "consumer_group",
+        "original_topic",
+        "original_partition",
+        "original_offset",
+        "error_category",
+        "error_detail",
+        "failed_at"
+      ],
+      "title": "ProcessingFailedPayload",
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "properties": {
+    "causation_id": {
+      "anyOf": [
+        {
+          "format": "uuid",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Causation Id"
+    },
+    "correlation_id": {
+      "anyOf": [
+        {
+          "maxLength": 256,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]*$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Correlation Id"
+    },
+    "event_id": {
+      "format": "uuid",
+      "title": "Event Id",
+      "type": "string"
+    },
+    "event_type": {
+      "$ref": "#/$defs/EventType"
+    },
+    "ingested_at": {
+      "format": "date-time",
+      "title": "Ingested At",
+      "type": "string"
+    },
+    "occurred_at": {
+      "format": "date-time",
+      "title": "Occurred At",
+      "type": "string"
+    },
+    "payload": {
+      "$ref": "#/$defs/ProcessingFailedPayload"
+    },
+    "replay_run_id": {
+      "anyOf": [
+        {
+          "format": "uuid",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Replay Run Id"
+    },
+    "schema_version": {
+      "minimum": 1,
+      "title": "Schema Version",
+      "type": "integer"
+    },
+    "source_id": {
+      "anyOf": [
+        {
+          "format": "uuid",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Source Id"
+    },
+    "trace_id": {
+      "anyOf": [
+        {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]*$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Trace Id"
+    },
+    "workspace_id": {
+      "format": "uuid",
+      "title": "Workspace Id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "event_id",
+    "event_type",
+    "schema_version",
+    "workspace_id",
+    "occurred_at",
+    "ingested_at",
+    "payload"
+  ],
+  "title": "EventEnvelope[ProcessingFailedPayload]",
+  "type": "object"
+}

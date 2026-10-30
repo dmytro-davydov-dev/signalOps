@@ -1,0 +1,129 @@
+{
+  "$defs": {
+    "IncidentSeverity": {
+      "enum": [
+        "low",
+        "medium",
+        "high",
+        "critical"
+      ],
+      "title": "IncidentSeverity",
+      "type": "string"
+    },
+    "IncidentStatus": {
+      "enum": [
+        "open",
+        "resolved"
+      ],
+      "title": "IncidentStatus",
+      "type": "string"
+    },
+    "IncidentSummary": {
+      "additionalProperties": false,
+      "properties": {
+        "detected_at": {
+          "format": "date-time",
+          "title": "Detected At",
+          "type": "string"
+        },
+        "first_seen_at": {
+          "format": "date-time",
+          "title": "First Seen At",
+          "type": "string"
+        },
+        "id": {
+          "format": "uuid",
+          "title": "Id",
+          "type": "string"
+        },
+        "last_seen_at": {
+          "format": "date-time",
+          "title": "Last Seen At",
+          "type": "string"
+        },
+        "replay_scope": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[a-z0-9][a-z0-9._:-]*$",
+          "title": "Replay Scope",
+          "type": "string"
+        },
+        "resolved_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Resolved At"
+        },
+        "severity": {
+          "$ref": "#/$defs/IncidentSeverity"
+        },
+        "status": {
+          "$ref": "#/$defs/IncidentStatus"
+        },
+        "title": {
+          "maxLength": 500,
+          "minLength": 1,
+          "title": "Title",
+          "type": "string"
+        },
+        "version": {
+          "minimum": 1,
+          "title": "Version",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "id",
+        "replay_scope",
+        "title",
+        "severity",
+        "status",
+        "detected_at",
+        "first_seen_at",
+        "last_seen_at",
+        "version"
+      ],
+      "title": "IncidentSummary",
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "items": {
+      "items": {
+        "$ref": "#/$defs/IncidentSummary"
+      },
+      "maxItems": 100,
+      "title": "Items",
+      "type": "array"
+    },
+    "next_cursor": {
+      "anyOf": [
+        {
+          "maxLength": 256,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]*$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Next Cursor"
+    }
+  },
+  "required": [
+    "items"
+  ],
+  "title": "IncidentPage",
+  "type": "object"
+}

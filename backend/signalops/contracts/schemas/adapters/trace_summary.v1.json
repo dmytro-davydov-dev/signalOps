@@ -1,0 +1,105 @@
+{
+  "$defs": {
+    "JsonValue": {}
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "attributes": {
+      "additionalProperties": {
+        "$ref": "#/$defs/JsonValue"
+      },
+      "title": "Attributes",
+      "type": "object"
+    },
+    "downstream_services": {
+      "default": [],
+      "items": {
+        "maxLength": 128,
+        "minLength": 1,
+        "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]*$",
+        "type": "string"
+      },
+      "maxItems": 64,
+      "title": "Downstream Services",
+      "type": "array"
+    },
+    "duration_ms": {
+      "maximum": 86400000,
+      "minimum": 0,
+      "title": "Duration Ms",
+      "type": "integer"
+    },
+    "environment": {
+      "anyOf": [
+        {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]*$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Environment"
+    },
+    "error_span_count": {
+      "default": 0,
+      "minimum": 0,
+      "title": "Error Span Count",
+      "type": "integer"
+    },
+    "operation": {
+      "maxLength": 500,
+      "minLength": 1,
+      "title": "Operation",
+      "type": "string"
+    },
+    "service": {
+      "anyOf": [
+        {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]*$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Service"
+    },
+    "span_count": {
+      "minimum": 1,
+      "title": "Span Count",
+      "type": "integer"
+    },
+    "status": {
+      "enum": [
+        "ok",
+        "error"
+      ],
+      "title": "Status",
+      "type": "string"
+    },
+    "trace_id": {
+      "maxLength": 128,
+      "minLength": 1,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]*$",
+      "title": "Trace Id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "trace_id",
+    "operation",
+    "duration_ms",
+    "status",
+    "span_count"
+  ],
+  "title": "TraceSummaryInput",
+  "type": "object"
+}

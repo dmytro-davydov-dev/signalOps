@@ -1,0 +1,317 @@
+{
+  "$defs": {
+    "Alternative": {
+      "additionalProperties": false,
+      "properties": {
+        "assessment": {
+          "maxLength": 2000,
+          "minLength": 1,
+          "title": "Assessment",
+          "type": "string"
+        },
+        "hypothesis": {
+          "maxLength": 500,
+          "minLength": 1,
+          "title": "Hypothesis",
+          "type": "string"
+        }
+      },
+      "required": [
+        "hypothesis",
+        "assessment"
+      ],
+      "title": "Alternative",
+      "type": "object"
+    },
+    "Diagnosis": {
+      "additionalProperties": false,
+      "properties": {
+        "alternatives": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/Alternative"
+          },
+          "maxItems": 10,
+          "title": "Alternatives",
+          "type": "array"
+        },
+        "limitations": {
+          "default": [],
+          "items": {
+            "maxLength": 500,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 10,
+          "title": "Limitations",
+          "type": "array"
+        },
+        "missing_evidence": {
+          "default": [],
+          "items": {
+            "maxLength": 500,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 10,
+          "title": "Missing Evidence",
+          "type": "array"
+        },
+        "root_cause": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/RootCause"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "status": {
+          "$ref": "#/$defs/DiagnosisStatus"
+        },
+        "suggested_actions": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/SuggestedAction"
+          },
+          "maxItems": 10,
+          "title": "Suggested Actions",
+          "type": "array"
+        },
+        "summary": {
+          "maxLength": 2000,
+          "minLength": 1,
+          "title": "Summary",
+          "type": "string"
+        },
+        "workflow_version": {
+          "maxLength": 64,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]*$",
+          "title": "Workflow Version",
+          "type": "string"
+        }
+      },
+      "required": [
+        "status",
+        "summary",
+        "root_cause",
+        "workflow_version"
+      ],
+      "title": "Diagnosis",
+      "type": "object"
+    },
+    "DiagnosisStatus": {
+      "enum": [
+        "diagnosed",
+        "insufficient_evidence"
+      ],
+      "title": "DiagnosisStatus",
+      "type": "string"
+    },
+    "InvestigationStatus": {
+      "enum": [
+        "queued",
+        "running",
+        "completed",
+        "insufficient_evidence",
+        "failed",
+        "cancelled",
+        "budget_exceeded"
+      ],
+      "title": "InvestigationStatus",
+      "type": "string"
+    },
+    "InvestigationUsage": {
+      "additionalProperties": false,
+      "properties": {
+        "budget_microusd": {
+          "minimum": 0,
+          "title": "Budget Microusd",
+          "type": "integer"
+        },
+        "reserved_microusd": {
+          "minimum": 0,
+          "title": "Reserved Microusd",
+          "type": "integer"
+        },
+        "spent_microusd": {
+          "minimum": 0,
+          "title": "Spent Microusd",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "budget_microusd",
+        "reserved_microusd",
+        "spent_microusd"
+      ],
+      "title": "InvestigationUsage",
+      "type": "object"
+    },
+    "RootCause": {
+      "additionalProperties": false,
+      "properties": {
+        "confidence": {
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "title": "Confidence",
+          "type": "number"
+        },
+        "evidence_signal_ids": {
+          "items": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "maxItems": 50,
+          "minItems": 1,
+          "title": "Evidence Signal Ids",
+          "type": "array"
+        },
+        "failure_type": {
+          "maxLength": 64,
+          "pattern": "^[a-z][a-z0-9_]*$",
+          "title": "Failure Type",
+          "type": "string"
+        },
+        "service_id": {
+          "format": "uuid",
+          "title": "Service Id",
+          "type": "string"
+        },
+        "service_name": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]*$",
+          "title": "Service Name",
+          "type": "string"
+        }
+      },
+      "required": [
+        "service_id",
+        "service_name",
+        "failure_type",
+        "confidence",
+        "evidence_signal_ids"
+      ],
+      "title": "RootCause",
+      "type": "object"
+    },
+    "SuggestedAction": {
+      "additionalProperties": false,
+      "properties": {
+        "action": {
+          "maxLength": 2000,
+          "minLength": 1,
+          "title": "Action",
+          "type": "string"
+        },
+        "requires_approval": {
+          "const": true,
+          "default": true,
+          "title": "Requires Approval",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "action"
+      ],
+      "title": "SuggestedAction",
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "Body of GET /v1/investigations/{id}.",
+  "properties": {
+    "completed_at": {
+      "anyOf": [
+        {
+          "format": "date-time",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Completed At"
+    },
+    "created_at": {
+      "format": "date-time",
+      "title": "Created At",
+      "type": "string"
+    },
+    "deadline_at": {
+      "format": "date-time",
+      "title": "Deadline At",
+      "type": "string"
+    },
+    "diagnosis": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/Diagnosis"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "evidence_cutoff_at": {
+      "format": "date-time",
+      "title": "Evidence Cutoff At",
+      "type": "string"
+    },
+    "id": {
+      "format": "uuid",
+      "title": "Id",
+      "type": "string"
+    },
+    "incident_id": {
+      "format": "uuid",
+      "title": "Incident Id",
+      "type": "string"
+    },
+    "max_steps": {
+      "minimum": 1,
+      "title": "Max Steps",
+      "type": "integer"
+    },
+    "replay_scope": {
+      "maxLength": 128,
+      "minLength": 1,
+      "pattern": "^[a-z0-9][a-z0-9._:-]*$",
+      "title": "Replay Scope",
+      "type": "string"
+    },
+    "status": {
+      "$ref": "#/$defs/InvestigationStatus"
+    },
+    "usage": {
+      "$ref": "#/$defs/InvestigationUsage"
+    },
+    "workflow_version": {
+      "maxLength": 64,
+      "minLength": 1,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]*$",
+      "title": "Workflow Version",
+      "type": "string"
+    }
+  },
+  "required": [
+    "id",
+    "incident_id",
+    "replay_scope",
+    "status",
+    "workflow_version",
+    "evidence_cutoff_at",
+    "created_at",
+    "deadline_at",
+    "max_steps",
+    "usage"
+  ],
+  "title": "InvestigationView",
+  "type": "object"
+}

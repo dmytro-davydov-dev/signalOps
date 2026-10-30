@@ -1,6 +1,6 @@
 # HTTP API
 
-> Status: planned design. The source is [SignalOps_Implementation_Plan.md](SignalOps_Implementation_Plan.md) §9. Once implemented, the generated OpenAPI document (P02-T05) becomes authoritative, and this page should link to it.
+> Status: planned design. The source is [SignalOps_Implementation_Plan.md](SignalOps_Implementation_Plan.md) §9. The generated OpenAPI document, [`openapi.v1.json`](../backend/signalops/contracts/schemas/openapi.v1.json), is authoritative for implemented routes (currently health only); body schemas for planned routes are exported alongside it (for example `investigations/investigation.v1.json`). Compatibility rules are in [events.md](events.md#versioning-rules).
 
 All endpoints are versioned under `/v1`. Request and response bodies are Pydantic models. Timestamps are UTC (RFC 3339) and IDs are UUIDs.
 
@@ -57,6 +57,14 @@ Idempotency-Key: 6f1c…
 - The evidence cutoff and replay scope.
 - Token usage and cost, labelled *actual*, *estimated*, or *unknown*.
 - Limitations.
+
+The body is `InvestigationView` (`contracts/investigations.py`). Its `diagnosis` follows one mapping, shared with the `investigation.completed` event, the database, and the UI:
+
+| Investigation `status` | `diagnosis` | UI label |
+| --- | --- | --- |
+| `completed` | required, `status: "diagnosed"` | Diagnosed |
+| `insufficient_evidence` | required, `status: "insufficient_evidence"`, null `root_cause`, non-empty `missing_evidence` | Insufficient evidence (an abstention, not a failure) |
+| `queued`, `running`, `failed`, `cancelled`, `budget_exceeded` | `null` | Queued, Running, Failed, Cancelled, Budget exceeded |
 
 ## Progress stream (SSE)
 

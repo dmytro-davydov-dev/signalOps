@@ -1,0 +1,31 @@
+{
+  "diagnosis_status_by_investigation_status": {
+    "budget_exceeded": null,
+    "cancelled": null,
+    "completed": "diagnosed",
+    "failed": null,
+    "insufficient_evidence": "insufficient_evidence",
+    "queued": null,
+    "running": null
+  },
+  "diagnosis_statuses": [
+    "diagnosed",
+    "insufficient_evidence"
+  ],
+  "investigation_statuses": [
+    "queued",
+    "running",
+    "completed",
+    "insufficient_evidence",
+    "failed",
+    "cancelled",
+    "budget_exceeded"
+  ],
+  "terminal_investigation_statuses": [
+    "completed",
+    "insufficient_evidence",
+    "failed",
+    "cancelled",
+    "budget_exceeded"
+  ]
+}

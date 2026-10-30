@@ -86,7 +86,7 @@ Format: **Decision**, **Reason**, **Trade-off**, **Revisit when**.
 | Q3 | ~~Frontend query layer and routing libraries~~ **Resolved (P01-T04):** TanStack Query 5 for server data, React Router 7 (data router) for routing | P01-T04 |
 | Q4 | Expired or unknown SSE cursor behavior (full resync vs error) | P08-T03 |
 | Q5 | Idempotency-key storage table and retention window | P06-T01 |
-| Q6 | Diagnosis status ↔ investigation terminal status mapping | P02-T05 |
+| Q6 | ~~Diagnosis status ↔ investigation terminal status mapping~~ **Resolved (P02-T05):** one-to-one. `completed` ⇔ `diagnosed`, `insufficient_evidence` ⇔ `insufficient_evidence`, no diagnosis otherwise; enforced in contracts, a database CHECK, and the generated UI module. See data-model.md | P02-T05 |
 | Q7 | Detector window closure metadata schema | P05-T02 |
 | Q8 | Which real model provider is implemented first, and its pricing provenance format | P07-T01 / P07-T02 |
 | Q9 | Operator authentication mechanism before public exposure | P11-T02 |

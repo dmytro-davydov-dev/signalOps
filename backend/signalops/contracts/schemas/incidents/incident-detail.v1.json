@@ -1,0 +1,240 @@
+{
+  "$defs": {
+    "EvidenceRef": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "$ref": "#/$defs/SignalKind"
+        },
+        "occurred_at": {
+          "format": "date-time",
+          "title": "Occurred At",
+          "type": "string"
+        },
+        "quality_status": {
+          "$ref": "#/$defs/QualityStatus"
+        },
+        "relevance": {
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "title": "Relevance",
+          "type": "number"
+        },
+        "severity": {
+          "$ref": "#/$defs/Severity"
+        },
+        "signal_id": {
+          "format": "uuid",
+          "title": "Signal Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "signal_id",
+        "kind",
+        "occurred_at",
+        "severity",
+        "quality_status",
+        "relevance"
+      ],
+      "title": "EvidenceRef",
+      "type": "object"
+    },
+    "IncidentServiceRef": {
+      "additionalProperties": false,
+      "properties": {
+        "environment": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]*$",
+          "title": "Environment",
+          "type": "string"
+        },
+        "name": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]*$",
+          "title": "Name",
+          "type": "string"
+        },
+        "role": {
+          "$ref": "#/$defs/IncidentServiceRole"
+        },
+        "service_id": {
+          "format": "uuid",
+          "title": "Service Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "service_id",
+        "name",
+        "environment",
+        "role"
+      ],
+      "title": "IncidentServiceRef",
+      "type": "object"
+    },
+    "IncidentServiceRole": {
+      "enum": [
+        "primary",
+        "affected"
+      ],
+      "title": "IncidentServiceRole",
+      "type": "string"
+    },
+    "IncidentSeverity": {
+      "enum": [
+        "low",
+        "medium",
+        "high",
+        "critical"
+      ],
+      "title": "IncidentSeverity",
+      "type": "string"
+    },
+    "IncidentStatus": {
+      "enum": [
+        "open",
+        "resolved"
+      ],
+      "title": "IncidentStatus",
+      "type": "string"
+    },
+    "QualityStatus": {
+      "enum": [
+        "accepted",
+        "degraded",
+        "quarantined"
+      ],
+      "title": "QualityStatus",
+      "type": "string"
+    },
+    "Severity": {
+      "enum": [
+        "debug",
+        "info",
+        "warning",
+        "error",
+        "critical"
+      ],
+      "title": "Severity",
+      "type": "string"
+    },
+    "SignalKind": {
+      "enum": [
+        "log",
+        "trace",
+        "deployment"
+      ],
+      "title": "SignalKind",
+      "type": "string"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "correlation_window_start": {
+      "format": "date-time",
+      "title": "Correlation Window Start",
+      "type": "string"
+    },
+    "detected_at": {
+      "format": "date-time",
+      "title": "Detected At",
+      "type": "string"
+    },
+    "evidence": {
+      "items": {
+        "$ref": "#/$defs/EvidenceRef"
+      },
+      "maxItems": 200,
+      "title": "Evidence",
+      "type": "array"
+    },
+    "fingerprint": {
+      "maxLength": 256,
+      "minLength": 1,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]*$",
+      "title": "Fingerprint",
+      "type": "string"
+    },
+    "first_seen_at": {
+      "format": "date-time",
+      "title": "First Seen At",
+      "type": "string"
+    },
+    "id": {
+      "format": "uuid",
+      "title": "Id",
+      "type": "string"
+    },
+    "last_seen_at": {
+      "format": "date-time",
+      "title": "Last Seen At",
+      "type": "string"
+    },
+    "replay_scope": {
+      "maxLength": 128,
+      "minLength": 1,
+      "pattern": "^[a-z0-9][a-z0-9._:-]*$",
+      "title": "Replay Scope",
+      "type": "string"
+    },
+    "resolved_at": {
+      "anyOf": [
+        {
+          "format": "date-time",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Resolved At"
+    },
+    "services": {
+      "items": {
+        "$ref": "#/$defs/IncidentServiceRef"
+      },
+      "maxItems": 100,
+      "title": "Services",
+      "type": "array"
+    },
+    "severity": {
+      "$ref": "#/$defs/IncidentSeverity"
+    },
+    "status": {
+      "$ref": "#/$defs/IncidentStatus"
+    },
+    "title": {
+      "maxLength": 500,
+      "minLength": 1,
+      "title": "Title",
+      "type": "string"
+    },
+    "version": {
+      "minimum": 1,
+      "title": "Version",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "id",
+    "replay_scope",
+    "title",
+    "severity",
+    "status",
+    "detected_at",
+    "first_seen_at",
+    "last_seen_at",
+    "version",
+    "fingerprint",
+    "correlation_window_start",
+    "services",
+    "evidence"
+  ],
+  "title": "IncidentDetail",
+  "type": "object"
+}

@@ -14,6 +14,7 @@ from signalops.contracts.diagnosis import Diagnosis
 from signalops.contracts.events import EventType, decode_event
 from signalops.contracts.evidence import NormalizedSignal, SourceKind
 from signalops.contracts.incidents import IncidentDetail
+from signalops.contracts.investigations import InvestigationView
 from signalops.contracts.tools import TOOL_RESULT_ADAPTER
 from signalops.contracts.workflow import ToolName
 
@@ -29,6 +30,7 @@ DECODERS: dict[str, Callable[[Path, dict[str, Any]], BaseModel]] = {
     "adapter_inputs": _adapter_input,
     "evidence": lambda _, document: NormalizedSignal.model_validate(document),
     "incidents": lambda _, document: IncidentDetail.model_validate(document),
+    "investigations": lambda _, document: InvestigationView.model_validate(document),
     "checkpoints": lambda _, document: decode_checkpoint(document),
     "tool_results": lambda _, document: TOOL_RESULT_ADAPTER.validate_python(document),
     "diagnoses": lambda _, document: Diagnosis.model_validate(document),

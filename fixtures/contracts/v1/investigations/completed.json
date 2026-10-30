@@ -1,0 +1,48 @@
+{
+  "id": "0f1e2d3c-4b5a-4968-8776-5a4b3c2d1e0f",
+  "incident_id": "6a7b8c9d-0e1f-4a2b-9c3d-4e5f6a7b8c9d",
+  "replay_scope": "live",
+  "workflow_version": "v1",
+  "evidence_cutoff_at": "2026-10-16T10:41:00Z",
+  "created_at": "2026-10-16T10:41:00Z",
+  "deadline_at": "2026-10-16T10:51:00Z",
+  "max_steps": 12,
+  "status": "completed",
+  "completed_at": "2026-10-16T10:43:30Z",
+  "usage": {
+    "budget_microusd": 500000,
+    "reserved_microusd": 0,
+    "spent_microusd": 41250
+  },
+  "diagnosis": {
+    "status": "diagnosed",
+    "summary": "Checkout failures correlate with the payment deployment that halved the bank-gateway connection pool.",
+    "root_cause": {
+      "service_id": "5f3e2d1c-0b9a-4876-9543-210fedcba987",
+      "service_name": "payment",
+      "failure_type": "connection_pool_exhaustion",
+      "confidence": 0.82,
+      "evidence_signal_ids": [
+        "9c8b7a69-5848-4372-a615-0f9e8d7c6b5a",
+        "1d2e3f40-5162-4738-89ab-cdef01234567"
+      ]
+    },
+    "alternatives": [
+      {
+        "hypothesis": "Database outage",
+        "assessment": "Not supported: no database errors appear in the evidence window."
+      }
+    ],
+    "suggested_actions": [
+      {
+        "action": "Review pool settings and consider reverting the payment deployment",
+        "requires_approval": true
+      }
+    ],
+    "limitations": [
+      "No database connection metrics were available"
+    ],
+    "missing_evidence": [],
+    "workflow_version": "v1"
+  }
+}

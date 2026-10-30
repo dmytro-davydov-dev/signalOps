@@ -1,0 +1,65 @@
+{
+  "$defs": {
+    "ToolErrorCategory": {
+      "enum": [
+        "invalid_arguments",
+        "out_of_scope",
+        "limit_exceeded",
+        "timeout",
+        "unavailable"
+      ],
+      "title": "ToolErrorCategory",
+      "type": "string"
+    },
+    "ToolName": {
+      "enum": [
+        "query_logs",
+        "get_trace_summary",
+        "get_deployments",
+        "get_service_dependencies",
+        "retrieve_runbooks"
+      ],
+      "title": "ToolName",
+      "type": "string"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "A tool call that returned no result; shown to the agent instead of rows.",
+  "properties": {
+    "argument": {
+      "anyOf": [
+        {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]*$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Argument"
+    },
+    "detail": {
+      "maxLength": 500,
+      "minLength": 1,
+      "title": "Detail",
+      "type": "string"
+    },
+    "error": {
+      "$ref": "#/$defs/ToolErrorCategory"
+    },
+    "tool": {
+      "$ref": "#/$defs/ToolName"
+    }
+  },
+  "required": [
+    "tool",
+    "error",
+    "detail"
+  ],
+  "title": "ToolFailure",
+  "type": "object"
+}

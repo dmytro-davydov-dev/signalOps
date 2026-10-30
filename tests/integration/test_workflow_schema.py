@@ -12,6 +12,8 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 from sqlalchemy.orm.exc import StaleDataError
 
+from signalops.contracts.diagnosis import DiagnosisStatus
+from signalops.contracts.investigations import DIAGNOSIS_STATUS_BY_INVESTIGATION_STATUS
 from signalops.contracts.workflow import (
     INCIDENT_TRANSITIONS,
     INVESTIGATION_TRANSITIONS,
@@ -61,9 +63,14 @@ def incident_state(status: str) -> dict[str, Any]:
     return {"resolved_at": LATER if status == IncidentStatus.RESOLVED else None}
 
 
+def diagnosis_document(status: DiagnosisStatus | None) -> dict[str, Any] | None:
+    return None if status is None else {"status": status}
+
+
 def investigation_state(status: str) -> dict[str, Any]:
     terminal = status in TERMINAL_INVESTIGATION_STATUSES
-    return {"completed_at": LATER if terminal else None}
+    expected = DIAGNOSIS_STATUS_BY_INVESTIGATION_STATUS[InvestigationStatus(status)]
+    return {"completed_at": LATER if terminal else None, "diagnosis": diagnosis_document(expected)}
 
 
 def job_state(status: str) -> dict[str, Any]:
@@ -385,12 +392,36 @@ def test_investigation_checks(
     assert violated_constraint(scenario.engine, Investigation, **values) == constraint
 
 
-def test_insufficient_evidence_may_carry_a_diagnosis(scenario: Scenario) -> None:
+def test_insufficient_evidence_carries_an_abstention(scenario: Scenario) -> None:
     scenario.investigation(
         status=InvestigationStatus.INSUFFICIENT_EVIDENCE,
         completed_at=LATER,
         diagnosis={"status": "insufficient_evidence", "root_cause": None},
     )
+
+
+def test_diagnosis_status_constraint_matches_contract_mapping(scenario: Scenario) -> None:
+    """Every investigation status against every diagnosis status, and no diagnosis."""
+    incident_id = scenario.incident()
+    mismatches: list[str] = []
+    for status, expected in DIAGNOSIS_STATUS_BY_INVESTIGATION_STATUS.items():
+        for candidate in [None, *DiagnosisStatus]:
+            values = scenario.investigation_values(
+                incident_id,
+                status=status,
+                **investigation_state(status) | {"diagnosis": diagnosis_document(candidate)},
+            )
+            rejected_by: str | None = None
+            try:
+                insert_row(scenario.engine, Investigation, **values)
+            except IntegrityError as error:
+                rejected_by = constraint_name(error)
+            accepted = rejected_by is None
+            if rejected_by not in (None, "ck_investigations_diagnosis_status"):
+                mismatches.append(f"{status}/{candidate}: rejected by {rejected_by}")
+            if accepted != (candidate == expected):
+                mismatches.append(f"{status}/{candidate}: accepted={accepted}")
+    assert mismatches == []
 
 
 @pytest.mark.parametrize(

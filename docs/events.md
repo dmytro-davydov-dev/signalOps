@@ -82,10 +82,14 @@ Timestamps must be RFC 3339 strings with an offset; they are converted to UTC an
 
 ## Versioning rules
 
-- Each event type has a Pydantic model. JSON Schemas are exported and fixtures are checked in CI.
-- Within `v1`, only **additive, optional** fields are allowed.
-- Breaking changes get a new versioned topic or schema version plus an explicit adapter.
-- Envelopes and payloads ignore unknown fields, so a v1 consumer accepts additive fields from a newer producer. Unknown fields in raw adapter records are kept in `attributes`, never dropped silently.
+These rules cover every exported contract: event envelopes and payloads, adapter records, API bodies, checkpoints, tool results, and diagnoses.
+
+- **Exported files.** `uv run signalops export-schemas` writes JSON Schemas to `backend/signalops/contracts/schemas/` (one file per contract and version, for example `events/signal.raw.v1.json`), the OpenAPI document to `schemas/openapi.v1.json`, and `apps/web/src/api/generated/investigationStatus.ts`. `uv run pytest` fails while committed files differ from the models (`test_committed_artifacts_match_the_contracts`); `export-schemas --check` reports the same without writing.
+- **Allowed within a version:** new optional fields, new optional nullable alternatives, and documentation changes. Consumers ignore unknown event fields, so producers may add them before consumers upgrade.
+- **Breaking:** removing or renaming a field, making a field required, changing a type, removing an enumeration value, or tightening a bound. `export-schemas` refuses to rewrite an existing schema with a structural break (`contracts/compatibility.py`) and writes nothing; tightened bounds are not detected and need review. `--allow-breaking` exists only for contracts that have never been deployed.
+- **Adding an enumeration value** is structurally additive, but a v1 consumer validating that field rejects the new value and quarantines the message. Deploy consumers first, or treat the change as breaking. Values backed by database CHECK constraints also need a migration.
+- **New versions.** A breaking event change registers a new `(event_type, schema_version)` payload model in `EVENT_PAYLOADS` and a new schema file; the old version stays registered until no producer or retained message uses it. Consumers that do not know a version reject it as `unsupported_version` and quarantine the message on `processing.failed.v1`, never guess. A new topic (`*.v2`) is needed only when the key or partitioning changes. Breaking API changes use a new path prefix (`/v2`). Checkpoints bump `CHECKPOINT_SCHEMA_VERSION`; older checkpoints fail to decode and their step is re-run.
+- **Unknown source fields.** Fields a raw adapter record model does not define are moved into `attributes` (and stored in `signals.attributes`), never dropped. A name that appears both as an unknown field and inside `attributes` is rejected rather than merged.
 
 ## Delivery rules
 

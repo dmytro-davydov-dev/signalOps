@@ -1,0 +1,182 @@
+{
+  "$defs": {
+    "EventType": {
+      "enum": [
+        "signal.raw",
+        "signal.normalized",
+        "incident.changed",
+        "investigation.requested",
+        "investigation.completed",
+        "processing.failed"
+      ],
+      "title": "EventType",
+      "type": "string"
+    },
+    "JsonValue": {},
+    "RawSignalPayload": {
+      "properties": {
+        "record": {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "title": "Record",
+          "type": "object"
+        },
+        "service_hint": {
+          "anyOf": [
+            {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]*$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Service Hint"
+        },
+        "source_event_id": {
+          "maxLength": 512,
+          "minLength": 1,
+          "title": "Source Event Id",
+          "type": "string"
+        },
+        "source_kind": {
+          "$ref": "#/$defs/SourceKind"
+        }
+      },
+      "required": [
+        "source_kind",
+        "source_event_id",
+        "record"
+      ],
+      "title": "RawSignalPayload",
+      "type": "object"
+    },
+    "SourceKind": {
+      "enum": [
+        "structured_log",
+        "trace_summary",
+        "deployment"
+      ],
+      "title": "SourceKind",
+      "type": "string"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "properties": {
+    "causation_id": {
+      "anyOf": [
+        {
+          "format": "uuid",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Causation Id"
+    },
+    "correlation_id": {
+      "anyOf": [
+        {
+          "maxLength": 256,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]*$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Correlation Id"
+    },
+    "event_id": {
+      "format": "uuid",
+      "title": "Event Id",
+      "type": "string"
+    },
+    "event_type": {
+      "$ref": "#/$defs/EventType"
+    },
+    "ingested_at": {
+      "format": "date-time",
+      "title": "Ingested At",
+      "type": "string"
+    },
+    "occurred_at": {
+      "format": "date-time",
+      "title": "Occurred At",
+      "type": "string"
+    },
+    "payload": {
+      "$ref": "#/$defs/RawSignalPayload"
+    },
+    "replay_run_id": {
+      "anyOf": [
+        {
+          "format": "uuid",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Replay Run Id"
+    },
+    "schema_version": {
+      "minimum": 1,
+      "title": "Schema Version",
+      "type": "integer"
+    },
+    "source_id": {
+      "anyOf": [
+        {
+          "format": "uuid",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Source Id"
+    },
+    "trace_id": {
+      "anyOf": [
+        {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]*$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Trace Id"
+    },
+    "workspace_id": {
+      "format": "uuid",
+      "title": "Workspace Id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "event_id",
+    "event_type",
+    "schema_version",
+    "workspace_id",
+    "occurred_at",
+    "ingested_at",
+    "payload"
+  ],
+  "title": "EventEnvelope[RawSignalPayload]",
+  "type": "object"
+}

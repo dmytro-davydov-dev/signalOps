@@ -1,0 +1,550 @@
+{
+  "$defs": {
+    "DependenciesResult": {
+      "additionalProperties": false,
+      "properties": {
+        "evidence_cutoff_at": {
+          "format": "date-time",
+          "title": "Evidence Cutoff At",
+          "type": "string"
+        },
+        "items": {
+          "items": {
+            "$ref": "#/$defs/DependencyEntry"
+          },
+          "maxItems": 200,
+          "title": "Items",
+          "type": "array"
+        },
+        "tool": {
+          "const": "get_service_dependencies",
+          "default": "get_service_dependencies",
+          "title": "Tool",
+          "type": "string"
+        },
+        "truncated": {
+          "default": false,
+          "title": "Truncated",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "evidence_cutoff_at",
+        "items"
+      ],
+      "title": "DependenciesResult",
+      "type": "object"
+    },
+    "DependencyEntry": {
+      "additionalProperties": false,
+      "properties": {
+        "confidence": {
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "title": "Confidence",
+          "type": "number"
+        },
+        "from_service_id": {
+          "format": "uuid",
+          "title": "From Service Id",
+          "type": "string"
+        },
+        "hops": {
+          "maximum": 3,
+          "minimum": 1,
+          "title": "Hops",
+          "type": "integer"
+        },
+        "provenance_signal_id": {
+          "anyOf": [
+            {
+              "format": "uuid",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Provenance Signal Id"
+        },
+        "relation": {
+          "$ref": "#/$defs/GraphRelation"
+        },
+        "to_service_id": {
+          "format": "uuid",
+          "title": "To Service Id",
+          "type": "string"
+        },
+        "valid_from": {
+          "format": "date-time",
+          "title": "Valid From",
+          "type": "string"
+        },
+        "valid_to": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Valid To"
+        }
+      },
+      "required": [
+        "from_service_id",
+        "to_service_id",
+        "relation",
+        "valid_from",
+        "confidence",
+        "hops"
+      ],
+      "title": "DependencyEntry",
+      "type": "object"
+    },
+    "DeploymentEntry": {
+      "additionalProperties": false,
+      "properties": {
+        "deployed_at": {
+          "format": "date-time",
+          "title": "Deployed At",
+          "type": "string"
+        },
+        "deployment_id": {
+          "format": "uuid",
+          "title": "Deployment Id",
+          "type": "string"
+        },
+        "previous_revision": {
+          "anyOf": [
+            {
+              "maxLength": 64,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]*$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Previous Revision"
+        },
+        "revision": {
+          "maxLength": 64,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]*$",
+          "title": "Revision",
+          "type": "string"
+        },
+        "service_id": {
+          "format": "uuid",
+          "title": "Service Id",
+          "type": "string"
+        },
+        "signal_id": {
+          "format": "uuid",
+          "title": "Signal Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "deployment_id",
+        "signal_id",
+        "service_id",
+        "revision",
+        "deployed_at"
+      ],
+      "title": "DeploymentEntry",
+      "type": "object"
+    },
+    "DeploymentsResult": {
+      "additionalProperties": false,
+      "properties": {
+        "evidence_cutoff_at": {
+          "format": "date-time",
+          "title": "Evidence Cutoff At",
+          "type": "string"
+        },
+        "items": {
+          "items": {
+            "$ref": "#/$defs/DeploymentEntry"
+          },
+          "maxItems": 200,
+          "title": "Items",
+          "type": "array"
+        },
+        "tool": {
+          "const": "get_deployments",
+          "default": "get_deployments",
+          "title": "Tool",
+          "type": "string"
+        },
+        "truncated": {
+          "default": false,
+          "title": "Truncated",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "evidence_cutoff_at",
+        "items"
+      ],
+      "title": "DeploymentsResult",
+      "type": "object"
+    },
+    "GraphRelation": {
+      "enum": [
+        "DEPENDS_ON",
+        "DEPLOYED_TO",
+        "AFFECTS",
+        "DOCUMENTED_BY"
+      ],
+      "title": "GraphRelation",
+      "type": "string"
+    },
+    "LogEntry": {
+      "additionalProperties": false,
+      "properties": {
+        "message": {
+          "maxLength": 2000,
+          "minLength": 1,
+          "title": "Message",
+          "type": "string"
+        },
+        "occurred_at": {
+          "format": "date-time",
+          "title": "Occurred At",
+          "type": "string"
+        },
+        "quality_status": {
+          "$ref": "#/$defs/QualityStatus"
+        },
+        "service_id": {
+          "anyOf": [
+            {
+              "format": "uuid",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Service Id"
+        },
+        "severity": {
+          "$ref": "#/$defs/Severity"
+        },
+        "signal_id": {
+          "format": "uuid",
+          "title": "Signal Id",
+          "type": "string"
+        },
+        "trace_id": {
+          "anyOf": [
+            {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]*$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Trace Id"
+        }
+      },
+      "required": [
+        "signal_id",
+        "service_id",
+        "occurred_at",
+        "severity",
+        "message",
+        "quality_status"
+      ],
+      "title": "LogEntry",
+      "type": "object"
+    },
+    "LogQueryResult": {
+      "additionalProperties": false,
+      "properties": {
+        "evidence_cutoff_at": {
+          "format": "date-time",
+          "title": "Evidence Cutoff At",
+          "type": "string"
+        },
+        "items": {
+          "items": {
+            "$ref": "#/$defs/LogEntry"
+          },
+          "maxItems": 200,
+          "title": "Items",
+          "type": "array"
+        },
+        "tool": {
+          "const": "query_logs",
+          "default": "query_logs",
+          "title": "Tool",
+          "type": "string"
+        },
+        "truncated": {
+          "default": false,
+          "title": "Truncated",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "evidence_cutoff_at",
+        "items"
+      ],
+      "title": "LogQueryResult",
+      "type": "object"
+    },
+    "QualityStatus": {
+      "enum": [
+        "accepted",
+        "degraded",
+        "quarantined"
+      ],
+      "title": "QualityStatus",
+      "type": "string"
+    },
+    "RunbookEntry": {
+      "additionalProperties": false,
+      "properties": {
+        "excerpt": {
+          "maxLength": 2000,
+          "minLength": 1,
+          "title": "Excerpt",
+          "type": "string"
+        },
+        "provenance": {
+          "maxLength": 500,
+          "minLength": 1,
+          "title": "Provenance",
+          "type": "string"
+        },
+        "runbook_key": {
+          "maxLength": 256,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]*$",
+          "title": "Runbook Key",
+          "type": "string"
+        },
+        "title": {
+          "maxLength": 500,
+          "minLength": 1,
+          "title": "Title",
+          "type": "string"
+        },
+        "version": {
+          "maxLength": 64,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]*$",
+          "title": "Version",
+          "type": "string"
+        }
+      },
+      "required": [
+        "runbook_key",
+        "version",
+        "title",
+        "excerpt",
+        "provenance"
+      ],
+      "title": "RunbookEntry",
+      "type": "object"
+    },
+    "RunbooksResult": {
+      "additionalProperties": false,
+      "properties": {
+        "evidence_cutoff_at": {
+          "format": "date-time",
+          "title": "Evidence Cutoff At",
+          "type": "string"
+        },
+        "items": {
+          "items": {
+            "$ref": "#/$defs/RunbookEntry"
+          },
+          "maxItems": 200,
+          "title": "Items",
+          "type": "array"
+        },
+        "tool": {
+          "const": "retrieve_runbooks",
+          "default": "retrieve_runbooks",
+          "title": "Tool",
+          "type": "string"
+        },
+        "truncated": {
+          "default": false,
+          "title": "Truncated",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "evidence_cutoff_at",
+        "items"
+      ],
+      "title": "RunbooksResult",
+      "type": "object"
+    },
+    "Severity": {
+      "enum": [
+        "debug",
+        "info",
+        "warning",
+        "error",
+        "critical"
+      ],
+      "title": "Severity",
+      "type": "string"
+    },
+    "TraceSummaryEntry": {
+      "additionalProperties": false,
+      "properties": {
+        "duration_ms": {
+          "minimum": 0,
+          "title": "Duration Ms",
+          "type": "integer"
+        },
+        "error_span_count": {
+          "minimum": 0,
+          "title": "Error Span Count",
+          "type": "integer"
+        },
+        "occurred_at": {
+          "format": "date-time",
+          "title": "Occurred At",
+          "type": "string"
+        },
+        "operation": {
+          "maxLength": 500,
+          "minLength": 1,
+          "title": "Operation",
+          "type": "string"
+        },
+        "service_id": {
+          "anyOf": [
+            {
+              "format": "uuid",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Service Id"
+        },
+        "signal_id": {
+          "format": "uuid",
+          "title": "Signal Id",
+          "type": "string"
+        },
+        "span_count": {
+          "minimum": 1,
+          "title": "Span Count",
+          "type": "integer"
+        },
+        "status": {
+          "enum": [
+            "ok",
+            "error"
+          ],
+          "title": "Status",
+          "type": "string"
+        },
+        "trace_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]*$",
+          "title": "Trace Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "signal_id",
+        "trace_id",
+        "service_id",
+        "occurred_at",
+        "operation",
+        "duration_ms",
+        "status",
+        "span_count",
+        "error_span_count"
+      ],
+      "title": "TraceSummaryEntry",
+      "type": "object"
+    },
+    "TraceSummaryResult": {
+      "additionalProperties": false,
+      "properties": {
+        "evidence_cutoff_at": {
+          "format": "date-time",
+          "title": "Evidence Cutoff At",
+          "type": "string"
+        },
+        "items": {
+          "items": {
+            "$ref": "#/$defs/TraceSummaryEntry"
+          },
+          "maxItems": 200,
+          "title": "Items",
+          "type": "array"
+        },
+        "tool": {
+          "const": "get_trace_summary",
+          "default": "get_trace_summary",
+          "title": "Tool",
+          "type": "string"
+        },
+        "truncated": {
+          "default": false,
+          "title": "Truncated",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "evidence_cutoff_at",
+        "items"
+      ],
+      "title": "TraceSummaryResult",
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "discriminator": {
+    "mapping": {
+      "get_deployments": "#/$defs/DeploymentsResult",
+      "get_service_dependencies": "#/$defs/DependenciesResult",
+      "get_trace_summary": "#/$defs/TraceSummaryResult",
+      "query_logs": "#/$defs/LogQueryResult",
+      "retrieve_runbooks": "#/$defs/RunbooksResult"
+    },
+    "propertyName": "tool"
+  },
+  "oneOf": [
+    {
+      "$ref": "#/$defs/LogQueryResult"
+    },
+    {
+      "$ref": "#/$defs/TraceSummaryResult"
+    },
+    {
+      "$ref": "#/$defs/DeploymentsResult"
+    },
+    {
+      "$ref": "#/$defs/DependenciesResult"
+    },
+    {
+      "$ref": "#/$defs/RunbooksResult"
+    }
+  ]
+}

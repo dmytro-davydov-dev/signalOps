@@ -32,6 +32,7 @@ from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from signalops.contracts.common import MAX_KEY_LENGTH, MAX_REPLAY_SCOPE_LENGTH
+from signalops.contracts.investigations import DIAGNOSIS_STATUS_BY_INVESTIGATION_STATUS
 from signalops.contracts.workflow import (
     TERMINAL_INVESTIGATION_STATUSES,
     AgentRole,
@@ -92,9 +93,23 @@ def scope_column() -> Mapped[str]:
 TERMINAL_INVESTIGATION = one_of(
     "status", [s for s in InvestigationStatus if s in TERMINAL_INVESTIGATION_STATUSES]
 )
-DIAGNOSIS_STATUSES = one_of(
-    "status", [InvestigationStatus.COMPLETED, InvestigationStatus.INSUFFICIENT_EVIDENCE]
-)
+
+
+def diagnosis_status_rule() -> str:
+    """CHECK text requiring the diagnosis that the contract mapping prescribes.
+
+    IS NOT DISTINCT FROM makes a missing diagnosis fail the comparison instead of
+    yielding NULL, which a CHECK would accept. Unknown statuses are left to the
+    status enumeration check.
+    """
+    with_diagnosis = [
+        f"(status = '{status}' AND diagnosis ->> 'status' IS NOT DISTINCT FROM '{diagnosis}')"
+        for status, diagnosis in DIAGNOSIS_STATUS_BY_INVESTIGATION_STATUS.items()
+        if diagnosis is not None
+    ]
+    diagnosed = [s for s, d in DIAGNOSIS_STATUS_BY_INVESTIGATION_STATUS.items() if d is not None]
+    without = f"(NOT ({one_of('status', diagnosed)}) AND diagnosis IS NULL)"
+    return " OR ".join([*with_diagnosis, without])
 
 
 class Incident(Base):
@@ -209,7 +224,7 @@ class Investigation(Base):
             name="completed_at_status",
         ),
         CheckConstraint(optional_json_object("diagnosis"), name="diagnosis_object"),
-        CheckConstraint(f"diagnosis IS NULL OR {DIAGNOSIS_STATUSES}", name="diagnosis_status"),
+        CheckConstraint(diagnosis_status_rule(), name="diagnosis_status"),
         CheckConstraint("version >= 1", name="version_positive"),
     )
 

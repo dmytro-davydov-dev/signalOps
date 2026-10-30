@@ -33,6 +33,7 @@ from signalops.contracts.common import (
 )
 from signalops.contracts.diagnosis import DiagnosisStatus
 from signalops.contracts.evidence import QualityStatus, SignalKind, SourceKind
+from signalops.contracts.investigations import check_diagnosis_status
 from signalops.contracts.workflow import (
     TERMINAL_INVESTIGATION_STATUSES,
     IncidentSeverity,
@@ -111,7 +112,7 @@ class InvestigationCompletedPayload(EventPayload):
     investigation_id: uuid.UUID
     incident_id: uuid.UUID
     status: InvestigationStatus
-    # Set when the investigation stored a diagnosis.
+    # Follows DIAGNOSIS_STATUS_BY_INVESTIGATION_STATUS.
     diagnosis_status: DiagnosisStatus | None = None
     workflow_version: Version
 
@@ -119,6 +120,7 @@ class InvestigationCompletedPayload(EventPayload):
     def _check_terminal(self) -> Self:
         if self.status not in TERMINAL_INVESTIGATION_STATUSES:
             raise ValueError("status must be a terminal investigation status")
+        check_diagnosis_status(self.status, self.diagnosis_status)
         return self
 
 

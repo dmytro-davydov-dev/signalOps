@@ -63,7 +63,7 @@ erDiagram
 | `incidents` | `workspace_id`, `replay_scope` (1–128 chars), `fingerprint`, `correlation_window_start`, `title`, `severity` (`low`, `medium`, `high`, `critical`), `status` (`open`, `resolved`), `detected_at`, `first_seen_at` ≤ `last_seen_at`, `resolved_at` (set exactly when resolved), `version` ≥ 1. `UNIQUE(workspace_id, replay_scope, fingerprint, correlation_window_start)` named `uq_incidents_correlation` |
 | `incident_services` | PK `(incident_id, service_id)`, `workspace_id`, `role` (`primary`, `affected`) |
 | `incident_signals` | PK `(incident_id, signal_id)`, `workspace_id`, `replay_scope`, `relevance` in [0, 1] |
-| `investigations` | `workspace_id`, `incident_id`, `replay_scope`, `request_key` UNIQUE (1–256 chars), `status`, `workflow_version`, `evidence_cutoff_at`, `budget_microusd`, `reserved_microusd`, `spent_microusd` (all ≥ 0), `max_steps` > 0, `created_at` < `deadline_at`, `completed_at` (set exactly in terminal states), `diagnosis` JSONB object (only when `completed` or `insufficient_evidence`), `version` ≥ 1 |
+| `investigations` | `workspace_id`, `incident_id`, `replay_scope`, `request_key` UNIQUE (1–256 chars), `status`, `workflow_version`, `evidence_cutoff_at`, `budget_microusd`, `reserved_microusd`, `spent_microusd` (all ≥ 0), `max_steps` > 0, `created_at` < `deadline_at`, `completed_at` (set exactly in terminal states), `diagnosis` JSONB object whose `status` matches the investigation status (see below), `version` ≥ 1 |
 | `jobs` | `investigation_id` UNIQUE, `status`, `available_at`, `0 ≤ attempts ≤ max_attempts` (default 3), `lease_owner` and `lease_until` (set together, exactly while `running`), `lease_generation` ≥ 0, `last_error` JSONB object |
 | `agent_steps` | `investigation_id`, `step_key` (1–256 chars), `agent_role`, `status`, `attempt` ≥ 0, `input`, `output`, `checkpoint` (JSONB objects), `lease_generation`, `started_at` (required once not `pending`), `completed_at` (set exactly when `completed`, `failed`, or `skipped`); `completed` requires `output`. `UNIQUE(investigation_id, step_key)` |
 | `tool_calls` | `agent_step_id`, `call_key` (1–256 chars), `tool_name` (the five read-only tools), `arguments` object, `result_ref`, `status` (`running`, `succeeded`, `failed`), `duration_ms` ≥ 0. `UNIQUE(agent_step_id, call_key)` |
@@ -93,7 +93,9 @@ Allowed transitions are enforced in PostgreSQL by the `enforce_status_transition
 | Job | `queued → running / failed / cancelled`; `running → queued` (delayed retry) `/ succeeded / failed / cancelled`. Terminal states are final |
 | Agent step | `pending → running / skipped`; `running → completed / failed`; `failed → running` (retry). `completed` and `skipped` are final |
 
-Store structured findings, never unrestricted private model reasoning. Roadmap task P02-T05 defines how diagnosis status maps to investigation terminal status.
+Store structured findings, never unrestricted private model reasoning.
+
+Diagnosis status and investigation status map one to one (`DIAGNOSIS_STATUS_BY_INVESTIGATION_STATUS` in `contracts/investigations.py`): `completed` stores a `diagnosed` diagnosis, `insufficient_evidence` stores an `insufficient_evidence` diagnosis, and every other status stores none. `ck_investigations_diagnosis_status` (revision `0005_diagnosis_status_mapping`) enforces it; an integration test checks every status and diagnosis combination against the Python map. The workflow derives the terminal status from the validated diagnosis (`terminal_status_for`) rather than choosing it separately.
 
 ## Temporal knowledge graph
 

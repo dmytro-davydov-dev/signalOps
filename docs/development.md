@@ -45,6 +45,8 @@ uv run ruff check .           # lint
 uv run ruff format --check .  # formatting
 uv run mypy                   # strict type check of backend/signalops and tests
 uv run pytest                 # unit tests; integration tests are skipped
+uv run signalops export-schemas          # regenerate JSON Schemas, OpenAPI, generated UI contracts
+uv run signalops export-schemas --check  # exit 1 if they are out of date (pytest checks this too)
 
 # Integration tests against the running Compose infrastructure
 set -a; . ./.env; set +a
@@ -124,7 +126,7 @@ uv run alembic revision --autogenerate -m "describe change"   # review the file 
 uv run alembic upgrade head
 ```
 
-Revisions live in `migrations/versions/` (`0001_baseline` is empty; `0002_source_evidence` adds the source and evidence tables; `0003_incident_workflow` adds incident and workflow tables and status-transition triggers). ORM models live in `backend/signalops/persistence/models/`, must use `signalops.persistence.base.Base` (whose naming convention keeps constraint names stable), and must be imported from `signalops.persistence.models` so Alembic sees them. Generate revisions against a throwaway database at the previous head, review them, and keep names under 63 characters (pass an explicit `name=` when the convention would exceed it). The integration test `test_migrations_match_models` fails if models and revisions drift. Autogenerate ignores triggers and functions, so add them by hand and cover them with tests.
+Revisions live in `migrations/versions/` (`0001_baseline` is empty; `0002_source_evidence` adds the source and evidence tables; `0003_incident_workflow` adds incident and workflow tables and status-transition triggers; `0004_graph_reliability` adds graph, receipt, and outbox tables; `0005_diagnosis_status_mapping` ties the stored diagnosis to the investigation status). ORM models live in `backend/signalops/persistence/models/`, must use `signalops.persistence.base.Base` (whose naming convention keeps constraint names stable), and must be imported from `signalops.persistence.models` so Alembic sees them. Generate revisions against a throwaway database at the previous head, review them, and keep names under 63 characters (pass an explicit `name=` when the convention would exceed it). The integration test `test_migrations_match_models` fails if models and revisions drift. Autogenerate ignores triggers and functions, so add them by hand and cover them with tests.
 
 nginx serves the built UI and proxies `/health/` and `/v1/` to the API, resolving the `api` container per request so a stopped API returns 502 immediately. UI routes therefore never use the `/health/` or `/v1/` prefixes.
 
@@ -159,7 +161,7 @@ The frontend reads `VITE_API_BASE_URL` at build time (empty means same origin).
 
 ## Conventions
 
-- **Contracts first.** Pydantic models for events, DTOs, checkpoints, tool results, and diagnoses. Breaking changes get a new version.
+- **Contracts first.** Pydantic models for events, DTOs, checkpoints, tool results, and diagnoses. After changing one, run `uv run signalops export-schemas` and commit the regenerated files. Breaking changes get a new version ([events.md](events.md#versioning-rules)). Do not edit files under `contracts/schemas/` or `apps/web/src/api/generated/` by hand.
 - **Domain logic stays separate** from HTTP handlers and Kafka plumbing. Abstractions should match actual reuse.
 - **Type annotations and explicit error categories** everywhere. No broad exception handling that silently acknowledges failed work.
 - **Timestamps** are UTC-aware. Source event IDs are stable, domain IDs are UUIDs, and money is stored in integer units.

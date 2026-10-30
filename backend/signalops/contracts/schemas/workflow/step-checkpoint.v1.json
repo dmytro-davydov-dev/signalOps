@@ -1,0 +1,83 @@
+{
+  "$defs": {
+    "AgentRole": {
+      "enum": [
+        "investigator",
+        "coordinator",
+        "telemetry_investigator",
+        "deployment_investigator",
+        "dependency_investigator",
+        "synthesizer",
+        "verifier"
+      ],
+      "title": "AgentRole",
+      "type": "string"
+    },
+    "JsonValue": {}
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "agent_role": {
+      "$ref": "#/$defs/AgentRole"
+    },
+    "attempt": {
+      "minimum": 1,
+      "title": "Attempt",
+      "type": "integer"
+    },
+    "completed_tool_calls": {
+      "default": [],
+      "items": {
+        "maxLength": 256,
+        "minLength": 1,
+        "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]*$",
+        "type": "string"
+      },
+      "maxItems": 64,
+      "title": "Completed Tool Calls",
+      "type": "array"
+    },
+    "lease_generation": {
+      "minimum": 0,
+      "title": "Lease Generation",
+      "type": "integer"
+    },
+    "schema_version": {
+      "const": 1,
+      "default": 1,
+      "title": "Schema Version",
+      "type": "integer"
+    },
+    "state": {
+      "additionalProperties": {
+        "$ref": "#/$defs/JsonValue"
+      },
+      "title": "State",
+      "type": "object"
+    },
+    "step_key": {
+      "maxLength": 256,
+      "minLength": 1,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]*$",
+      "title": "Step Key",
+      "type": "string"
+    },
+    "workflow_version": {
+      "maxLength": 64,
+      "minLength": 1,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]*$",
+      "title": "Workflow Version",
+      "type": "string"
+    }
+  },
+  "required": [
+    "workflow_version",
+    "step_key",
+    "agent_role",
+    "attempt",
+    "lease_generation"
+  ],
+  "title": "StepCheckpoint",
+  "type": "object"
+}
