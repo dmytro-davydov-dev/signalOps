@@ -18,6 +18,9 @@ def build_parser() -> argparse.ArgumentParser:
         "outbox-publisher", help="publish committed outbox rows to Kafka until stopped"
     )
     commands.add_parser(
+        "normalizer", help="normalize signals.raw.v1 records into evidence until stopped"
+    )
+    commands.add_parser(
         "seed", help="create or verify the deterministic demo workspace catalog, then exit"
     )
     demo = commands.add_parser(
@@ -197,6 +200,53 @@ def run_outbox_publisher() -> int:
     return 0
 
 
+def run_normalizer() -> int:
+    import asyncio
+    import signal
+
+    from signalops.adapters.normalizer import NORMALIZER_CONSUMER_GROUP, Normalizer
+    from signalops.config import get_settings
+    from signalops.contracts.events import EventType
+    from signalops.logs import configure_logging
+    from signalops.persistence.database import Database, create_engine
+    from signalops.streaming.consumer import ConsumerRunner, TransactionalProcessor, create_consumer
+    from signalops.streaming.producer import EventProducer
+    from signalops.streaming.retry import RetryPolicy
+    from signalops.streaming.topics import TOPIC_BY_EVENT_TYPE
+
+    settings = get_settings()
+    configure_logging(settings.log_level)
+
+    async def normalize() -> None:
+        stop = asyncio.Event()
+        loop = asyncio.get_running_loop()
+        for signum in (signal.SIGINT, signal.SIGTERM):
+            loop.add_signal_handler(signum, stop.set)
+        engine = create_engine(settings)
+        failures = EventProducer(settings, client_id="signalops-normalizer-failures")
+        runner = ConsumerRunner(
+            create_consumer(
+                settings, group_id=NORMALIZER_CONSUMER_GROUP, client_id="signalops-normalizer"
+            ),
+            TransactionalProcessor(
+                Database.from_engine(engine), NORMALIZER_CONSUMER_GROUP, Normalizer()
+            ),
+            consumer_group=NORMALIZER_CONSUMER_GROUP,
+            failure_publisher=failures,
+            retry_policy=RetryPolicy.from_settings(settings),
+            stats_interval_seconds=settings.streaming_stats_interval_ms / 1000,
+        )
+        runner.subscribe([TOPIC_BY_EVENT_TYPE[EventType.SIGNAL_RAW]])
+        try:
+            await runner.run(stop)
+        finally:
+            failures.close()
+            await engine.dispose()
+
+    asyncio.run(normalize())
+    return 0
+
+
 def run_redrive_record(args: argparse.Namespace) -> int:
     from signalops.config import get_settings
     from signalops.logs import configure_logging
@@ -369,6 +419,7 @@ COMMANDS = {
     "init-topics": run_init_topics,
     "seed": run_seed,
     "outbox-publisher": run_outbox_publisher,
+    "normalizer": run_normalizer,
 }
 
 

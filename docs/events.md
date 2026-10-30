@@ -77,6 +77,29 @@ The `service_hint` is the source's own string, used as given: two spellings of o
 
 Raw adapter records are validated by the normalizer against `contracts/adapters.py` (`StructuredLogInput`, `TraceSummaryInput`, `DeploymentInput`). Fields those models do not define are moved into `attributes`; a name present both as an unknown field and inside `attributes` is rejected.
 
+### Normalizer (`normalizer-v1`)
+
+`signalops normalizer` consumes `signals.raw.v1` with `TransactionalProcessor` and `adapters.normalizer.Normalizer`. In one transaction per record it writes the receipt, the `signals` row, a `deployments` row for a deployment with a resolved service, and a `signal.normalized` outbox row (aggregate = signal ID, version 1). Mapping per source kind (`adapters/sources.py`):
+
+| Source kind | Signal kind | Severity | Message | `attributes.record` |
+| --- | --- | --- | --- | --- |
+| `structured_log` | `log` | `level` (aliases `warn`, `err`, `fatal`, `trace`) | `message` | `span_id` |
+| `trace_summary` | `trace` | `error` when `status` is `error`, else `info` | `{operation} {status} in {duration_ms} ms` plus failed-span count | operation, duration, status, span counts, downstream services |
+| `deployment` | `deployment` | `info` | `deployed {revision}` plus previous revision and summary | revision, previous revision, change summary |
+
+`signals.attributes` has three sections: `source` (the record's attributes and unknown fields, after ingestion redaction), `record` (above), and `provenance` (`raw_event_id`, `source_kind`, `adapter_version`, `reported_service`, `reported_environment`, `correlation_id`, and `identity_conflicts` when present).
+
+**Identity** ([ADR-012](decisions.md#adr-012-normalizer-resolves-identity-exactly-and-flags-everything-else)): the service and environment come from the record's fields, or, when a field is absent, from a well-known attribute (`service.name`, `service_name`, `service`; `deployment.environment`, `deployment.environment.name`, `environment`, `env`). The pair is looked up exactly in `services`:
+
+| Outcome | `service_id` | Status | Flag |
+| --- | --- | --- | --- |
+| Pair found | resolved | `accepted` | none |
+| Service or environment absent | NULL | `degraded` | `missing_service` |
+| Pair not in the catalog | NULL | `degraded` | `unknown_service` |
+| Claims disagree (field vs attribute, or two attributes) | NULL | `quarantined` | `contradictory_identity` |
+
+IDs are derived, so reprocessing yields the same rows: signal ID = UUIDv5(source, replay scope, `source_event_id`); deployment and `signal.normalized` event IDs derive from the signal ID. `UNIQUE(source_id, replay_scope, source_event_id)` backs the receipt: a record already stored (for example by another consumer group) stages no second deployment or event. A record that fails its adapter contract, names a source outside the envelope's workspace, or disagrees with the source's kind raises `ContractError` and is quarantined to `processing.failed.v1` (P04-T04 turns malformed payloads into quarantined evidence).
+
 ## Decoding
 
 `decode_event(bytes)` validates a message value and raises `ContractError` with one of these categories. Error details list field locations and messages only, never input values, so they can go on `processing.failed.v1`.

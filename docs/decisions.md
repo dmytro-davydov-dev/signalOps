@@ -88,6 +88,18 @@ Format: **Decision**, **Reason**, **Trade-off**, **Revisit when**.
 
 ---
 
+## ADR-012: Normalizer resolves identity exactly and flags everything else
+
+**Decision:**
+- A signal's service is the catalog row matching its claimed `(service, environment)` exactly. Claims come from the record's fields, or from well-known attributes (`service.name`, `deployment.environment`, …) when a field is absent.
+- Missing or uncatalogued identity leaves `service_id` NULL with `degraded` status and `missing_service` or `unknown_service`. Disagreeing claims leave it NULL with `quarantined` status and `contradictory_identity`; the disagreeing keys go in `attributes.provenance.identity_conflicts`.
+- The reported identity is always kept in `attributes.provenance`, and source attributes stay apart from normalizer fields (`source`, `record`, `provenance` sections).
+**Reason:** The plan forbids assigning an arbitrary service. A self-contradicting record should not feed per-service detection, but it stays queryable evidence. Separate sections stop a source key from overwriting a derived field.
+**Trade-off:** No fuzzy or case-insensitive matching and no default environment per source, so a source with inconsistent spelling produces degraded evidence until the catalog or the source is fixed. Unknown services are not auto-registered.
+**Revisit when:** A source cannot send an environment per record (add an explicit per-source binding in `sources.config`), or P04-T04 refines status per detector rule.
+
+---
+
 ## Open questions
 
 | # | Question | Decide by |

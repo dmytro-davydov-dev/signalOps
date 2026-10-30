@@ -54,7 +54,7 @@ erDiagram
 - `source_event_id` must stay stable across retries.
 - Never hash message text alone to build it, because two identical messages can be separate events.
 - A source without IDs needs a documented, adapter-specific identity strategy.
-- A signal with unresolved service identity is quarantined or kept as degraded evidence. It is never assigned to an arbitrary service.
+- A signal with unresolved service identity is quarantined or kept as degraded evidence. It is never assigned to an arbitrary service. The normalizer's rules and the `signals.attributes` layout (`source`, `record`, `provenance`) are in [events.md](events.md#normalizer-normalizer-v1).
 
 ## Incidents and investigations
 

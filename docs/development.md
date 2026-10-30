@@ -49,6 +49,7 @@ uv run signalops export-schemas          # regenerate JSON Schemas, OpenAPI, gen
 uv run signalops export-schemas --check  # exit 1 if they are out of date (pytest checks this too)
 uv run signalops seed                    # create or verify the demo catalog (needs SIGNALOPS_DATABASE_URL)
 uv run signalops demo-generate downstream-timeout --out signals.jsonl --labels labels.json  # synthetic dataset
+uv run signalops normalizer              # normalize signals.raw.v1 into evidence until SIGINT/SIGTERM
 uv run signalops outbox-publisher        # publish pending outbox rows until SIGINT/SIGTERM
 uv run signalops redrive-record --topic T --partition P --offset O  # republish one quarantined record
 uv run signalops redrive-outbox EVENT_ID # make one quarantined outbox row due again
@@ -108,7 +109,7 @@ Useful URLs once the stack is up:
 - Readiness: `http://127.0.0.1:8010/health/ready` (200 when PostgreSQL, Redis, and Kafka all answer within the timeout; 503 with per-dependency error categories otherwise)
 - OpenAPI: `http://127.0.0.1:8010/docs`
 
-Startup order: `postgres` and `kafka` become healthy → the one-shot `migrate` (`signalops migrate`, Alembic upgrade to head) and `init-topics` (`signalops init-topics`) jobs run to completion → `api` and `outbox-publisher` start → `frontend` starts. Both jobs are idempotent and run on every `up`. `init-topics` creates missing topics from `backend/signalops/streaming/topics.py` and fails if an existing topic has a different partition count, instead of altering it, because that would change key ordering.
+Startup order: `postgres` and `kafka` become healthy → the one-shot `migrate` (`signalops migrate`, Alembic upgrade to head) and `init-topics` (`signalops init-topics`) jobs run to completion → `api`, `normalizer`, and `outbox-publisher` start → `frontend` starts. Both jobs are idempotent and run on every `up`. `init-topics` creates missing topics from `backend/signalops/streaming/topics.py` and fails if an existing topic has a different partition count, instead of altering it, because that would change key ordering.
 
 ### Profiles
 

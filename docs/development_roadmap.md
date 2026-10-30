@@ -27,11 +27,11 @@ PostgreSQL owns evidence, workflow progress, budgets, and the initial knowledge 
 | --- | --- |
 | Active phase | Phase 4 Ingestion and data quality; Phase 3 gate passed |
 | Active task | None |
-| Last completed task | P04-T02 |
-| Latest verified commit | `05d5df5` (P04-T01); P04-T02 pending commit, validated against the working tree |
-| Validation evidence | P04-T02: against the Compose stack, `docker compose stop kafka` then a 2-record post returned 503 after 30 s with both records `failed`/`ambiguous_timeout` and no new offsets on `signals.raw.v1`; after restarting Kafka the same batch returned 200 with the same event IDs and offsets grew by exactly 2. `docker compose --profile demo run --rm demo` posted 1028 records, all accepted (topic offsets 701+122+205). `SIGNALOPS_INTEGRATION=1 uv run pytest` 514 passed. Earlier evidence is in the work log |
+| Last completed task | P04-T03 |
+| Latest verified commit | `fd47da0` (P04-T02); P04-T03 pending commit, validated against the working tree |
+| Validation evidence | P04-T03: with the rebuilt image, the Compose `normalizer` consumed all 1030 records retained on `signals.raw.v1` (lag 0 on all three partitions): 1030 signals (231 log + 796 trace + 1 deployment accepted; 2 P04-T02 outage-check logs without an environment degraded with `missing_service`), 1 deployment row, 1030 receipts; `outbox-publisher` then published 1030 `signal.normalized` events (offsets 416+612+2). A restart reprocessed nothing. `SIGNALOPS_INTEGRATION=1 uv run pytest` 549 passed. Earlier evidence is in the work log |
 | Blockers | None recorded |
-| Next task | P04-T03 |
+| Next task | P04-T04 |
 
 ### Scope and release boundaries
 
@@ -388,11 +388,19 @@ Start the React shell in Phase 1 and add API-backed incident views in Phase 5; P
 
 ### P04-T03 Implement three source adapters
 
-- [ ] Complete this task.
+- [x] Complete this task.
 
 **Implementation:** Normalize structured logs, trace summaries, and deployments into the common evidence model. Resolve service plus environment; preserve source attributes and provenance.
 
 **Acceptance:** All three fixture formats produce queryable evidence; contradictory identity is flagged rather than guessed.
+
+**Notes (2026-10-30):**
+- `adapters/sources.py` (pure): `adapt(kind, record)` validates with the adapter contract and maps severity, message, trace ID, and kind-specific fields; `reported_identity` collects service/environment claims from the record's fields and well-known attributes and lists disagreeing keys. `adapters/normalizer.py`: `Normalizer`, the `EventHandler` for `signals.raw.v1`; `EvidenceRepository` (`insert_signal`, `insert_deployment`); `CatalogRepository.find_service_id`. Command `signalops normalizer` (group `normalizer-v1`) and the Compose `normalizer` service. Rules are in docs/events.md#normalizer-normalizer-v1.
+- **Decision (ADR-012):** exact `(service, environment)` catalog match only. Missing → `degraded`/`missing_service`; not in catalog → `degraded`/`unknown_service`; disagreeing claims → `quarantined`/`contradictory_identity`, with the keys in `provenance.identity_conflicts`. `service_id` is NULL in all three. An unresolved deployment is stored as a signal without a `deployments` row.
+- **Decision:** `signals.attributes` = `{source, record, provenance}` so source keys cannot overwrite derived fields; `provenance` keeps the reported identity, raw event ID, adapter version, and correlation ID.
+- Idempotency: signal ID = UUIDv5(source, replay scope, `source_event_id`); deployment and normalized event IDs derive from it. `insert_signal` uses `ON CONFLICT` on the business key, so a record already stored (another group, or a receipt-less redrive) stages no second deployment or event.
+- **Deviation:** records that fail their adapter contract still raise `ContractError` and go to `processing.failed.v1` (no receipt, no evidence). Turning them into quarantined evidence with `malformed_payload` is P04-T04's classification work; the docs say so.
+- Left: malformed/skew/late classification and missing-ID fallback (P04-T04); per-source identity binding (ADR-012 revisit condition); query API (P04-T05). Attributes over 16 KiB after adding provenance are quarantined to `processing.failed.v1` rather than truncated.
 
 ### P04-T04 Implement normalization quality policies
 
@@ -1015,13 +1023,23 @@ Keep these outside the release critical path unless measurements justify promoti
 
 ### 2026-10-30 — P04-T02
 - Status: completed
-- Commit: pending (validated against the working tree)
+- Commit: `fd47da0`
 - Implemented: `POST /v1/ingest/{source_id}` (`api/ingest.py`, `adapters/ingestion.py`, `contracts/ingestion.py`); `CatalogRepository.get_source`; ingestion settings (`SIGNALOPS_INGEST_TOKENS`, record/byte limits, timestamp bounds, redaction list); API resources gain a source lookup and an ingest producer; `signalops demo-post` (`demo/poster.py`); Compose `SIGNALOPS_INGEST_TOKENS` passthrough and `demo` profile services; `.env.example` placeholder; exported schemas and OpenAPI; ADR-011; docs (api, development, events, reliability, decisions).
 - Validation commands and results: `uv run ruff check .`, `uv run ruff format --check .`, `uv run mypy` (90 files), `uv run signalops export-schemas --check` pass; `uv run pytest` 329 passed, 185 skipped; with `.env` sourced, `SIGNALOPS_INTEGRATION=1 uv run pytest` 514 passed; `docker compose config --quiet` passes. Live stack (image rebuilt, API restarted with temporary tokens set only in the shell, then restored): demo profile posted 1028/1028 records; broker-outage check as in the ledger. Negative checks: reporting every delivery as accepted failed 7 tests (including the integration outage test); a random `event_id` failed 9; skipping redaction failed the unit and integration redaction tests; all restored and re-run green. Frontend unchanged (it does not consume the OpenAPI file), not re-run.
 - Evidence or artifact references: `tests/unit/test_ingestion.py`, `tests/unit/test_demo_poster.py`, `tests/integration/test_ingestion_api.py`.
 - Deviations and reasons: no 429 rate limit (not in the task's implementation list; no owning task yet). Integration tests redirect messages to a scratch topic so `signals.raw.v1` stays clean for workers; the live-stack checks used the real topic.
 - Remaining issues: rate limiting unowned; message-text redaction not done; token changes need an API restart. The live checks left 1030 demo/outage records on the dev `signals.raw.v1` (3-day retention); the P04-T03 normalizer will consume them.
 - Next task: P04-T03
+
+### 2026-10-30 — P04-T03
+- Status: completed
+- Commit: pending (validated against the working tree)
+- Implemented: `adapters/sources.py`, `adapters/normalizer.py`, `persistence/repositories/evidence.py`, `CatalogRepository.find_service_id`; `signalops normalizer`; Compose `normalizer` service; `tests/unit/test_sources.py`, `tests/integration/test_normalizer.py`; ADR-012; docs (events, data-model, development, decisions). Ledger now records `fd47da0` for P04-T02.
+- Validation commands and results: `uv run ruff check .`, `uv run ruff format --check .`, `uv run mypy` (95 files), `uv run signalops export-schemas --check` pass; `uv run pytest` 353 passed, 196 skipped; with `.env` sourced, `SIGNALOPS_INTEGRATION=1 uv run pytest` 549 passed; `docker compose config --quiet` passes. Integration tests feed records through `ingest_batch` into the normalizer against real PostgreSQL: a 10-minute downstream-timeout dataset (all three kinds) is queryable by service + time window and by trace ID with deployment rows; missing/unknown/contradictory identity rows have NULL service and the matching flag; a redelivery and a second consumer group store one signal, one deployment, one event; an invalid record leaves no receipt or row; through a real Kafka topic, three records plus a duplicate commit offset 4 and identical messages with distinct IDs stay separate. Live stack as in the ledger. Negative checks: resolving despite a contradiction failed 2 integration tests; dropping the business-key `ON CONFLICT` failed the cross-group test; both restored and re-run green. Frontend unchanged, not re-run.
+- Evidence or artifact references: `tests/unit/test_sources.py`, `tests/integration/test_normalizer.py`.
+- Deviations and reasons: malformed records still go to `processing.failed.v1` until P04-T04 (see task notes).
+- Remaining issues: none for this task beyond those assigned to P04-T04/T05. The Compose `normalizer` and `outbox-publisher` were left running against the dev stack.
+- Next task: P04-T04
 
 ## Work log template
 

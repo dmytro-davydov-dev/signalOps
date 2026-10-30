@@ -69,3 +69,14 @@ class CatalogRepository:
 
     async def get_source(self, source_id: uuid.UUID) -> Source | None:
         return await self._session.get(Source, source_id)
+
+    async def find_service_id(
+        self, *, workspace_id: uuid.UUID, name: str, environment: str
+    ) -> uuid.UUID | None:
+        return await self._session.scalar(
+            select(Service.id).where(
+                Service.workspace_id == workspace_id,
+                Service.name == name,
+                Service.environment == environment,
+            )
+        )
