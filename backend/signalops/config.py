@@ -55,6 +55,11 @@ class Settings(BaseSettings):
     # skewed or late are flagged by the normalizer, not rejected here.
     ingest_max_future_seconds: int = Field(default=24 * 60 * 60, ge=0, le=7 * 24 * 60 * 60)
     ingest_max_age_seconds: int = Field(default=30 * 24 * 60 * 60, ge=60, le=365 * 24 * 60 * 60)
+    # Normalizer timing flags (live scope only): occurred_at more than this
+    # ahead of ingestion is clock skew (degraded); more than this behind is a
+    # late arrival (noted, still accepted).
+    normalizer_max_clock_skew_seconds: int = Field(default=300, ge=0, le=24 * 60 * 60)
+    normalizer_late_arrival_seconds: int = Field(default=15 * 60, ge=1, le=30 * 24 * 60 * 60)
     # Payload keys whose values are replaced before publishing, at any depth.
     # Matched case-insensitively with "-" and " " read as "_". A source's
     # config may add more under "redact_fields".

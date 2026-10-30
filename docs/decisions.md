@@ -96,7 +96,18 @@ Format: **Decision**, **Reason**, **Trade-off**, **Revisit when**.
 - The reported identity is always kept in `attributes.provenance`, and source attributes stay apart from normalizer fields (`source`, `record`, `provenance` sections).
 **Reason:** The plan forbids assigning an arbitrary service. A self-contradicting record should not feed per-service detection, but it stays queryable evidence. Separate sections stop a source key from overwriting a derived field.
 **Trade-off:** No fuzzy or case-insensitive matching and no default environment per source, so a source with inconsistent spelling produces degraded evidence until the catalog or the source is fixed. Unknown services are not auto-registered.
-**Revisit when:** A source cannot send an environment per record (add an explicit per-source binding in `sources.config`), or P04-T04 refines status per detector rule.
+**Revisit when:** A source cannot send an environment per record (add an explicit per-source binding in `sources.config`), or a detector rule needs a status the flag effects of ADR-013 do not give.
+
+## ADR-013: Quality flags map to status by fixed effect; derived IDs at ingestion
+
+**Decision:**
+- Each quality flag has one effect: quarantine (`malformed_payload`, `contradictory_identity`), degrade (`missing_service`, `unknown_service`, `clock_skew`), or note (`late_arrival`, `derived_event_id`, `truncated_message`). The most severe effect sets the status, so status follows from the flags.
+- Malformed records become quarantined evidence with their contract errors and raw record (when it fits), not `processing.failed.v1` entries. Only envelope faults still fail.
+- Timing is judged on the envelope's `occurred_at` versus `ingested_at`, for the live scope only. Skew beyond 5 minutes degrades; arrival over 15 minutes after the event is noted.
+- A record without `source_event_id` gets one derived at ingestion, before the raw event ID, from per-kind identity fields of the redacted payload (see api.md). The signal is flagged `derived_event_id`.
+**Reason:** A per-detector status would couple the normalizer to rules that do not exist yet; flags keep the detail, and the status is a coarse filter. Malformed input is a data-quality outcome the plan wants counted per source, and a failure topic is not queryable evidence. Late evidence is sound evidence; lateness matters to detection windows, which the detector judges itself. Deriving the ID at ingestion keeps the raw event ID, receipts, and business key aligned for retries. Hashing redacted values keeps secrets out of IDs.
+**Trade-off:** Two log lines identical in every field and timestamp collapse into one; traces re-sent with changed measurements collapse too. The late threshold is wider than the demo poster's 10-minute backfill, so backfills are not flagged. Changing the redaction list changes derived log IDs, so a retry spanning that change can duplicate. Severity of a malformed record is not inferred.
+**Revisit when:** A detector rule needs a stricter status than the flag effects give, a source sends logs without IDs at a rate where same-millisecond duplicates matter, or replay ingestion (P10) needs timing checks against its simulated clock.
 
 ---
 

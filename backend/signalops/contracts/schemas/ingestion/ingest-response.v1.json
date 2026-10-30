@@ -96,7 +96,8 @@
         "invalid_record",
         "oversized",
         "timestamp_out_of_range",
-        "duplicate_in_batch"
+        "duplicate_in_batch",
+        "missing_source_event_id"
       ],
       "title": "IngestRejectReason",
       "type": "string"

@@ -65,6 +65,8 @@ class EventPayload(ContractModel):
 class RawSignalPayload(EventPayload):
     source_kind: SourceKind
     source_event_id: SourceEventId
+    # True when ingestion derived source_event_id because the source sent none.
+    source_event_id_derived: bool = False
     # Optional routing hint from the source; the normalizer resolves identity.
     service_hint: Name | None = None
     # Adapter-specific record, validated by the normalizer (see contracts.adapters).

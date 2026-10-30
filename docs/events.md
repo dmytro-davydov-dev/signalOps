@@ -89,6 +89,8 @@ Raw adapter records are validated by the normalizer against `contracts/adapters.
 
 `signals.attributes` has three sections: `source` (the record's attributes and unknown fields, after ingestion redaction), `record` (above), and `provenance` (`raw_event_id`, `source_kind`, `adapter_version`, `reported_service`, `reported_environment`, `correlation_id`, and `identity_conflicts` when present).
 
+`signal.raw` payloads carry `source_event_id_derived` (default `false`; additive in v1), set when ingestion derived the ID.
+
 **Identity** ([ADR-012](decisions.md#adr-012-normalizer-resolves-identity-exactly-and-flags-everything-else)): the service and environment come from the record's fields, or, when a field is absent, from a well-known attribute (`service.name`, `service_name`, `service`; `deployment.environment`, `deployment.environment.name`, `environment`, `env`). The pair is looked up exactly in `services`:
 
 | Outcome | `service_id` | Status | Flag |
@@ -98,7 +100,23 @@ Raw adapter records are validated by the normalizer against `contracts/adapters.
 | Pair not in the catalog | NULL | `degraded` | `unknown_service` |
 | Claims disagree (field vs attribute, or two attributes) | NULL | `quarantined` | `contradictory_identity` |
 
-IDs are derived, so reprocessing yields the same rows: signal ID = UUIDv5(source, replay scope, `source_event_id`); deployment and `signal.normalized` event IDs derive from the signal ID. `UNIQUE(source_id, replay_scope, source_event_id)` backs the receipt: a record already stored (for example by another consumer group) stages no second deployment or event. A record that fails its adapter contract, names a source outside the envelope's workspace, or disagrees with the source's kind raises `ContractError` and is quarantined to `processing.failed.v1` (P04-T04 turns malformed payloads into quarantined evidence).
+**Quality policy** (`adapters/quality.py`, [ADR-013](decisions.md#adr-013-quality-flags-map-to-status-by-fixed-effect-derived-ids-at-ingestion)). Every flag has a fixed effect; the most severe one sets `quality_status`:
+
+| Flag | Raised when | Effect |
+| --- | --- | --- |
+| `malformed_payload` | The record fails its adapter contract, or the normalized signal fails validation (for example attributes over 16 KiB) | `quarantined` |
+| `contradictory_identity` | Identity claims disagree (above) | `quarantined` |
+| `missing_service`, `unknown_service` | Identity absent or not in the catalog (above) | `degraded` |
+| `clock_skew` | Live scope: `occurred_at` more than `SIGNALOPS_NORMALIZER_MAX_CLOCK_SKEW_SECONDS` (300) after `ingested_at` | `degraded` |
+| `late_arrival` | Live scope: `ingested_at` more than `SIGNALOPS_NORMALIZER_LATE_ARRIVAL_SECONDS` (900) after `occurred_at` | none (`accepted`) |
+| `derived_event_id` | `source_event_id_derived` is true | none (`accepted`) |
+| `truncated_message` | Reserved; nothing truncates yet | none |
+
+Timing compares the envelope's own timestamps, so reprocessing gives the same flags; `occurred_at` is stored as reported, never corrected. Replay scopes skip timing flags. The detector's 30-second lateness rule is separate and uses its window clock (P05).
+
+A **malformed** record is stored, not dropped: kind from the source, severity `info`, no `service_id` or `trace_id`, message `malformed {source_kind} record: {errors}`, `attributes.record.contract_errors` with field locations and messages, and the raw (redacted) record under `attributes.source`. If keeping the record would exceed 16 KiB, `source` is empty and `provenance.record_omitted_bytes` holds its size; the full record stays on `signals.raw.v1` for its retention. It gets a receipt and a `signal.normalized` event like any other signal, and never a `deployments` row.
+
+IDs are derived, so reprocessing yields the same rows: signal ID = UUIDv5(source, replay scope, `source_event_id`); deployment and `signal.normalized` event IDs derive from the signal ID. `UNIQUE(source_id, replay_scope, source_event_id)` backs the receipt: a record already stored (for example by another consumer group) stages no second deployment or event. Only envelope faults raise `ContractError` and go to `processing.failed.v1`: a source outside the envelope's workspace, or a `source_kind` that disagrees with the source's kind.
 
 ## Decoding
 

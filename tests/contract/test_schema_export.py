@@ -113,6 +113,11 @@ LEVEL = {"$defs": {"Level": {"title": "Level", "enum": ["info", "error"]}}}
         ),
         (obj({"a": STRING}), obj({"a": {"anyOf": [STRING, {"type": "null"}]}}), []),
         (
+            obj({"a": STRING | {"title": "A"}}),
+            obj({"a": {"anyOf": [STRING, {"type": "null"}], "title": "A"}}),
+            [],
+        ),
+        (
             obj({"items": {"type": "array", "items": obj({"x": STRING})}}),
             obj({"items": {"type": "array", "items": obj({})}}),
             ["$.items[].x: property removed"],
@@ -133,6 +138,7 @@ LEVEL = {"$defs": {"Level": {"title": "Level", "enum": ["info", "error"]}}}
         "enum-widened",
         "nullable-removed",
         "nullable-added",
+        "titled-nullable-added",
         "nested-array",
         "ref-enum",
     ],

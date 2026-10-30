@@ -27,11 +27,11 @@ PostgreSQL owns evidence, workflow progress, budgets, and the initial knowledge 
 | --- | --- |
 | Active phase | Phase 4 Ingestion and data quality; Phase 3 gate passed |
 | Active task | None |
-| Last completed task | P04-T03 |
-| Latest verified commit | `fd47da0` (P04-T02); P04-T03 pending commit, validated against the working tree |
-| Validation evidence | P04-T03: with the rebuilt image, the Compose `normalizer` consumed all 1030 records retained on `signals.raw.v1` (lag 0 on all three partitions): 1030 signals (231 log + 796 trace + 1 deployment accepted; 2 P04-T02 outage-check logs without an environment degraded with `missing_service`), 1 deployment row, 1030 receipts; `outbox-publisher` then published 1030 `signal.normalized` events (offsets 416+612+2). A restart reprocessed nothing. `SIGNALOPS_INTEGRATION=1 uv run pytest` 549 passed. Earlier evidence is in the work log |
+| Last completed task | P04-T04 |
+| Latest verified commit | `5252a13` (P04-T03); P04-T04 pending commit, validated against the working tree |
+| Validation evidence | P04-T04: with the rebuilt image and a temporary shell-only token for the demo log source, one batch posted twice to `POST /v1/ingest/{source_id}` (both 200) stored 6 signals, not 12: on-time `accepted` with no flags; invalid `level` `quarantined`/`malformed_payload` with no service; +10 min `degraded`/`clock_skew`; −2 h `accepted`/`late_arrival`; two ID-less lines with the same text `accepted`/`derived_event_id` as separate signals. 6 receipts, 6 published `signal.normalized` events; API restarted without the token afterwards. `SIGNALOPS_INTEGRATION=1 uv run pytest` 583 passed. Earlier evidence is in the work log |
 | Blockers | None recorded |
-| Next task | P04-T04 |
+| Next task | P04-T05 |
 
 ### Scope and release boundaries
 
@@ -404,11 +404,20 @@ Start the React shell in Phase 1 and add API-backed incident views in Phase 5; P
 
 ### P04-T04 Implement normalization quality policies
 
-- [ ] Complete this task.
+- [x] Complete this task.
 
 **Implementation:** Classify accepted, degraded, and quarantined records. Detect malformed payloads, missing IDs, clock skew, late arrival, and unknown services. Define adapter-specific stable identity fallback when needed.
 
 **Acceptance:** Identical message text with distinct source event IDs remains separate evidence; duplicates with stable IDs collapse correctly.
+
+**Notes (2026-10-30):**
+- `adapters/quality.py` (pure): `FLAG_EFFECTS` and `assess(flags)` give the status from the flags; `TimingPolicy` raises `clock_skew`/`late_arrival` for the live scope from the envelope's `occurred_at` and `ingested_at` (settings `SIGNALOPS_NORMALIZER_MAX_CLOCK_SKEW_SECONDS` 300, `SIGNALOPS_NORMALIZER_LATE_ARRIVAL_SECONDS` 900); `derive_source_event_id` is the per-kind fallback identity. `Normalizer(timing)` now combines identity, timing, and derived-ID flags and stores malformed records as quarantined evidence. Rules are in docs/events.md#normalizer-normalizer-v1 and docs/api.md#ingestion.
+- **Decision (ADR-013):** fixed effect per flag (quarantine `malformed_payload`/`contradictory_identity`; degrade `missing_service`/`unknown_service`/`clock_skew`; note `late_arrival`/`derived_event_id`/`truncated_message`), most severe wins. Late evidence stays `accepted`; detection-window lateness is the detector's rule (P05).
+- **Decision:** missing IDs are handled at ingestion, so the raw event ID, receipts, and business key all use the derived ID. `IngestRecord.source_event_id` is optional (additive), `RawSignalPayload.source_event_id_derived` is new (default `false`), reject reason `missing_source_event_id` and flag `derived_event_id` are new enum values. Trace: `trace_id`+`service`+`operation`; deployment: `service`+`environment`+`revision`+`occurred_at`; log: `occurred_at` + whole redacted payload, never the message alone. Exported schemas regenerated; the `signal_raw` contract fixture gains the new field.
+- **Found while exporting:** `contracts/compatibility.py` matched a primitive by its field title, so widening `source_event_id` to nullable read as "alternative removed". Plain primitives now match by type; enums and objects still match by title. New case `titled-nullable-added`.
+- Malformed: kind from the source, severity `info`, no service or trace ID, contract errors in `attributes.record.contract_errors`, raw record under `attributes.source` unless the attributes would exceed 16 KiB (then `provenance.record_omitted_bytes`). This also covers the P04-T03 case of oversized attributes, which no longer goes to `processing.failed.v1`. Only envelope faults (workspace or source-kind mismatch) still fail.
+- **Deviation:** P04-T01 deferred "malformed/skewed/late fixtures" here. The demo generator still emits clean records; the quality cases are built inline in `tests/integration/test_normalizer.py` and `tests/unit/test_quality.py`. A data-quality noise option for the generator is left to the fixture generator (P10-T01).
+- Left: replay timing against a simulated clock (P10); `truncated_message` is reserved and unused; quality counts per source are P04-T05.
 
 ### P04-T05 Expose evidence queries and quality summaries
 
@@ -1033,13 +1042,23 @@ Keep these outside the release critical path unless measurements justify promoti
 
 ### 2026-10-30 — P04-T03
 - Status: completed
-- Commit: pending (validated against the working tree)
+- Commit: `5252a13`
 - Implemented: `adapters/sources.py`, `adapters/normalizer.py`, `persistence/repositories/evidence.py`, `CatalogRepository.find_service_id`; `signalops normalizer`; Compose `normalizer` service; `tests/unit/test_sources.py`, `tests/integration/test_normalizer.py`; ADR-012; docs (events, data-model, development, decisions). Ledger now records `fd47da0` for P04-T02.
 - Validation commands and results: `uv run ruff check .`, `uv run ruff format --check .`, `uv run mypy` (95 files), `uv run signalops export-schemas --check` pass; `uv run pytest` 353 passed, 196 skipped; with `.env` sourced, `SIGNALOPS_INTEGRATION=1 uv run pytest` 549 passed; `docker compose config --quiet` passes. Integration tests feed records through `ingest_batch` into the normalizer against real PostgreSQL: a 10-minute downstream-timeout dataset (all three kinds) is queryable by service + time window and by trace ID with deployment rows; missing/unknown/contradictory identity rows have NULL service and the matching flag; a redelivery and a second consumer group store one signal, one deployment, one event; an invalid record leaves no receipt or row; through a real Kafka topic, three records plus a duplicate commit offset 4 and identical messages with distinct IDs stay separate. Live stack as in the ledger. Negative checks: resolving despite a contradiction failed 2 integration tests; dropping the business-key `ON CONFLICT` failed the cross-group test; both restored and re-run green. Frontend unchanged, not re-run.
 - Evidence or artifact references: `tests/unit/test_sources.py`, `tests/integration/test_normalizer.py`.
 - Deviations and reasons: malformed records still go to `processing.failed.v1` until P04-T04 (see task notes).
 - Remaining issues: none for this task beyond those assigned to P04-T04/T05. The Compose `normalizer` and `outbox-publisher` were left running against the dev stack.
 - Next task: P04-T04
+
+### 2026-10-30 — P04-T04
+- Status: completed
+- Commit: pending (validated against the working tree)
+- Implemented: `adapters/quality.py`; `Normalizer(timing)` with malformed-as-evidence and combined flags (`identity_flags` replaces `classify_identity`); ingestion fallback IDs and `missing_source_event_id`; `QualityFlag.DERIVED_EVENT_ID`; `RawSignalPayload.source_event_id_derived`; optional `IngestRecord.source_event_id`; normalizer timing settings; CLI wiring; compatibility-checker fix; regenerated schemas and OpenAPI; `signal_raw` fixture; tests `tests/unit/test_quality.py`, new cases in `tests/unit/test_ingestion.py`, `tests/contract/test_schema_export.py`, `tests/integration/test_normalizer.py`; ADR-013; docs (api, events, decisions, development, data-model). Ledger now records `5252a13` for P04-T03.
+- Validation commands and results: `uv run ruff check .`, `uv run ruff format --check .`, `uv run mypy` (97 files), `uv run signalops export-schemas --check` pass; `uv run pytest` 381 passed, 202 skipped; with `.env` sourced, `SIGNALOPS_INTEGRATION=1 uv run pytest` 583 passed; `docker compose config --quiet` passes. Acceptance in integration tests against real PostgreSQL: two ID-less log lines with identical text 1 ms apart and an ID-less trace become three signals; the whole batch retried later reproduces the same event IDs and is three duplicates; the earlier P04-T03 Kafka test still shows identical text with distinct IDs as separate rows and a redelivery collapsing. Malformed records get a receipt, one quarantined signal, one event, no deployment, and collapse on redelivery; an envelope fault still raises with no receipt or row; skewed/late/on-time records resolve identity and get `clock_skew`/`late_arrival`/no flags. Live stack as in the ledger. Negative checks: re-raising on malformed records failed 2 tests; hashing only the log message failed 2; disabling timing flags failed 4; all restored and re-run green (78 passed). Frontend unchanged (it does not consume the OpenAPI file), not re-run.
+- Evidence or artifact references: `tests/unit/test_quality.py`, `tests/unit/test_ingestion.py`, `tests/integration/test_normalizer.py`.
+- Deviations and reasons: generator quality fixtures left to P10-T01 (see task notes).
+- Remaining issues: replay timing; unused `truncated_message`. The live check left 6 `live-p04t04-*`/derived records in the dev database; the Compose `normalizer` and `outbox-publisher` run the rebuilt image.
+- Next task: P04-T05
 
 ## Work log template
 

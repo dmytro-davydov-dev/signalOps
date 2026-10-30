@@ -23,7 +23,8 @@ from signalops.contracts.events import MAX_RAW_RECORD_BYTES
 
 
 class IngestRecord(ContractModel):
-    source_event_id: SourceEventId
+    # Omitted: ingestion derives a stable ID from the record (adapters.quality).
+    source_event_id: SourceEventId | None = None
     occurred_at: UtcDatetime
     # Adapter-specific record for the source's kind (see contracts.adapters).
     payload: Annotated[dict[str, JsonValue], bounded_json_object(MAX_RAW_RECORD_BYTES)]
@@ -49,6 +50,8 @@ class IngestRejectReason(StrEnum):
     OVERSIZED = "oversized"
     TIMESTAMP_OUT_OF_RANGE = "timestamp_out_of_range"
     DUPLICATE_IN_BATCH = "duplicate_in_batch"
+    # No source_event_id, and the record lacks the fields to derive one.
+    MISSING_SOURCE_EVENT_ID = "missing_source_event_id"
 
 
 class IngestFailureReason(StrEnum):
@@ -62,7 +65,7 @@ class IngestFailureReason(StrEnum):
 class IngestRecordResult(ContractModel):
     # Position of the record in the request.
     index: int = Field(ge=0)
-    # None when the record was too malformed to read one.
+    # None when the record was too malformed to read one. Derived when omitted.
     source_event_id: SourceEventId | None = None
     status: IngestRecordStatus
     # Envelope event ID on signals.raw.v1; the same for every retry of a record.

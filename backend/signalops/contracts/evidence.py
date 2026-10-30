@@ -57,6 +57,8 @@ class QualityFlag(StrEnum):
     CLOCK_SKEW = "clock_skew"
     LATE_ARRIVAL = "late_arrival"
     TRUNCATED_MESSAGE = "truncated_message"
+    # The source sent no source_event_id; ingestion derived one (adapters.quality).
+    DERIVED_EVENT_ID = "derived_event_id"
 
 
 class NormalizedSignal(ContractModel):

@@ -7,7 +7,9 @@ record is at fault) or failed (retry it unchanged).
 
 The envelope event ID is derived from the source, replay scope, and
 `source_event_id`, so a client retry, including one after an ambiguous
-timeout, produces the same event ID and consumers deduplicate it.
+timeout, produces the same event ID and consumers deduplicate it. A record
+sent without `source_event_id` gets a stable one derived from its content
+(`adapters.quality.derive_source_event_id`) and is flagged downstream.
 """
 
 import asyncio
@@ -23,6 +25,7 @@ from typing import Any, Protocol
 
 from pydantic import JsonValue, SecretStr, TypeAdapter, ValidationError
 
+from signalops.adapters.quality import MissingIdentityError, derive_source_event_id
 from signalops.config import Settings
 from signalops.contracts.common import (
     LIVE_REPLAY_SCOPE,
@@ -246,13 +249,13 @@ def _rejected(
 
 
 def _delivery_outcome(
-    index: int, record: IngestRecord, result: DeliveryResult
+    index: int, source_event_id: str, result: DeliveryResult
 ) -> IngestRecordResult:
     event_id = result.message.event_id
     if result.error is None:
         return IngestRecordResult(
             index=index,
-            source_event_id=record.source_event_id,
+            source_event_id=source_event_id,
             status=IngestRecordStatus.ACCEPTED,
             event_id=event_id,
         )
@@ -262,7 +265,7 @@ def _delivery_outcome(
         reason = IngestFailureReason.BROKER_UNAVAILABLE
     return IngestRecordResult(
         index=index,
-        source_event_id=record.source_event_id,
+        source_event_id=source_event_id,
         status=IngestRecordStatus.FAILED,
         event_id=event_id,
         reason=reason,
@@ -281,7 +284,7 @@ async def ingest_batch(
 ) -> IngestResponse:
     redactor = Redactor((*policy.redact_fields, *source.redact_fields))
     results: dict[int, IngestRecordResult] = {}
-    pending: list[tuple[int, IngestRecord, OutgoingMessage]] = []
+    pending: list[tuple[int, str, OutgoingMessage]] = []
     seen: set[str] = set()
     redacted_values = 0
 
@@ -314,22 +317,34 @@ async def ingest_batch(
                 "occurred_at is outside the accepted range around receipt time",
             )
             continue
-        if record.source_event_id in seen:
+
+        redacted, count = redactor.redact(record.payload)
+        assert isinstance(redacted, dict)  # noqa: S101 - redaction preserves the top-level type.
+        derived = record.source_event_id is None
+        if record.source_event_id is not None:
+            source_event_id = record.source_event_id
+        else:
+            try:
+                # From the redacted payload, so no secret value feeds the ID.
+                source_event_id = derive_source_event_id(source.kind, record.occurred_at, redacted)
+            except MissingIdentityError as error:
+                results[index] = _rejected(
+                    index, None, IngestRejectReason.MISSING_SOURCE_EVENT_ID, str(error)
+                )
+                continue
+        if source_event_id in seen:
             results[index] = _rejected(
                 index,
-                record.source_event_id,
+                source_event_id,
                 IngestRejectReason.DUPLICATE_IN_BATCH,
                 "source_event_id already appears earlier in this batch",
             )
             continue
-        seen.add(record.source_event_id)
-
-        redacted, count = redactor.redact(record.payload)
-        assert isinstance(redacted, dict)  # noqa: S101 - redaction preserves the top-level type.
+        seen.add(source_event_id)
         redacted_values += count
         try:
             envelope = EventEnvelope[RawSignalPayload](
-                event_id=raw_event_id(source.id, LIVE_REPLAY_SCOPE, record.source_event_id),
+                event_id=raw_event_id(source.id, LIVE_REPLAY_SCOPE, source_event_id),
                 event_type=EventType.SIGNAL_RAW,
                 schema_version=1,
                 workspace_id=source.workspace_id,
@@ -339,7 +354,8 @@ async def ingest_batch(
                 correlation_id=str(batch_id),
                 payload=RawSignalPayload(
                     source_kind=source.kind,
-                    source_event_id=record.source_event_id,
+                    source_event_id=source_event_id,
+                    source_event_id_derived=derived,
                     service_hint=_service_hint(redacted),
                     record=redacted,
                 ),
@@ -348,17 +364,17 @@ async def ingest_batch(
         except ValidationError as error:
             results[index] = _rejected(
                 index,
-                record.source_event_id,
+                source_event_id,
                 IngestRejectReason.INVALID_RECORD,
                 describe_validation_error(error),
             )
             continue
         except ContractError as error:
             results[index] = _rejected(
-                index, record.source_event_id, IngestRejectReason.OVERSIZED, error.detail
+                index, source_event_id, IngestRejectReason.OVERSIZED, error.detail
             )
             continue
-        pending.append((index, record, message))
+        pending.append((index, source_event_id, message))
 
     if pending:
         messages = [message for _, _, message in pending]
@@ -367,8 +383,8 @@ async def ingest_batch(
         except ProducerUnusableError as error:
             unusable = DeliveryError(DeliveryErrorCategory.FATAL, str(error))
             deliveries = [DeliveryResult(message, error=unusable) for message in messages]
-        for (index, record, _), delivery in zip(pending, deliveries, strict=True):
-            results[index] = _delivery_outcome(index, record, delivery)
+        for (index, source_event_id, _), delivery in zip(pending, deliveries, strict=True):
+            results[index] = _delivery_outcome(index, source_event_id, delivery)
 
     ordered = [results[index] for index in range(len(items))]
     counts = {status: 0 for status in IngestRecordStatus}

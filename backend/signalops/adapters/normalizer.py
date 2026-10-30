@@ -8,28 +8,43 @@ the outbox, all in that one transaction.
 
 Identity is resolved, never guessed:
 
-- no service or environment claim: `missing_service`, degraded, no service;
-- a claim with no catalog entry: `unknown_service`, degraded, no service;
+- no service or environment claim: `missing_service`, no service;
+- a claim with no catalog entry: `unknown_service`, no service;
 - claims that disagree (`ReportedIdentity.conflicts`): `contradictory_identity`,
-  quarantined, no service.
+  no service.
 
 A deployment whose service is unresolved is stored as a signal only.
 
-Records that fail their adapter contract raise `ContractError` and go to
-processing.failed.v1; P04-T04 turns them into quarantined evidence instead.
+A record that fails its adapter contract is stored as quarantined evidence
+flagged `malformed_payload`, keeping the raw record when it fits, so the
+outcome stays auditable. Timing and derived-ID flags come from
+`adapters.quality`, which also maps flags to the signal's status. Only
+envelope faults (wrong event type, source, or source kind) raise
+`ContractError` and go to processing.failed.v1.
 """
 
 import uuid
 from typing import Final
 
-from pydantic import JsonValue, ValidationError
+from pydantic import JsonValue, TypeAdapter, ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from signalops.adapters.sources import ADAPTER_VERSION, AdaptedRecord, ReportedIdentity, adapt
+from signalops.adapters.quality import TimingPolicy, assess
+from signalops.adapters.sources import (
+    ADAPTER_VERSION,
+    SIGNAL_KIND_BY_SOURCE,
+    AdaptedRecord,
+    ReportedIdentity,
+    adapt,
+)
 from signalops.contracts.common import (
+    MAX_ATTRIBUTES_BYTES,
+    MAX_ERROR_DETAIL_LENGTH,
     ContractError,
     ContractErrorCategory,
+    Name,
     describe_validation_error,
+    json_size,
 )
 from signalops.contracts.events import (
     EventEnvelope,
@@ -38,7 +53,13 @@ from signalops.contracts.events import (
     NormalizedSignalPayload,
     RawSignalPayload,
 )
-from signalops.contracts.evidence import NormalizedSignal, QualityFlag, QualityStatus, SourceKind
+from signalops.contracts.evidence import (
+    NormalizedSignal,
+    QualityFlag,
+    QualityStatus,
+    Severity,
+    SourceKind,
+)
 from signalops.persistence.repositories.catalog import CatalogRepository
 from signalops.persistence.repositories.evidence import EvidenceRepository
 from signalops.persistence.repositories.reliability import OutboxRepository
@@ -51,25 +72,30 @@ NORMALIZED_EVENT_NAMESPACE: Final = uuid.UUID("9a4c6e1f-8b2d-4a7e-b3c5-d1f0e2a4b
 
 NORMALIZER_CONSUMER_GROUP: Final = "normalizer-v1"
 
+_NAME = TypeAdapter[str](Name)
+
 
 def signal_id_for(source_id: uuid.UUID, replay_scope: str, source_event_id: str) -> uuid.UUID:
     return uuid.uuid5(SIGNAL_NAMESPACE, f"{source_id}:{replay_scope}:{source_event_id}")
 
 
-def classify_identity(
+def identity_flags(
     identity: ReportedIdentity, service_id: uuid.UUID | None
-) -> tuple[QualityStatus, tuple[QualityFlag, ...]]:
+) -> tuple[QualityFlag, ...]:
     if identity.contradictory:
-        return QualityStatus.QUARANTINED, (QualityFlag.CONTRADICTORY_IDENTITY,)
+        return (QualityFlag.CONTRADICTORY_IDENTITY,)
     if identity.service is None or identity.environment is None:
-        return QualityStatus.DEGRADED, (QualityFlag.MISSING_SERVICE,)
+        return (QualityFlag.MISSING_SERVICE,)
     if service_id is None:
-        return QualityStatus.DEGRADED, (QualityFlag.UNKNOWN_SERVICE,)
-    return QualityStatus.ACCEPTED, ()
+        return (QualityFlag.UNKNOWN_SERVICE,)
+    return ()
 
 
 class Normalizer:
     """`EventHandler` for signals.raw.v1."""
+
+    def __init__(self, timing: TimingPolicy) -> None:
+        self._timing = timing
 
     async def __call__(self, session: AsyncSession, envelope: EventEnvelope[EventPayload]) -> None:
         payload = envelope.payload
@@ -85,20 +111,29 @@ class Normalizer:
         assert envelope.source_id is not None  # noqa: S101
         catalog = CatalogRepository(session)
         await self._check_source(catalog, envelope, payload)
+        noted = self._timing.flags(
+            occurred_at=envelope.occurred_at,
+            ingested_at=envelope.ingested_at,
+            replay_scope=envelope.replay_scope,
+        )
+        if payload.source_event_id_derived:
+            noted += (QualityFlag.DERIVED_EVENT_ID,)
+
+        adapted: AdaptedRecord | None
         try:
             adapted = adapt(payload.source_kind, payload.record)
+            service_id = await self._resolve(catalog, envelope, adapted.identity)
+            flags = (*identity_flags(adapted.identity, service_id), *noted)
+            signal = self._signal(envelope, payload, adapted, service_id, flags)
         except ContractError as error:
-            raise ContractError(error.category, error.detail, event_id=envelope.event_id) from None
-
-        service_id = await self._resolve(catalog, envelope, adapted.identity)
-        status, flags = classify_identity(adapted.identity, service_id)
-        signal = self._signal(envelope, payload, adapted, service_id, status, flags)
+            adapted = None
+            signal = self._malformed(envelope, payload, error.detail, noted)
 
         evidence = EvidenceRepository(session)
         if not await evidence.insert_signal(signal):
             # Stored by an earlier delivery; its deployment and event were staged then.
             return
-        if adapted.deployment is not None and signal.service_id is not None:
+        if adapted is not None and adapted.deployment is not None and signal.service_id:
             await evidence.insert_deployment(
                 deployment_id=uuid.uuid5(DEPLOYMENT_NAMESPACE, str(signal.id)),
                 signal=signal,
@@ -156,35 +191,18 @@ class Normalizer:
         payload: RawSignalPayload,
         adapted: AdaptedRecord,
         service_id: uuid.UUID | None,
-        status: QualityStatus,
         flags: tuple[QualityFlag, ...],
     ) -> NormalizedSignal:
-        assert envelope.source_id is not None  # noqa: S101
         identity = adapted.identity
-        provenance: dict[str, JsonValue] = {
-            "raw_event_id": str(envelope.event_id),
-            "source_kind": payload.source_kind.value,
-            "adapter_version": ADAPTER_VERSION,
-            "reported_service": identity.service,
-            "reported_environment": identity.environment,
-        }
+        provenance = _provenance(envelope, payload, identity.service, identity.environment)
         if identity.conflicts:
             provenance["identity_conflicts"] = list(identity.conflicts)
-        if envelope.correlation_id is not None:
-            provenance["correlation_id"] = envelope.correlation_id
+        status, flags = assess(flags)
         try:
-            return NormalizedSignal(
-                id=signal_id_for(
-                    envelope.source_id, envelope.replay_scope, payload.source_event_id
-                ),
-                workspace_id=envelope.workspace_id,
-                source_id=envelope.source_id,
+            return self._build(
+                envelope,
+                payload,
                 service_id=service_id,
-                source_event_id=payload.source_event_id,
-                replay_scope=envelope.replay_scope,
-                kind=adapted.kind,
-                occurred_at=envelope.occurred_at,
-                ingested_at=envelope.ingested_at,
                 severity=adapted.severity,
                 message=adapted.message,
                 trace_id=adapted.trace_id,
@@ -193,8 +211,8 @@ class Normalizer:
                     "record": adapted.record_fields,
                     "provenance": provenance,
                 },
-                quality_status=status,
-                quality_flags=flags,
+                status=status,
+                flags=flags,
             )
         except ValidationError as error:
             # For example, source attributes plus provenance over the size limit.
@@ -203,6 +221,81 @@ class Normalizer:
                 f"normalized signal: {describe_validation_error(error)}",
                 event_id=envelope.event_id,
             ) from None
+
+    def _malformed(
+        self,
+        envelope: EventEnvelope[EventPayload],
+        payload: RawSignalPayload,
+        detail: str,
+        noted: tuple[QualityFlag, ...],
+    ) -> NormalizedSignal:
+        """Quarantined evidence for a record its adapter cannot read.
+
+        Nothing in the record is trusted: no service, no trace ID, severity
+        `info`. The raw record stays under `source` unless it would push the
+        attributes over their size limit; then only its size is kept.
+        """
+        detail = detail[:MAX_ERROR_DETAIL_LENGTH]
+        environment = payload.record.get("environment")
+        provenance = _provenance(
+            envelope,
+            payload,
+            payload.service_hint,
+            environment if isinstance(environment, str) and _is_name(environment) else None,
+        )
+        record: dict[str, JsonValue] = {"contract_errors": detail}
+        attributes: dict[str, JsonValue] = {
+            "source": payload.record,
+            "record": record,
+            "provenance": provenance,
+        }
+        if json_size(attributes) > MAX_ATTRIBUTES_BYTES:
+            provenance["record_omitted_bytes"] = json_size(payload.record)
+            attributes["source"] = {}
+        status, flags = assess((QualityFlag.MALFORMED_PAYLOAD, *noted))
+        return self._build(
+            envelope,
+            payload,
+            service_id=None,
+            severity=Severity.INFO,
+            message=f"malformed {payload.source_kind} record: {detail}",
+            trace_id=None,
+            attributes=attributes,
+            status=status,
+            flags=flags,
+        )
+
+    def _build(
+        self,
+        envelope: EventEnvelope[EventPayload],
+        payload: RawSignalPayload,
+        *,
+        service_id: uuid.UUID | None,
+        severity: Severity,
+        message: str,
+        trace_id: str | None,
+        attributes: dict[str, JsonValue],
+        status: QualityStatus,
+        flags: tuple[QualityFlag, ...],
+    ) -> NormalizedSignal:
+        assert envelope.source_id is not None  # noqa: S101
+        return NormalizedSignal(
+            id=signal_id_for(envelope.source_id, envelope.replay_scope, payload.source_event_id),
+            workspace_id=envelope.workspace_id,
+            source_id=envelope.source_id,
+            service_id=service_id,
+            source_event_id=payload.source_event_id,
+            replay_scope=envelope.replay_scope,
+            kind=SIGNAL_KIND_BY_SOURCE[payload.source_kind],
+            occurred_at=envelope.occurred_at,
+            ingested_at=envelope.ingested_at,
+            severity=severity,
+            message=message,
+            trace_id=trace_id,
+            attributes=attributes,
+            quality_status=status,
+            quality_flags=flags,
+        )
 
     def _normalized_event(
         self, raw: EventEnvelope[EventPayload], signal: NormalizedSignal
@@ -226,6 +319,32 @@ class Normalizer:
                 quality_status=signal.quality_status,
             ),
         )
+
+
+def _provenance(
+    envelope: EventEnvelope[EventPayload],
+    payload: RawSignalPayload,
+    service: str | None,
+    environment: str | None,
+) -> dict[str, JsonValue]:
+    provenance: dict[str, JsonValue] = {
+        "raw_event_id": str(envelope.event_id),
+        "source_kind": payload.source_kind.value,
+        "adapter_version": ADAPTER_VERSION,
+        "reported_service": service,
+        "reported_environment": environment,
+    }
+    if envelope.correlation_id is not None:
+        provenance["correlation_id"] = envelope.correlation_id
+    return provenance
+
+
+def _is_name(value: str) -> bool:
+    try:
+        _NAME.validate_python(value)
+    except ValidationError:
+        return False
+    return True
 
 
 def _present(values: dict[str, str | None]) -> dict[str, JsonValue]:

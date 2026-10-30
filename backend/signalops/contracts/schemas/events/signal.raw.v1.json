@@ -43,6 +43,11 @@
           "title": "Source Event Id",
           "type": "string"
         },
+        "source_event_id_derived": {
+          "default": false,
+          "title": "Source Event Id Derived",
+          "type": "boolean"
+        },
         "source_kind": {
           "$ref": "#/$defs/SourceKind"
         }

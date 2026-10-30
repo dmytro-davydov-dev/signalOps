@@ -13,6 +13,7 @@
   "payload": {
     "source_kind": "structured_log",
     "source_event_id": "payment-7f3a-000042",
+    "source_event_id_derived": false,
     "service_hint": "payment",
     "record": {
       "service": "payment",

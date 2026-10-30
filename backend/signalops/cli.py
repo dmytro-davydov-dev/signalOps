@@ -205,6 +205,7 @@ def run_normalizer() -> int:
     import signal
 
     from signalops.adapters.normalizer import NORMALIZER_CONSUMER_GROUP, Normalizer
+    from signalops.adapters.quality import TimingPolicy
     from signalops.config import get_settings
     from signalops.contracts.events import EventType
     from signalops.logs import configure_logging
@@ -229,7 +230,9 @@ def run_normalizer() -> int:
                 settings, group_id=NORMALIZER_CONSUMER_GROUP, client_id="signalops-normalizer"
             ),
             TransactionalProcessor(
-                Database.from_engine(engine), NORMALIZER_CONSUMER_GROUP, Normalizer()
+                Database.from_engine(engine),
+                NORMALIZER_CONSUMER_GROUP,
+                Normalizer(TimingPolicy.from_settings(settings)),
             ),
             consumer_group=NORMALIZER_CONSUMER_GROUP,
             failure_publisher=failures,

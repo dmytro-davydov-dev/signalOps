@@ -16,14 +16,21 @@
           "type": "object"
         },
         "source_event_id": {
-          "maxLength": 512,
-          "minLength": 1,
-          "title": "Source Event Id",
-          "type": "string"
+          "anyOf": [
+            {
+              "maxLength": 512,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Source Event Id"
         }
       },
       "required": [
-        "source_event_id",
         "occurred_at",
         "payload"
       ],

@@ -5,13 +5,12 @@ from typing import Any
 
 import pytest
 
-from signalops.adapters.normalizer import classify_identity, signal_id_for
+from signalops.adapters.normalizer import identity_flags, signal_id_for
 from signalops.adapters.sources import ReportedIdentity, adapt, reported_identity
 from signalops.contracts.adapters import StructuredLogInput
 from signalops.contracts.common import ContractError, ContractErrorCategory
 from signalops.contracts.evidence import (
     QualityFlag,
-    QualityStatus,
     Severity,
     SignalKind,
     SourceKind,
@@ -173,42 +172,25 @@ SERVICE_ID = uuid.UUID("5f3e2d1c-0b9a-4876-9543-210fedcba987")
 
 
 @pytest.mark.parametrize(
-    ("identity", "service_id", "status", "flags"),
+    ("identity", "service_id", "flags"),
     [
-        (ReportedIdentity("payment", "demo"), SERVICE_ID, QualityStatus.ACCEPTED, ()),
-        (
-            ReportedIdentity("payment", None),
-            None,
-            QualityStatus.DEGRADED,
-            (QualityFlag.MISSING_SERVICE,),
-        ),
-        (
-            ReportedIdentity(None, "demo"),
-            None,
-            QualityStatus.DEGRADED,
-            (QualityFlag.MISSING_SERVICE,),
-        ),
-        (
-            ReportedIdentity("ghost", "demo"),
-            None,
-            QualityStatus.DEGRADED,
-            (QualityFlag.UNKNOWN_SERVICE,),
-        ),
+        (ReportedIdentity("payment", "demo"), SERVICE_ID, ()),
+        (ReportedIdentity("payment", None), None, (QualityFlag.MISSING_SERVICE,)),
+        (ReportedIdentity(None, "demo"), None, (QualityFlag.MISSING_SERVICE,)),
+        (ReportedIdentity("payment", "prod"), None, (QualityFlag.UNKNOWN_SERVICE,)),
         (
             ReportedIdentity("payment", "demo", ("service.name",)),
             None,
-            QualityStatus.QUARANTINED,
             (QualityFlag.CONTRADICTORY_IDENTITY,),
         ),
     ],
 )
-def test_classify_identity(
+def test_identity_flags(
     identity: ReportedIdentity,
     service_id: uuid.UUID | None,
-    status: QualityStatus,
     flags: tuple[QualityFlag, ...],
 ) -> None:
-    assert classify_identity(identity, service_id) == (status, flags)
+    assert identity_flags(identity, service_id) == flags
 
 
 def test_signal_id_is_stable_and_scoped() -> None:

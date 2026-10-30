@@ -44,7 +44,12 @@ def _variants(node: Schema) -> list[Schema] | None:
 
 def _signature(node: Schema, root: Schema) -> str:
     # Matches alternatives across versions; enumeration values are compared afterwards.
+    # Plain primitives match by type: Pydantic titles a bare field schema with the
+    # field name but leaves the alternatives of a union untitled. Enumerations and
+    # objects keep matching by title.
     node = _resolve(node, root)
+    if node.get("type") not in (None, "object") and _values(node) is None:
+        return str(node["type"])
     if "title" in node or "type" in node:
         return str(node.get("title") or node["type"])
     return "values" if _values(node) is not None else "any"

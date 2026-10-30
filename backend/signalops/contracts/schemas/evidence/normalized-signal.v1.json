@@ -9,7 +9,8 @@
         "contradictory_identity",
         "clock_skew",
         "late_arrival",
-        "truncated_message"
+        "truncated_message",
+        "derived_event_id"
       ],
       "title": "QualityFlag",
       "type": "string"
@@ -84,7 +85,7 @@
       "items": {
         "$ref": "#/$defs/QualityFlag"
       },
-      "maxItems": 7,
+      "maxItems": 8,
       "title": "Quality Flags",
       "type": "array"
     },

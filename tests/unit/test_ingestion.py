@@ -431,3 +431,66 @@ def test_replaceable_publisher_replaces_an_unusable_producer() -> None:
     assert len(made) == 2
     assert made[0].closed
     assert made[1].published == [message]
+
+
+def unidentified_log(**payload: Any) -> dict[str, Any]:
+    record = log_record("unused", **payload)
+    del record["source_event_id"]
+    return record
+
+
+def test_record_without_id_gets_a_derived_one() -> None:
+    publisher = FakePublisher()
+    record = unidentified_log()
+    with make_client(publisher) as client:
+        first = post(client, [record]).json()
+        retried = post(client, [record]).json()
+
+    [result] = first["results"]
+    assert result["status"] == "accepted"
+    assert result["source_event_id"].startswith("derived:structured_log:")
+    assert retried["results"][0]["source_event_id"] == result["source_event_id"]
+    assert retried["results"][0]["event_id"] == result["event_id"]
+    payload = decode_event(publisher.published[0].value).payload
+    assert isinstance(payload, RawSignalPayload)
+    assert payload.source_event_id == result["source_event_id"]
+    assert payload.source_event_id_derived is True
+
+
+def test_sent_ids_are_not_marked_derived() -> None:
+    publisher = FakePublisher()
+    with make_client(publisher) as client:
+        post(client, [log_record("evt-1")])
+
+    payload = decode_event(publisher.published[0].value).payload
+    assert isinstance(payload, RawSignalPayload)
+    assert payload.source_event_id_derived is False
+
+
+def test_derived_id_is_computed_after_redaction() -> None:
+    publisher = FakePublisher()
+    occurred_at = now_text()
+    records = [
+        unidentified_log(password=secret) | {"occurred_at": occurred_at}
+        for secret in ("hunter2", "correct-horse")
+    ]
+    with make_client(publisher) as client:
+        body = post(client, records).json()
+
+    # The secret value does not feed the ID, so both redact to the same record.
+    assert [(r["status"], r["reason"]) for r in body["results"]] == [
+        ("accepted", None),
+        ("rejected", "duplicate_in_batch"),
+    ]
+
+
+def test_record_without_id_or_fallback_fields_is_rejected() -> None:
+    sources = FakeSources({SOURCE_ID: demo_source(kind=SourceKind.TRACE_SUMMARY)})
+    record = {"occurred_at": now_text(), "payload": {"service": "payment", "operation": "GET /"}}
+    with make_client(sources=sources) as client:
+        body = post(client, [record]).json()
+
+    [result] = body["results"]
+    assert (result["status"], result["reason"]) == ("rejected", "missing_source_event_id")
+    assert result["source_event_id"] is None
+    assert "trace_id" in result["detail"]

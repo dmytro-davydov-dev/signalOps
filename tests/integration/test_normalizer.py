@@ -1,4 +1,4 @@
-"""The normalizer against Compose PostgreSQL and Kafka (P04-T03).
+"""The normalizer against Compose PostgreSQL and Kafka (P04-T03, P04-T04).
 
 Raw envelopes are produced by the real ingestion code path (`ingest_batch`
 with a capturing publisher), so the normalizer sees exactly what the API
@@ -21,6 +21,7 @@ from sqlalchemy import Engine, func, select
 
 from signalops.adapters.ingestion import IngestPolicy, IngestSource, ingest_batch
 from signalops.adapters.normalizer import NORMALIZER_CONSUMER_GROUP, Normalizer
+from signalops.adapters.quality import TimingPolicy
 from signalops.config import Settings
 from signalops.contracts.common import ContractError
 from signalops.contracts.events import (
@@ -51,6 +52,7 @@ pytestmark = pytest.mark.integration
 SOURCE_BY_KIND = {source.kind: source for source in DEMO_SOURCES}
 SERVICE_IDS = {service.name: service.id for service in DEMO_SERVICES}
 POLL_DEADLINE_SECONDS = 30.0
+TIMING = TimingPolicy(max_clock_skew=timedelta(minutes=5), late_arrival=timedelta(minutes=15))
 
 
 class CapturingPublisher:
@@ -108,12 +110,13 @@ async def _raw_envelopes(
     return [decode_event(message.value) for message in publisher.messages]
 
 
-def _item(payload: dict[str, JsonValue], occurred_at: datetime) -> dict[str, Any]:
-    return {
-        "source_event_id": f"it-{uuid.uuid4().hex}",
-        "occurred_at": occurred_at.isoformat(),
-        "payload": payload,
-    }
+def _item(
+    payload: dict[str, JsonValue], occurred_at: datetime, *, with_id: bool = True
+) -> dict[str, Any]:
+    item: dict[str, Any] = {"occurred_at": occurred_at.isoformat(), "payload": payload}
+    if with_id:
+        item["source_event_id"] = f"it-{uuid.uuid4().hex}"
+    return item
 
 
 async def _process(
@@ -121,7 +124,7 @@ async def _process(
     envelopes: list[EventEnvelope[EventPayload]],
     group: str = NORMALIZER_CONSUMER_GROUP,
 ) -> list[ProcessOutcome]:
-    processor = TransactionalProcessor(database, group, Normalizer())
+    processor = TransactionalProcessor(database, group, Normalizer(TIMING))
     return [await processor.process(envelope) for envelope in envelopes]
 
 
@@ -389,25 +392,186 @@ async def test_redelivery_and_other_groups_store_one_signal(database: db.Databas
     assert len(await _outbox_for(database, [signal.id])) == 1
 
 
-async def test_invalid_record_leaves_no_receipt_or_evidence(database: db.Database) -> None:
-    now = datetime.now(UTC)
-    # Deployments require a revision.
-    payload: dict[str, JsonValue] = {"service": "payment", "environment": "demo"}
-    [envelope] = await _raw_envelopes(SourceKind.DEPLOYMENT, [_item(payload, now)], now)
-
-    with pytest.raises(ContractError) as caught:
-        await _process(database, [envelope])
-
-    assert caught.value.event_id == envelope.event_id
-    assert "revision" in caught.value.detail
+async def _counts(
+    database: db.Database, envelope: EventEnvelope[EventPayload]
+) -> tuple[int | None, ...]:
     async with database.transaction() as session:
         receipts = await session.scalar(
             select(func.count()).where(ConsumerReceipt.event_id == envelope.event_id)
         )
         signals = await session.scalar(
-            select(func.count()).where(Signal.source_event_id == payload_event_id(envelope))
+            select(func.count()).where(
+                Signal.source_id == envelope.source_id,
+                Signal.source_event_id == payload_event_id(envelope),
+            )
         )
-    assert (receipts, signals) == (0, 0)
+        deployments = await session.scalar(
+            select(func.count())
+            .select_from(Deployment)
+            .join(Signal, Deployment.signal_id == Signal.id)
+            .where(
+                Signal.source_id == envelope.source_id,
+                Signal.source_event_id == payload_event_id(envelope),
+            )
+        )
+    return receipts, signals, deployments
+
+
+async def test_malformed_record_is_quarantined_evidence(database: db.Database) -> None:
+    now = datetime.now(UTC)
+    # Deployments require a revision; the rest of the record is readable.
+    payload: dict[str, JsonValue] = {
+        "service": "payment",
+        "environment": "demo",
+        "password": "hunter2",
+        "attributes": {"ticket": "CHG-1"},
+    }
+    [envelope] = await _raw_envelopes(SourceKind.DEPLOYMENT, [_item(payload, now)], now)
+
+    assert await _process(database, [envelope, envelope]) == [
+        ProcessOutcome.APPLIED,
+        ProcessOutcome.DUPLICATE,
+    ]
+
+    assert await _counts(database, envelope) == (1, 1, 0)
+    signal = await _signal(database, envelope)
+    assert signal.kind == SignalKind.DEPLOYMENT
+    assert signal.quality_status == QualityStatus.QUARANTINED
+    assert signal.quality_flags == [QualityFlag.MALFORMED_PAYLOAD]
+    assert signal.service_id is None
+    assert signal.trace_id is None
+    assert signal.severity == "info"
+    assert "revision" in signal.message
+    assert "revision" in signal.attributes["record"]["contract_errors"]
+    # The raw record is kept as ingestion redacted it.
+    assert signal.attributes["source"] == {**payload, "password": "[REDACTED]"}
+    provenance = signal.attributes["provenance"]
+    assert (provenance["reported_service"], provenance["reported_environment"]) == (
+        "payment",
+        "demo",
+    )
+    [row] = await _outbox_for(database, [signal.id])
+    assert row.envelope["payload"]["quality_status"] == QualityStatus.QUARANTINED
+
+
+async def test_oversized_malformed_record_keeps_only_its_size(database: db.Database) -> None:
+    now = datetime.now(UTC)
+    # Over the 16 KiB attributes limit, under the 64 KiB raw record limit; no message.
+    payload: dict[str, JsonValue] = {"service": "payment", "level": "info", "blob": "x" * 20_000}
+    [envelope] = await _raw_envelopes(SourceKind.STRUCTURED_LOG, [_item(payload, now)], now)
+
+    assert await _process(database, [envelope]) == [ProcessOutcome.APPLIED]
+
+    signal = await _signal(database, envelope)
+    assert signal.quality_flags == [QualityFlag.MALFORMED_PAYLOAD]
+    assert signal.attributes["source"] == {}
+    assert signal.attributes["provenance"]["record_omitted_bytes"] > 20_000
+    assert "message" in signal.attributes["record"]["contract_errors"]
+
+
+async def test_envelope_faults_still_fail_without_evidence(database: db.Database) -> None:
+    now = datetime.now(UTC)
+    payload: dict[str, JsonValue] = {"service": "payment", "level": "info", "message": "ok"}
+    [envelope] = await _raw_envelopes(SourceKind.STRUCTURED_LOG, [_item(payload, now)], now)
+    assert isinstance(envelope.payload, RawSignalPayload)
+    # The record claims a different kind than its source has: a pipeline fault.
+    mismatched = envelope.model_copy(
+        update={
+            "payload": envelope.payload.model_copy(update={"source_kind": SourceKind.TRACE_SUMMARY})
+        }
+    )
+
+    with pytest.raises(ContractError) as caught:
+        await _process(database, [mismatched])
+
+    assert caught.value.event_id == envelope.event_id
+    assert await _counts(database, envelope) == (0, 0, 0)
+
+
+@pytest.mark.parametrize(
+    ("offset", "status", "flags"),
+    [
+        (timedelta(minutes=10), QualityStatus.DEGRADED, [QualityFlag.CLOCK_SKEW]),
+        (-timedelta(hours=2), QualityStatus.ACCEPTED, [QualityFlag.LATE_ARRIVAL]),
+        (-timedelta(minutes=1), QualityStatus.ACCEPTED, []),
+    ],
+    ids=["skewed", "late", "on-time"],
+)
+async def test_timing_is_flagged_and_identity_still_resolves(
+    database: db.Database, offset: timedelta, status: QualityStatus, flags: list[QualityFlag]
+) -> None:
+    now = datetime.now(UTC)
+    payload: dict[str, JsonValue] = {
+        "service": "payment",
+        "environment": "demo",
+        "level": "warn",
+        "message": "retrying charge",
+    }
+    [envelope] = await _raw_envelopes(
+        SourceKind.STRUCTURED_LOG, [_item(payload, now + offset)], now
+    )
+
+    await _process(database, [envelope])
+
+    signal = await _signal(database, envelope)
+    assert signal.service_id == SERVICE_IDS["payment"]
+    assert signal.quality_status == status
+    assert signal.quality_flags == flags
+    # The source's timestamp is kept, never corrected.
+    assert signal.occurred_at == envelope.occurred_at
+
+
+async def test_records_without_ids_get_stable_derived_identity(database: db.Database) -> None:
+    now = datetime.now(UTC).replace(microsecond=0)
+    line: dict[str, JsonValue] = {
+        "service": "checkout",
+        "environment": "demo",
+        "level": "info",
+        "message": "order placed",
+    }
+    trace: dict[str, JsonValue] = {
+        "trace_id": f"t{uuid.uuid4().hex}",
+        "service": "checkout",
+        "environment": "demo",
+        "operation": "POST /checkout",
+        "duration_ms": 120,
+        "status": "ok",
+        "span_count": 4,
+    }
+    # Identical message text a millisecond apart: two events.
+    log_items = [
+        _item(line, now - timedelta(seconds=2), with_id=False),
+        _item(line, now - timedelta(seconds=2, milliseconds=-1), with_id=False),
+    ]
+    trace_items = [_item(trace, now - timedelta(seconds=1), with_id=False)]
+
+    first = [
+        *await _raw_envelopes(SourceKind.STRUCTURED_LOG, log_items, now),
+        *await _raw_envelopes(SourceKind.TRACE_SUMMARY, trace_items, now),
+    ]
+    # The client retries everything, ingested a second later.
+    retry = [
+        *await _raw_envelopes(SourceKind.STRUCTURED_LOG, log_items, now + timedelta(seconds=1)),
+        *await _raw_envelopes(SourceKind.TRACE_SUMMARY, trace_items, now + timedelta(seconds=1)),
+    ]
+    assert [e.event_id for e in retry] == [e.event_id for e in first]
+
+    assert (
+        await _process(database, first + retry)
+        == [ProcessOutcome.APPLIED] * 3 + [ProcessOutcome.DUPLICATE] * 3
+    )
+
+    signals = [await _signal(database, envelope) for envelope in first]
+    assert len({signal.id for signal in signals}) == 3
+    assert [signal.message for signal in signals[:2]] == ["order placed", "order placed"]
+    for signal in signals:
+        assert signal.source_event_id.startswith("derived:")
+        assert signal.quality_status == QualityStatus.ACCEPTED
+        assert signal.quality_flags == [QualityFlag.DERIVED_EVENT_ID]
+        assert signal.service_id == SERVICE_IDS["checkout"]
+    for envelope in first:
+        assert await _counts(database, envelope) == (1, 1, 0)
+    assert len(await _outbox_for(database, [signal.id for signal in signals])) == 3
 
 
 @pytest.fixture
@@ -445,7 +609,7 @@ async def test_worker_consumes_raw_topic_and_commits_offsets(
     failures = EventProducer(infra_settings, client_id=f"{group}-failures")
     runner = ConsumerRunner(
         consumer,
-        TransactionalProcessor(database, group, Normalizer()),
+        TransactionalProcessor(database, group, Normalizer(TIMING)),
         consumer_group=group,
         failure_publisher=failures,
         retry_policy=RetryPolicy(3, base_delay_seconds=0.05, max_delay_seconds=0.2),
