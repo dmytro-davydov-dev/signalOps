@@ -70,6 +70,13 @@ class CatalogRepository:
     async def get_source(self, source_id: uuid.UUID) -> Source | None:
         return await self._session.get(Source, source_id)
 
+    async def list_sources(self, workspace_id: uuid.UUID) -> list[Source]:
+        """The workspace's sources by name; the catalog is small and unpaginated."""
+        result = await self._session.scalars(
+            select(Source).where(Source.workspace_id == workspace_id).order_by(Source.name)
+        )
+        return list(result)
+
     async def find_service_id(
         self, *, workspace_id: uuid.UUID, name: str, environment: str
     ) -> uuid.UUID | None:

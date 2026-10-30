@@ -186,6 +186,7 @@
         "title": "IngestResponse",
         "type": "object"
       },
+      "JsonValue": {},
       "LivenessResponse": {
         "properties": {
           "status": {
@@ -196,6 +197,177 @@
           }
         },
         "title": "LivenessResponse",
+        "type": "object"
+      },
+      "NormalizedSignal": {
+        "additionalProperties": false,
+        "description": "A signal row as written by the normalizer.",
+        "properties": {
+          "attributes": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/JsonValue"
+            },
+            "title": "Attributes",
+            "type": "object"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "ingested_at": {
+            "format": "date-time",
+            "title": "Ingested At",
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/SignalKind"
+          },
+          "message": {
+            "maxLength": 8192,
+            "minLength": 1,
+            "title": "Message",
+            "type": "string"
+          },
+          "occurred_at": {
+            "format": "date-time",
+            "title": "Occurred At",
+            "type": "string"
+          },
+          "quality_flags": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/QualityFlag"
+            },
+            "maxItems": 8,
+            "title": "Quality Flags",
+            "type": "array"
+          },
+          "quality_status": {
+            "$ref": "#/components/schemas/QualityStatus"
+          },
+          "replay_scope": {
+            "maxLength": 128,
+            "minLength": 1,
+            "pattern": "^[a-z0-9][a-z0-9._:-]*$",
+            "title": "Replay Scope",
+            "type": "string"
+          },
+          "service_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Service Id"
+          },
+          "severity": {
+            "$ref": "#/components/schemas/Severity"
+          },
+          "source_event_id": {
+            "maxLength": 512,
+            "minLength": 1,
+            "title": "Source Event Id",
+            "type": "string"
+          },
+          "source_id": {
+            "format": "uuid",
+            "title": "Source Id",
+            "type": "string"
+          },
+          "trace_id": {
+            "anyOf": [
+              {
+                "maxLength": 128,
+                "minLength": 1,
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Trace Id"
+          },
+          "workspace_id": {
+            "format": "uuid",
+            "title": "Workspace Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "workspace_id",
+          "source_id",
+          "service_id",
+          "source_event_id",
+          "replay_scope",
+          "kind",
+          "occurred_at",
+          "ingested_at",
+          "severity",
+          "message",
+          "quality_status"
+        ],
+        "title": "NormalizedSignal",
+        "type": "object"
+      },
+      "QualityFlag": {
+        "enum": [
+          "malformed_payload",
+          "missing_service",
+          "unknown_service",
+          "contradictory_identity",
+          "clock_skew",
+          "late_arrival",
+          "truncated_message",
+          "derived_event_id"
+        ],
+        "title": "QualityFlag",
+        "type": "string"
+      },
+      "QualityStatus": {
+        "enum": [
+          "accepted",
+          "degraded",
+          "quarantined"
+        ],
+        "title": "QualityStatus",
+        "type": "string"
+      },
+      "QualitySummary": {
+        "additionalProperties": false,
+        "description": "Per-source counts of signals ingested in the window (by `ingested_at`).",
+        "properties": {
+          "replay_scope": {
+            "maxLength": 128,
+            "minLength": 1,
+            "pattern": "^[a-z0-9][a-z0-9._:-]*$",
+            "title": "Replay Scope",
+            "type": "string"
+          },
+          "sources": {
+            "items": {
+              "$ref": "#/components/schemas/SourceQuality"
+            },
+            "maxItems": 1000,
+            "title": "Sources",
+            "type": "array"
+          },
+          "window": {
+            "$ref": "#/components/schemas/TimeWindow"
+          }
+        },
+        "required": [
+          "replay_scope",
+          "window",
+          "sources"
+        ],
+        "title": "QualitySummary",
         "type": "object"
       },
       "ReadinessResponse": {
@@ -221,6 +393,203 @@
           "checks"
         ],
         "title": "ReadinessResponse",
+        "type": "object"
+      },
+      "Severity": {
+        "enum": [
+          "debug",
+          "info",
+          "warning",
+          "error",
+          "critical"
+        ],
+        "title": "Severity",
+        "type": "string"
+      },
+      "SignalKind": {
+        "enum": [
+          "log",
+          "trace",
+          "deployment"
+        ],
+        "title": "SignalKind",
+        "type": "string"
+      },
+      "SignalPage": {
+        "additionalProperties": false,
+        "description": "Signals by `occurred_at` descending, then ID descending.",
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/NormalizedSignal"
+            },
+            "maxItems": 1000,
+            "title": "Items",
+            "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "maxLength": 256,
+                "minLength": 1,
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          },
+          "replay_scope": {
+            "maxLength": 128,
+            "minLength": 1,
+            "pattern": "^[a-z0-9][a-z0-9._:-]*$",
+            "title": "Replay Scope",
+            "type": "string"
+          },
+          "window": {
+            "$ref": "#/components/schemas/TimeWindow"
+          }
+        },
+        "required": [
+          "replay_scope",
+          "window",
+          "items"
+        ],
+        "title": "SignalPage",
+        "type": "object"
+      },
+      "SourceKind": {
+        "enum": [
+          "structured_log",
+          "trace_summary",
+          "deployment"
+        ],
+        "title": "SourceKind",
+        "type": "string"
+      },
+      "SourceQuality": {
+        "additionalProperties": false,
+        "properties": {
+          "by_flag": {
+            "additionalProperties": {
+              "minimum": 0.0,
+              "type": "integer"
+            },
+            "propertyNames": {
+              "$ref": "#/components/schemas/QualityFlag"
+            },
+            "title": "By Flag",
+            "type": "object"
+          },
+          "by_status": {
+            "additionalProperties": {
+              "minimum": 0.0,
+              "type": "integer"
+            },
+            "propertyNames": {
+              "$ref": "#/components/schemas/QualityStatus"
+            },
+            "title": "By Status",
+            "type": "object"
+          },
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/SourceKind"
+          },
+          "name": {
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "source_id": {
+            "format": "uuid",
+            "title": "Source Id",
+            "type": "string"
+          },
+          "total": {
+            "minimum": 0.0,
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "source_id",
+          "name",
+          "kind",
+          "enabled",
+          "total",
+          "by_status",
+          "by_flag"
+        ],
+        "title": "SourceQuality",
+        "type": "object"
+      },
+      "TimeWindow": {
+        "additionalProperties": false,
+        "description": "Half-open interval: `since` inclusive, `until` exclusive.",
+        "properties": {
+          "since": {
+            "format": "date-time",
+            "title": "Since",
+            "type": "string"
+          },
+          "until": {
+            "format": "date-time",
+            "title": "Until",
+            "type": "string"
+          }
+        },
+        "required": [
+          "since",
+          "until"
+        ],
+        "title": "TimeWindow",
+        "type": "object"
+      },
+      "TraceEvidence": {
+        "additionalProperties": false,
+        "description": "Signals sharing a trace ID, by `occurred_at` ascending, then ID ascending.",
+        "properties": {
+          "replay_scope": {
+            "maxLength": 128,
+            "minLength": 1,
+            "pattern": "^[a-z0-9][a-z0-9._:-]*$",
+            "title": "Replay Scope",
+            "type": "string"
+          },
+          "signals": {
+            "items": {
+              "$ref": "#/components/schemas/NormalizedSignal"
+            },
+            "maxItems": 1000,
+            "minItems": 1,
+            "title": "Signals",
+            "type": "array"
+          },
+          "trace_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]*$",
+            "title": "Trace Id",
+            "type": "string"
+          },
+          "truncated": {
+            "title": "Truncated",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "trace_id",
+          "replay_scope",
+          "signals",
+          "truncated"
+        ],
+        "title": "TraceEvidence",
         "type": "object"
       },
       "ValidationError": {
@@ -267,6 +636,11 @@
     "securitySchemes": {
       "HTTPBearer": {
         "description": "Source-specific ingestion token",
+        "scheme": "bearer",
+        "type": "http"
+      },
+      "OperatorBearer": {
+        "description": "Operator token for one workspace",
         "scheme": "bearer",
         "type": "http"
       }
@@ -445,6 +819,383 @@
         "summary": "Ingest",
         "tags": [
           "ingestion"
+        ]
+      }
+    },
+    "/v1/signals": {
+      "get": {
+        "description": "Signals by `occurred_at` (newest first) in the window, with keyset pagination.\n\nA cursor carries its query's window; pass it with the same filters and\nleave `since`/`until` out (or equal). A cursor from another query is 400.",
+        "operationId": "list_signals_v1_signals_get",
+        "parameters": [
+          {
+            "description": "Replay dataset; `live` by default",
+            "in": "query",
+            "name": "replay_scope",
+            "required": false,
+            "schema": {
+              "default": "live",
+              "description": "Replay dataset; `live` by default",
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^[a-z0-9][a-z0-9._:-]*$",
+              "title": "Replay Scope",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Inclusive lower bound (RFC 3339)",
+            "in": "query",
+            "name": "since",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Inclusive lower bound (RFC 3339)",
+              "title": "Since"
+            }
+          },
+          {
+            "description": "Exclusive upper bound (RFC 3339)",
+            "in": "query",
+            "name": "until",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Exclusive upper bound (RFC 3339)",
+              "title": "Until"
+            }
+          },
+          {
+            "in": "query",
+            "name": "source_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Source Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "service_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Service Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "kind",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/SignalKind"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Kind"
+            }
+          },
+          {
+            "in": "query",
+            "name": "quality_status",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/QualityStatus"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Quality Status"
+            }
+          },
+          {
+            "description": "At most SIGNALOPS_QUERY_MAX_LIMIT",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "At most SIGNALOPS_QUERY_MAX_LIMIT",
+              "title": "Limit"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 512,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SignalPage"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "description": "Invalid or mismatched cursor"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "OperatorBearer": []
+          }
+        ],
+        "summary": "List Signals",
+        "tags": [
+          "evidence"
+        ]
+      }
+    },
+    "/v1/sources/quality": {
+      "get": {
+        "description": "Per-source signal counts by quality status and flag, for signals ingested in the window.",
+        "operationId": "source_quality_v1_sources_quality_get",
+        "parameters": [
+          {
+            "description": "Replay dataset; `live` by default",
+            "in": "query",
+            "name": "replay_scope",
+            "required": false,
+            "schema": {
+              "default": "live",
+              "description": "Replay dataset; `live` by default",
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^[a-z0-9][a-z0-9._:-]*$",
+              "title": "Replay Scope",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Inclusive lower bound (RFC 3339)",
+            "in": "query",
+            "name": "since",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Inclusive lower bound (RFC 3339)",
+              "title": "Since"
+            }
+          },
+          {
+            "description": "Exclusive upper bound (RFC 3339)",
+            "in": "query",
+            "name": "until",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Exclusive upper bound (RFC 3339)",
+              "title": "Until"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QualitySummary"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "OperatorBearer": []
+          }
+        ],
+        "summary": "Source Quality",
+        "tags": [
+          "evidence"
+        ]
+      }
+    },
+    "/v1/traces/{trace_id}": {
+      "get": {
+        "description": "Signals carrying the trace ID, oldest first; `truncated` when more exist.",
+        "operationId": "get_trace_v1_traces__trace_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "trace_id",
+            "required": true,
+            "schema": {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]*$",
+              "title": "Trace Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Replay dataset; `live` by default",
+            "in": "query",
+            "name": "replay_scope",
+            "required": false,
+            "schema": {
+              "default": "live",
+              "description": "Replay dataset; `live` by default",
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^[a-z0-9][a-z0-9._:-]*$",
+              "title": "Replay Scope",
+              "type": "string"
+            }
+          },
+          {
+            "description": "At most SIGNALOPS_QUERY_MAX_LIMIT",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "At most SIGNALOPS_QUERY_MAX_LIMIT",
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TraceEvidence"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "description": "No signals in this scope"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "OperatorBearer": []
+          }
+        ],
+        "summary": "Get Trace",
+        "tags": [
+          "evidence"
         ]
       }
     }

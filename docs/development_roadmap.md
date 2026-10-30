@@ -25,13 +25,13 @@ PostgreSQL owns evidence, workflow progress, budgets, and the initial knowledge 
 
 | Field | Current value |
 | --- | --- |
-| Active phase | Phase 4 Ingestion and data quality; Phase 3 gate passed |
+| Active phase | Phase 5 Detection and knowledge graph; Phase 4 gate passed |
 | Active task | None |
-| Last completed task | P04-T04 |
-| Latest verified commit | `5252a13` (P04-T03); P04-T04 pending commit, validated against the working tree |
-| Validation evidence | P04-T04: with the rebuilt image and a temporary shell-only token for the demo log source, one batch posted twice to `POST /v1/ingest/{source_id}` (both 200) stored 6 signals, not 12: on-time `accepted` with no flags; invalid `level` `quarantined`/`malformed_payload` with no service; +10 min `degraded`/`clock_skew`; −2 h `accepted`/`late_arrival`; two ID-less lines with the same text `accepted`/`derived_event_id` as separate signals. 6 receipts, 6 published `signal.normalized` events; API restarted without the token afterwards. `SIGNALOPS_INTEGRATION=1 uv run pytest` 583 passed. Earlier evidence is in the work log |
+| Last completed task | P04-T05 |
+| Latest verified commit | `c23b1b4` (P04-T04); P04-T05 pending commit, validated against the working tree |
+| Validation evidence | P04-T05: dev database migrated to `0008_evidence_query_indexes`, `alembic check` clean. API rebuilt with temporary shell-only operator and source tokens: no token and the source token on `GET /v1/signals` → 401, the operator token on `POST /v1/ingest` → 401; `GET /v1/signals` paged all 1036 dev signals in 6 pages of ≤200 with 1036 unique IDs; a trace lookup returned 5 log/trace signals, the same trace in another replay scope 404; `limit=201` and an 8-day window 422; a cursor reused with another filter 400; `GET /v1/sources/quality` gave per-source totals with statuses and flags. API restarted without the tokens. `SIGNALOPS_INTEGRATION=1 uv run pytest` 657 passed. Earlier evidence is in the work log |
 | Blockers | None recorded |
-| Next task | P04-T05 |
+| Next task | P05-T01 |
 
 ### Scope and release boundaries
 
@@ -421,13 +421,25 @@ Start the React shell in Phase 1 and add API-backed incident views in Phase 5; P
 
 ### P04-T05 Expose evidence queries and quality summaries
 
-- [ ] Complete this task.
+- [x] Complete this task.
 
 **Implementation:** Add bounded source/service/time filters, cursor pagination, trace lookup, and source quality counts. Use repository scope helpers for workspace and replay boundaries.
 
 **Acceptance:** Evidence queries cannot read another scope, exceed configured limits, or leak redacted fields.
 
+**Notes (2026-10-30):**
+- Routes (`api/evidence.py`): `GET /v1/signals` (window on `occurred_at`, filters `source_id`/`service_id`/`kind`/`quality_status`, newest first, keyset cursor), `GET /v1/traces/{trace_id}` (oldest first, `truncated`), `GET /v1/sources/quality` (per source: total, every status, flags present; window on `ingested_at`). Bodies `SignalPage`, `TraceEvidence`, `QualitySummary` in `contracts/queries.py`, exported under `contracts/schemas/evidence/`. Rules in docs/api.md#evidence-queries.
+- Scope helper: `EvidenceScope(workspace_id, replay_scope).clause(model)` in `persistence/repositories/scope.py`; `EvidenceRepository.list_signals`/`trace_signals`/`quality_counts` filter with it first. `CatalogRepository.list_sources` added.
+- **Decision (ADR-014):** no operator auth existed (Q9 is P11-T02), and "cannot read another scope" needs a principal. `SIGNALOPS_OPERATOR_TOKENS` (workspace ID → token, SHA-256 constant-time) gives one; the token's workspace is the only workspace a query can use. Settings refuse an operator token equal to an ingest token. Unset → every operator request 401. Q9 stays open.
+- Bounds: `SIGNALOPS_QUERY_DEFAULT_LIMIT`/`MAX_LIMIT` 50/200 and `SIGNALOPS_QUERY_DEFAULT_WINDOW_SECONDS`/`MAX_WINDOW_SECONDS` 1 h/7 d; exceeding them is 422, not clamped. Cursors are versioned base64url JSON (integer microseconds, hex IDs, so they fit `Key`'s 256 characters) carrying the resolved window and a digest of workspace, scope, filters, and window; another query's cursor is 400.
+- Redaction: `attributes` re-redacted on output with the current process list plus the source's `redact_fields`; invalid source config is 500. Messages are returned as stored (ingestion does not scrub free text either).
+- Migration `0008_evidence_query_indexes`: `signals(workspace_id, replay_scope, occurred_at, id)`; the plan's service and source indexes replaced by `(service_id, replay_scope, occurred_at, id)` and `(source_id, replay_scope, ingested_at)`. This closes the P02-T06 note about scoped signal indexes. `EXPLAIN` on the dev database: the scoped page is a backward index-only scan with the `(occurred_at, id)` row comparison as an index condition; quality counts use the source index.
+- Compose passes `SIGNALOPS_OPERATOR_TOKENS`; `.env.example` has a placeholder. CORS allows the `Authorization` header.
+- Left: no single-signal or deployment lookup routes (P05-T05 evidence references can add `GET /v1/signals/{id}`); no per-user identity, audit, or token rotation (P11-T02); replay datasets are readable by any operator of the workspace; free-text message scrubbing.
+
 **Phase gate:** All tasks above are checked, acceptance evidence is recorded in the ledger, and the phase outcome is demonstrated against real infrastructure where relevant.
+
+**Phase 4 gate (2026-10-30): passed.** All five tasks are checked with evidence in the work log. Outcome demonstrated against the Compose stack: records from all three adapters (structured logs, trace summaries, deployments) went through `POST /v1/ingest`, Kafka, and the normalizer into PostgreSQL with receipts and outbox events (P04-T03/T04), and the P04-T05 live check read them back through the scoped API: 1036 signals over 6 pages with no repeats, quality counts per source showing accepted, degraded (`missing_service`, `clock_skew`), and quarantined (`malformed_payload`) outcomes. Open items carried forward: ingestion rate limiting, free-text redaction, generator quality fixtures (P10-T01), and the operator mechanism (Q9, P11-T02).
 
 **Suggested phase commit:** `feat: ingest and normalize telemetry sources`. Split this into task-sized commits as needed.
 
@@ -1052,13 +1064,23 @@ Keep these outside the release critical path unless measurements justify promoti
 
 ### 2026-10-30 — P04-T04
 - Status: completed
-- Commit: pending (validated against the working tree)
+- Commit: `c23b1b4`
 - Implemented: `adapters/quality.py`; `Normalizer(timing)` with malformed-as-evidence and combined flags (`identity_flags` replaces `classify_identity`); ingestion fallback IDs and `missing_source_event_id`; `QualityFlag.DERIVED_EVENT_ID`; `RawSignalPayload.source_event_id_derived`; optional `IngestRecord.source_event_id`; normalizer timing settings; CLI wiring; compatibility-checker fix; regenerated schemas and OpenAPI; `signal_raw` fixture; tests `tests/unit/test_quality.py`, new cases in `tests/unit/test_ingestion.py`, `tests/contract/test_schema_export.py`, `tests/integration/test_normalizer.py`; ADR-013; docs (api, events, decisions, development, data-model). Ledger now records `5252a13` for P04-T03.
 - Validation commands and results: `uv run ruff check .`, `uv run ruff format --check .`, `uv run mypy` (97 files), `uv run signalops export-schemas --check` pass; `uv run pytest` 381 passed, 202 skipped; with `.env` sourced, `SIGNALOPS_INTEGRATION=1 uv run pytest` 583 passed; `docker compose config --quiet` passes. Acceptance in integration tests against real PostgreSQL: two ID-less log lines with identical text 1 ms apart and an ID-less trace become three signals; the whole batch retried later reproduces the same event IDs and is three duplicates; the earlier P04-T03 Kafka test still shows identical text with distinct IDs as separate rows and a redelivery collapsing. Malformed records get a receipt, one quarantined signal, one event, no deployment, and collapse on redelivery; an envelope fault still raises with no receipt or row; skewed/late/on-time records resolve identity and get `clock_skew`/`late_arrival`/no flags. Live stack as in the ledger. Negative checks: re-raising on malformed records failed 2 tests; hashing only the log message failed 2; disabling timing flags failed 4; all restored and re-run green (78 passed). Frontend unchanged (it does not consume the OpenAPI file), not re-run.
 - Evidence or artifact references: `tests/unit/test_quality.py`, `tests/unit/test_ingestion.py`, `tests/integration/test_normalizer.py`.
 - Deviations and reasons: generator quality fixtures left to P10-T01 (see task notes).
 - Remaining issues: replay timing; unused `truncated_message`. The live check left 6 `live-p04t04-*`/derived records in the dev database; the Compose `normalizer` and `outbox-publisher` run the rebuilt image.
 - Next task: P04-T05
+
+### 2026-10-30 — P04-T05
+- Status: completed
+- Commit: pending (validated against the working tree)
+- Implemented: `api/evidence.py` (three routes, window/limit checks, `SignalCursor`, `OutputRedaction`); `api/auth.py` (`OperatorTokens`, `operator_workspace`); `contracts/queries.py` and exported schemas; `persistence/repositories/scope.py`; `EvidenceRepository` read methods; `CatalogRepository.list_sources`; `Resources.database`; settings `SIGNALOPS_OPERATOR_TOKENS` and `SIGNALOPS_QUERY_*` with validators; migration `0008_evidence_query_indexes` and model indexes; Compose passthrough and `.env.example` placeholder; ADR-014; docs (api, data-model, development, decisions); tests `tests/unit/test_evidence_api.py`, `tests/integration/test_evidence_api.py`.
+- Validation commands and results: `uv run ruff check .`, `uv run ruff format --check .`, `uv run mypy` (103 files), `uv run signalops export-schemas --check` pass; `uv run pytest` 434 passed, 223 skipped; with `.env` sourced, `SIGNALOPS_INTEGRATION=1 uv run pytest` 657 passed (evidence integration tests also pass with `-W error::Warning`); `docker compose config --quiet` passes; `alembic check` on the migrated dev database reports no new operations. Acceptance in integration tests against real PostgreSQL, with signals in two workspaces and two replay scopes: each token sees only its workspace, each `replay_scope` only its rows, filters by another workspace's source return nothing, the shared trace ID resolves per scope and is 404 where absent; five signals paged two at a time arrive in order with the ID tiebreaker and no repeats, also with the default window taken from the cursor; cursors replayed with another filter, scope, window, or workspace are 400; configured limits and windows are enforced (422) and the default limit applies; a quarantined record's `password` (process list) and `customer_email` (source list added after storage) are `[REDACTED]` in responses; quality counts match per source, scope, and window, including zero-count sources. Unit tests: 401 for missing, wrong, Basic, and source tokens on all three routes; an operator token cannot ingest; 422 for every out-of-bounds parameter before database access; malformed cursors 400; settings refuse shared tokens and defaults above maximums. Live stack as in the ledger. Frontend unchanged (it does not consume the OpenAPI file), not re-run.
+- Evidence or artifact references: `tests/unit/test_evidence_api.py`, `tests/integration/test_evidence_api.py`, `migrations/versions/0008_evidence_query_indexes.py`.
+- Deviations and reasons: interim operator tokens added ahead of P11-T02 because scope enforcement needs a principal (ADR-014); the plan's service and source signal indexes replaced (task notes).
+- Remaining issues: see task notes. The Compose `api` runs the rebuilt image with no operator tokens configured.
+- Next task: P05-T01
 
 ## Work log template
 

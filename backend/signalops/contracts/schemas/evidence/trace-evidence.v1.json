@@ -1,0 +1,206 @@
+{
+  "$defs": {
+    "JsonValue": {},
+    "NormalizedSignal": {
+      "additionalProperties": false,
+      "description": "A signal row as written by the normalizer.",
+      "properties": {
+        "attributes": {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "title": "Attributes",
+          "type": "object"
+        },
+        "id": {
+          "format": "uuid",
+          "title": "Id",
+          "type": "string"
+        },
+        "ingested_at": {
+          "format": "date-time",
+          "title": "Ingested At",
+          "type": "string"
+        },
+        "kind": {
+          "$ref": "#/$defs/SignalKind"
+        },
+        "message": {
+          "maxLength": 8192,
+          "minLength": 1,
+          "title": "Message",
+          "type": "string"
+        },
+        "occurred_at": {
+          "format": "date-time",
+          "title": "Occurred At",
+          "type": "string"
+        },
+        "quality_flags": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/QualityFlag"
+          },
+          "maxItems": 8,
+          "title": "Quality Flags",
+          "type": "array"
+        },
+        "quality_status": {
+          "$ref": "#/$defs/QualityStatus"
+        },
+        "replay_scope": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[a-z0-9][a-z0-9._:-]*$",
+          "title": "Replay Scope",
+          "type": "string"
+        },
+        "service_id": {
+          "anyOf": [
+            {
+              "format": "uuid",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Service Id"
+        },
+        "severity": {
+          "$ref": "#/$defs/Severity"
+        },
+        "source_event_id": {
+          "maxLength": 512,
+          "minLength": 1,
+          "title": "Source Event Id",
+          "type": "string"
+        },
+        "source_id": {
+          "format": "uuid",
+          "title": "Source Id",
+          "type": "string"
+        },
+        "trace_id": {
+          "anyOf": [
+            {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]*$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Trace Id"
+        },
+        "workspace_id": {
+          "format": "uuid",
+          "title": "Workspace Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "workspace_id",
+        "source_id",
+        "service_id",
+        "source_event_id",
+        "replay_scope",
+        "kind",
+        "occurred_at",
+        "ingested_at",
+        "severity",
+        "message",
+        "quality_status"
+      ],
+      "title": "NormalizedSignal",
+      "type": "object"
+    },
+    "QualityFlag": {
+      "enum": [
+        "malformed_payload",
+        "missing_service",
+        "unknown_service",
+        "contradictory_identity",
+        "clock_skew",
+        "late_arrival",
+        "truncated_message",
+        "derived_event_id"
+      ],
+      "title": "QualityFlag",
+      "type": "string"
+    },
+    "QualityStatus": {
+      "enum": [
+        "accepted",
+        "degraded",
+        "quarantined"
+      ],
+      "title": "QualityStatus",
+      "type": "string"
+    },
+    "Severity": {
+      "enum": [
+        "debug",
+        "info",
+        "warning",
+        "error",
+        "critical"
+      ],
+      "title": "Severity",
+      "type": "string"
+    },
+    "SignalKind": {
+      "enum": [
+        "log",
+        "trace",
+        "deployment"
+      ],
+      "title": "SignalKind",
+      "type": "string"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "Signals sharing a trace ID, by `occurred_at` ascending, then ID ascending.",
+  "properties": {
+    "replay_scope": {
+      "maxLength": 128,
+      "minLength": 1,
+      "pattern": "^[a-z0-9][a-z0-9._:-]*$",
+      "title": "Replay Scope",
+      "type": "string"
+    },
+    "signals": {
+      "items": {
+        "$ref": "#/$defs/NormalizedSignal"
+      },
+      "maxItems": 1000,
+      "minItems": 1,
+      "title": "Signals",
+      "type": "array"
+    },
+    "trace_id": {
+      "maxLength": 128,
+      "minLength": 1,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]*$",
+      "title": "Trace Id",
+      "type": "string"
+    },
+    "truncated": {
+      "title": "Truncated",
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "trace_id",
+    "replay_scope",
+    "signals",
+    "truncated"
+  ],
+  "title": "TraceEvidence",
+  "type": "object"
+}

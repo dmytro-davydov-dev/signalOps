@@ -76,6 +76,8 @@ class Resources:
     # Ingestion; the route answers 503 while either is missing.
     sources: SourceLookup | None = None
     ingest_publisher: Publisher | None = field(default=None, repr=False)
+    # Evidence queries; their routes answer 503 while it is missing.
+    database: Database | None = None
 
 
 @asynccontextmanager
@@ -99,6 +101,7 @@ async def open_resources(settings: Settings) -> AsyncIterator[Resources]:
     publisher = ReplaceablePublisher(
         lambda: EventProducer(settings, client_id="signalops-api-ingest")
     )
+    database = Database.from_engine(engine)
     try:
         yield Resources(
             checks=[
@@ -109,8 +112,9 @@ async def open_resources(settings: Settings) -> AsyncIterator[Resources]:
             engine=engine,
             redis=redis,
             kafka_admin=kafka_admin,
-            sources=DatabaseSourceLookup(Database.from_engine(engine)),
+            sources=DatabaseSourceLookup(database),
             ingest_publisher=publisher,
+            database=database,
         )
     finally:
         # Requests have finished; nothing still queued was reported accepted to a client.

@@ -14,6 +14,9 @@ x-backend-env: &backend-env
   SIGNALOPS_MODEL_PROVIDER: fake
   # JSON object of source ID to ingestion token; empty means no source can ingest.
   SIGNALOPS_INGEST_TOKENS: ${SIGNALOPS_INGEST_TOKENS:-{}}
+  # JSON object of workspace ID to operator token for the evidence queries;
+  # empty means every operator request is 401.
+  SIGNALOPS_OPERATOR_TOKENS: ${SIGNALOPS_OPERATOR_TOKENS:-{}}
 
 x-backend: &backend
   image: signalops-backend:local

@@ -163,6 +163,9 @@ Backend processes read `SIGNALOPS_`-prefixed variables (`backend/signalops/confi
 | `SIGNALOPS_CORS_ORIGINS` | empty | JSON list; only needed when the UI is served from another origin |
 | `SIGNALOPS_READINESS_TIMEOUT_SECONDS` | `2.0` | per-dependency probe limit |
 | `SIGNALOPS_INGEST_TOKENS` | `{}` | JSON object of source ID to bearer token for `POST /v1/ingest/{source_id}`; a source without a token cannot ingest. Contains credentials, never logged. See `.env.example` |
+| `SIGNALOPS_OPERATOR_TOKENS` | `{}` | JSON object of workspace ID to bearer token for the evidence query routes; the token's workspace bounds every query. Empty means every operator request is `401`. Must not share a value with `SIGNALOPS_INGEST_TOKENS` (startup fails). Credentials, never logged. Interim mechanism ([ADR-014](decisions.md#adr-014-interim-operator-tokens-scoped-to-one-workspace)) |
+| `SIGNALOPS_QUERY_DEFAULT_LIMIT` / `SIGNALOPS_QUERY_MAX_LIMIT` | `50` / `200` | Evidence query page size; a larger `limit` is `422` |
+| `SIGNALOPS_QUERY_DEFAULT_WINDOW_SECONDS` / `SIGNALOPS_QUERY_MAX_WINDOW_SECONDS` | `3600` / `604800` | Evidence query time window when none is given, and its maximum span (`422` above it) |
 | `SIGNALOPS_INGEST_MAX_RECORDS` | `500` | Records per ingestion request (`413` above it) |
 | `SIGNALOPS_INGEST_MAX_REQUEST_BYTES` | `4194304` | Ingestion request body limit (`413` above it) |
 | `SIGNALOPS_INGEST_MAX_FUTURE_SECONDS` / `SIGNALOPS_INGEST_MAX_AGE_SECONDS` | `86400` / `2592000` | Records with `occurred_at` further ahead of or behind receipt are rejected `timestamp_out_of_range` |
@@ -177,7 +180,7 @@ Backend processes read `SIGNALOPS_`-prefixed variables (`backend/signalops/confi
 | `SIGNALOPS_DB_LOCK_TIMEOUT_MS` | `5000` | server-side `lock_timeout` |
 | `SIGNALOPS_DB_IDLE_IN_TRANSACTION_TIMEOUT_MS` | `30000` | ends sessions left idle inside a transaction |
 
-Compose-level variables in `.env` (see `.env.example`): `POSTGRES_DB`, `POSTGRES_USER`, `POSTGRES_PASSWORD` (required, no default), the loopback host ports `POSTGRES_HOST_PORT`, `REDIS_HOST_PORT`, `KAFKA_HOST_PORT`, `API_HOST_PORT`, `WEB_HOST_PORT`, `SIGNALOPS_LOG_LEVEL`, and `SIGNALOPS_INGEST_TOKENS` (passed to every backend container).
+Compose-level variables in `.env` (see `.env.example`): `POSTGRES_DB`, `POSTGRES_USER`, `POSTGRES_PASSWORD` (required, no default), the loopback host ports `POSTGRES_HOST_PORT`, `REDIS_HOST_PORT`, `KAFKA_HOST_PORT`, `API_HOST_PORT`, `WEB_HOST_PORT`, `SIGNALOPS_LOG_LEVEL`, `SIGNALOPS_INGEST_TOKENS`, and `SIGNALOPS_OPERATOR_TOKENS` (passed to every backend container).
 
 The frontend reads `VITE_API_BASE_URL` at build time (empty means same origin).
 

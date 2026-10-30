@@ -1,6 +1,6 @@
 # HTTP API
 
-> Status: planned design. The source is [SignalOps_Implementation_Plan.md](SignalOps_Implementation_Plan.md) §9. The generated OpenAPI document, [`openapi.v1.json`](../backend/signalops/contracts/schemas/openapi.v1.json), is authoritative for implemented routes (health and ingestion); body schemas for planned routes are exported alongside it (for example `investigations/investigation.v1.json`). Compatibility rules are in [events.md](events.md#versioning-rules).
+> Status: planned design. The source is [SignalOps_Implementation_Plan.md](SignalOps_Implementation_Plan.md) §9. The generated OpenAPI document, [`openapi.v1.json`](../backend/signalops/contracts/schemas/openapi.v1.json), is authoritative for implemented routes (health, ingestion, and evidence queries); body schemas for planned routes are exported alongside it (for example `investigations/investigation.v1.json`). Compatibility rules are in [events.md](events.md#versioning-rules).
 
 All endpoints are versioned under `/v1`. Request and response bodies are Pydantic models. Timestamps are UTC (RFC 3339) and IDs are UUIDs.
 
@@ -9,6 +9,9 @@ All endpoints are versioned under `/v1`. Request and response bodies are Pydanti
 | Method and path | Behavior | Roadmap |
 | --- | --- | --- |
 | `POST /v1/ingest/{source_id}` | Bounded batch ingestion with a per-record acceptance result | P04-T02 |
+| `GET /v1/signals` | Evidence in a time window, filters for source, service, kind, quality status; cursor pagination | P04-T05 |
+| `GET /v1/traces/{trace_id}` | Signals carrying one trace ID | P04-T05 |
+| `GET /v1/sources/quality` | Per-source counts by quality status and flag | P04-T05 |
 | `GET /v1/incidents` | Cursor pagination, filters for service, severity, status | P05-T05 |
 | `GET /v1/incidents/{id}` | Timeline, affected services, evidence references | P05-T05 |
 | `POST /v1/incidents/{id}/investigations` | Requires `Idempotency-Key`. Returns **202** with the investigation ID | P06-T01 |
@@ -59,6 +62,29 @@ Per-record outcomes (`results`, in request order, with counts):
 The response is `200` when every record is accepted or rejected, and `503` with `Retry-After` and the same body when any record failed. Resending the whole batch is safe: accepted records reproduce their event IDs and are deduplicated downstream. If the HTTP call itself times out, the outcome is unknown; retry the batch with the same IDs. Worst-case latency is about `SIGNALOPS_KAFKA_DELIVERY_TIMEOUT_MS` (30 s by default) when the broker is down, so client timeouts should exceed it.
 
 Not yet implemented: the per-source `429` rate limit (Redis). No roadmap task owns it yet. Token rotation is P11-T02.
+
+## Evidence queries
+
+Implemented in P04-T05 (`api/evidence.py`, `api/auth.py`; queries in `persistence/repositories/evidence.py`; bodies in `contracts/queries.py`, schemas under `contracts/schemas/evidence/`).
+
+```http
+GET /v1/signals?service_id=…&since=2026-10-30T09:00:00Z&until=2026-10-30T10:00:00Z&limit=50
+Authorization: Bearer <operator token>
+```
+
+**Credential and scope.** Every route requires a token from `SIGNALOPS_OPERATOR_TOKENS` ([ADR-014](decisions.md#adr-014-interim-operator-tokens-scoped-to-one-workspace)). Its workspace bounds the query; there is no workspace parameter. Missing, wrong, or a source ingestion token → `401`. `replay_scope` (default `live`, same pattern as stored scopes) selects the dataset; signals of other workspaces and scopes are never returned, and a trace absent from the scope is `404`.
+
+**Bounds.** `limit` defaults to `SIGNALOPS_QUERY_DEFAULT_LIMIT` (50); above `SIGNALOPS_QUERY_MAX_LIMIT` (200) → `422`. Time windows are half-open (`since` inclusive, `until` exclusive) with RFC 3339 offsets (naive or numeric → `422`). `until` defaults to now and `since` to `until` minus `SIGNALOPS_QUERY_DEFAULT_WINDOW_SECONDS` (1 h); a span over `SIGNALOPS_QUERY_MAX_WINDOW_SECONDS` (7 days) or `since >= until` → `422`. Limits are rejected, never clamped. Each query runs in one short read transaction under the session `statement_timeout`. Database unavailable → `503`.
+
+**Redaction.** `attributes` are redacted again on output with `SIGNALOPS_INGEST_REDACT_FIELDS` plus the signal's source `config.redact_fields` as they are now, so a field added after ingestion is hidden too. Invalid source config → `500` (fails closed). `message` text is returned as stored; ingestion does not scrub free text.
+
+| Route | Returns |
+| --- | --- |
+| `GET /v1/signals` | `SignalPage`: signals with `since <= occurred_at < until`, newest first (ties by ID descending), optional `source_id`, `service_id`, `kind`, `quality_status`. `window` echoes the resolved window; `next_cursor` is null on the last page |
+| `GET /v1/traces/{trace_id}` | `TraceEvidence`: the trace's signals oldest first, up to `limit`; `truncated` when more exist |
+| `GET /v1/sources/quality` | `QualitySummary`: every source of the workspace with `total`, `by_status` (all three statuses), and `by_flag` (flags present) for signals with `since <= ingested_at < until` |
+
+**Cursors.** Opaque, versioned, and bound to the query: workspace, replay scope, filters, and the resolved window. Pass the cursor with the same filters; `since`/`until` may be left out (the cursor's window is used) or must be equal. A cursor from another query → `400 cursor belongs to a different query`; an unreadable one → `400 invalid cursor`. Pages use keyset position `(occurred_at, id)`, so rows inserted later inside the window and older than the position appear on later pages, and none repeat.
 
 ## Investigation requests and idempotency
 
@@ -117,7 +143,7 @@ Last-Event-ID: 1042
 
 ## Security
 
-- Operator APIs require authentication before the demo is exposed publicly.
+- Operator APIs require authentication. Evidence queries use interim per-workspace tokens (ADR-014); the full mechanism is P11-T02.
 - Ingestion uses separate source-specific credentials.
 - Request-size and query limits, plus workspace and replay scope checks, apply to every route.
-- CORS is configured explicitly.
+- CORS is configured explicitly (`SIGNALOPS_CORS_ORIGINS`); `Authorization` is an allowed request header.

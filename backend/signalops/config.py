@@ -2,9 +2,9 @@
 
 import uuid
 from functools import lru_cache
-from typing import Literal
+from typing import Literal, Self
 
-from pydantic import Field, PostgresDsn, RedisDsn, SecretStr
+from pydantic import Field, PostgresDsn, RedisDsn, SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -55,6 +55,16 @@ class Settings(BaseSettings):
     # skewed or late are flagged by the normalizer, not rejected here.
     ingest_max_future_seconds: int = Field(default=24 * 60 * 60, ge=0, le=7 * 24 * 60 * 60)
     ingest_max_age_seconds: int = Field(default=30 * 24 * 60 * 60, ge=60, le=365 * 24 * 60 * 60)
+    # Operator bearer token per workspace ID, as a JSON object. The token's
+    # workspace bounds every evidence query. No token: operator APIs answer 401.
+    # Interim mechanism until P11-T02 (ADR-014); must differ from every ingest token.
+    operator_tokens: dict[uuid.UUID, SecretStr] = Field(default_factory=dict)
+    # Evidence query bounds: page size, and the time window when the caller
+    # gives none and at most.
+    query_default_limit: int = Field(default=50, ge=1, le=1_000)
+    query_max_limit: int = Field(default=200, ge=1, le=1_000)
+    query_default_window_seconds: int = Field(default=60 * 60, ge=60, le=30 * 24 * 60 * 60)
+    query_max_window_seconds: int = Field(default=7 * 24 * 60 * 60, ge=60, le=30 * 24 * 60 * 60)
     # Normalizer timing flags (live scope only): occurred_at more than this
     # ahead of ingestion is clock skew (degraded); more than this behind is a
     # late arrival (noted, still accepted).
@@ -99,6 +109,24 @@ class Settings(BaseSettings):
 
     # Only the deterministic fake provider exists until P07-T01.
     model_provider: Literal["fake"] = "fake"
+
+    @model_validator(mode="after")
+    def _check_query_bounds(self) -> Self:
+        if self.query_default_limit > self.query_max_limit:
+            raise ValueError("query_default_limit must not exceed query_max_limit")
+        if self.query_default_window_seconds > self.query_max_window_seconds:
+            raise ValueError(
+                "query_default_window_seconds must not exceed query_max_window_seconds"
+            )
+        return self
+
+    @model_validator(mode="after")
+    def _check_credentials_disjoint(self) -> Self:
+        # A source token that also opened operator APIs would let a source read evidence.
+        ingest = {token.get_secret_value() for token in self.ingest_tokens.values()}
+        if any(token.get_secret_value() in ingest for token in self.operator_tokens.values()):
+            raise ValueError("an operator token must not equal an ingest token")
+        return self
 
     def validated_database_url(self) -> str:
         """Return the database URL after checking it is a PostgreSQL DSN."""

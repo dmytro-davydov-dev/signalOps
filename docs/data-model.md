@@ -132,7 +132,7 @@ The investigation runtime's database role has **no access** to evaluation ground
 
 ## Initial indexes
 
-- `signals(service_id, occurred_at DESC)`, `signals(source_id, ingested_at DESC)`, and a partial index on `trace_id` where it is not null.
+- `signals(workspace_id, replay_scope, occurred_at, id)` for scoped keyset pages, `signals(service_id, replay_scope, occurred_at, id)` per service, `signals(source_id, replay_scope, ingested_at)` for per-source quality counts, and a partial index on `trace_id` where it is not null. Revision `0008_evidence_query_indexes` replaced the plan's `signals(service_id, occurred_at DESC)` and `signals(source_id, ingested_at DESC)`, which lacked `replay_scope` and the ID tiebreaker. Columns are ascending: newest-first pages scan backward, and the `(occurred_at, id) < (…)` row comparison is an index condition (checked with `EXPLAIN`).
 - `incidents(status, detected_at DESC)`, `incidents(workspace_id, replay_scope, detected_at DESC)` for scoped listing.
 - `investigations(incident_id, created_at DESC)`.
 - `jobs(status, available_at)`, and a partial index on `jobs(lease_until)` for running jobs.

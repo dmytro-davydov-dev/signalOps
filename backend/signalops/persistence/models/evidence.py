@@ -117,8 +117,28 @@ class Signal(Base):
         CheckConstraint(one_of("quality_status", QualityStatus), name="quality_status"),
         CheckConstraint(json_object("attributes"), name="attributes_object"),
         CheckConstraint("jsonb_typeof(quality_flags) = 'array'", name="quality_flags_array"),
-        Index("ix_signals_service_id_occurred_at", "service_id", text("occurred_at DESC")),
-        Index("ix_signals_source_id_ingested_at", "source_id", text("ingested_at DESC")),
+        # Evidence queries (0008): keyset pages within a scope, optionally per
+        # service, scanned in either direction; quality counts per source.
+        Index(
+            "ix_signals_workspace_id_replay_scope_occurred_at",
+            "workspace_id",
+            "replay_scope",
+            "occurred_at",
+            "id",
+        ),
+        Index(
+            "ix_signals_service_id_replay_scope_occurred_at",
+            "service_id",
+            "replay_scope",
+            "occurred_at",
+            "id",
+        ),
+        Index(
+            "ix_signals_source_id_replay_scope_ingested_at",
+            "source_id",
+            "replay_scope",
+            "ingested_at",
+        ),
         Index("ix_signals_trace_id", "trace_id", postgresql_where=text("trace_id IS NOT NULL")),
     )
 

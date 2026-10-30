@@ -26,6 +26,7 @@ from signalops.contracts.investigations import (
     DIAGNOSIS_STATUS_BY_INVESTIGATION_STATUS,
     InvestigationView,
 )
+from signalops.contracts.queries import QualitySummary, SignalPage, TraceEvidence
 from signalops.contracts.tools import TOOL_RESULT_ADAPTER, ToolFailure
 from signalops.contracts.workflow import TERMINAL_INVESTIGATION_STATUSES, InvestigationStatus
 
@@ -138,6 +139,9 @@ def artifacts() -> list[Artifact]:
         Artifact(SCHEMA_DIR / "evidence" / "normalized-signal.v1.json", _schema(NormalizedSignal)),
         Artifact(SCHEMA_DIR / "ingestion" / "ingest-request.v1.json", _schema(IngestRequest)),
         Artifact(SCHEMA_DIR / "ingestion" / "ingest-response.v1.json", _schema(IngestResponse)),
+        Artifact(SCHEMA_DIR / "evidence" / "signal-page.v1.json", _schema(SignalPage)),
+        Artifact(SCHEMA_DIR / "evidence" / "trace-evidence.v1.json", _schema(TraceEvidence)),
+        Artifact(SCHEMA_DIR / "evidence" / "quality-summary.v1.json", _schema(QualitySummary)),
         Artifact(SCHEMA_DIR / "incidents" / "incident-summary.v1.json", _schema(IncidentSummary)),
         Artifact(SCHEMA_DIR / "incidents" / "incident-detail.v1.json", _schema(IncidentDetail)),
         Artifact(SCHEMA_DIR / "incidents" / "incident-page.v1.json", _schema(IncidentPage)),

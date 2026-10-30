@@ -111,6 +111,19 @@ Format: **Decision**, **Reason**, **Trade-off**, **Revisit when**.
 
 ---
 
+## ADR-014: Interim operator tokens scoped to one workspace
+
+**Decision:**
+- Evidence query routes require a bearer token from `SIGNALOPS_OPERATOR_TOKENS` (workspace ID to token), compared as SHA-256 digests in constant time against every configured token. The matching token's workspace is the query's workspace; no route takes a workspace parameter.
+- Settings refuse an operator token equal to any ingestion token, so a source credential cannot open an operator route, and operator tokens are not in the ingestion token set.
+- Replay scope is a validated query parameter (`live` by default) inside the token's workspace. Every read filters through `EvidenceScope` (`persistence/repositories/scope.py`).
+- Responses re-apply redaction to `attributes` with the current process and source field lists.
+**Reason:** P04-T05 must show that queries cannot cross scope, which needs an authenticated principal with a workspace. Q9 (the real operator mechanism) is due at P11-T02; a static token set is the smallest thing that gives the API a principal now and fails closed when unset. Re-redacting on output covers fields added to a list after the evidence was stored.
+**Trade-off:** One shared secret per workspace, no users, roles, or audit identity; rotating a token needs an API restart. Replay datasets are readable by any operator of the workspace. Free-text messages are returned as stored, since ingestion does not scrub them either.
+**Revisit when:** P11-T02 resolves Q9, the UI needs per-user identity, or replay datasets need separate permissions (for example evaluator isolation in P10).
+
+---
+
 ## Open questions
 
 | # | Question | Decide by |
@@ -123,6 +136,6 @@ Format: **Decision**, **Reason**, **Trade-off**, **Revisit when**.
 | Q6 | ~~Diagnosis status ↔ investigation terminal status mapping~~ **Resolved (P02-T05):** one-to-one. `completed` ⇔ `diagnosed`, `insufficient_evidence` ⇔ `insufficient_evidence`, no diagnosis otherwise; enforced in contracts, a database CHECK, and the generated UI module. See data-model.md | P02-T05 |
 | Q7 | Detector window closure metadata schema | P05-T02 |
 | Q8 | Which real model provider is implemented first, and its pricing provenance format | P07-T01 / P07-T02 |
-| Q9 | Operator authentication mechanism before public exposure | P11-T02 |
+| Q9 | Operator authentication mechanism before public exposure. Interim: static per-workspace tokens (ADR-014) | P11-T02 |
 | Q10 | Whether the OpenTelemetry Demo fits local resources, or a smaller synthetic app suffices for the `demo` profile | P10-T03 |
 | Q11 | Planning files live in `docs/`, but `CLAUDE.md` expects them at the repository root. Move them, or update `CLAUDE.md`? | Before P01-T01 |
