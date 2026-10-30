@@ -13,6 +13,9 @@ def build_parser() -> argparse.ArgumentParser:
     commands.add_parser("api", help="serve the HTTP API")
     commands.add_parser("migrate", help="apply database migrations up to head, then exit")
     commands.add_parser("init-topics", help="create or verify Kafka topics, then exit")
+    commands.add_parser(
+        "seed", help="create or verify the deterministic demo workspace catalog, then exit"
+    )
     export = commands.add_parser(
         "export-schemas", help="write JSON Schemas, OpenAPI, and generated frontend contracts"
     )
@@ -80,6 +83,32 @@ def run_init_topics() -> int:
     return 0
 
 
+def run_seed() -> int:
+    import asyncio
+    import logging
+
+    from signalops.config import get_settings
+    from signalops.logs import configure_logging
+    from signalops.persistence.database import Database, create_engine
+    from signalops.persistence.seed import DEMO_WORKSPACE_ID, seed_demo
+
+    settings = get_settings()
+    configure_logging(settings.log_level)
+
+    async def seed() -> None:
+        engine = create_engine(settings)
+        try:
+            await seed_demo(Database.from_engine(engine))
+        finally:
+            await engine.dispose()
+
+    asyncio.run(seed())
+    logging.getLogger(__name__).info(
+        "demo catalog ready", extra={"workspace_id": str(DEMO_WORKSPACE_ID)}
+    )
+    return 0
+
+
 def run_export_schemas(args: argparse.Namespace) -> int:
     from signalops.contracts.export import BreakingChangeError, stale_paths, write_all
 
@@ -98,7 +127,12 @@ def run_export_schemas(args: argparse.Namespace) -> int:
     return 0
 
 
-COMMANDS = {"api": run_api, "migrate": run_migrate, "init-topics": run_init_topics}
+COMMANDS = {
+    "api": run_api,
+    "migrate": run_migrate,
+    "init-topics": run_init_topics,
+    "seed": run_seed,
+}
 
 
 def main(argv: list[str] | None = None) -> int:

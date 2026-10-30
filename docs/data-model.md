@@ -133,11 +133,13 @@ The investigation runtime's database role has **no access** to evaluation ground
 ## Initial indexes
 
 - `signals(service_id, occurred_at DESC)`, `signals(source_id, ingested_at DESC)`, and a partial index on `trace_id` where it is not null.
-- `incidents(status, detected_at DESC)`.
+- `incidents(status, detected_at DESC)`, `incidents(workspace_id, replay_scope, detected_at DESC)` for scoped listing.
+- `investigations(incident_id, created_at DESC)`.
 - `jobs(status, available_at)`, and a partial index on `jobs(lease_until)` for running jobs.
 - `agent_steps(investigation_id, status)`, `progress_events(investigation_id, id)`.
 - A partial index on `outbox_events(created_at)` `WHERE published_at IS NULL`.
 - `graph_edges(from_node_id, relation)`, `graph_edges(to_node_id, relation)`.
+- Foreign-key support (revision `0006_baseline_indexes`): `incident_services(service_id)`, `incident_signals(signal_id)`, partial indexes on `graph_nodes(service_id)`, `(deployment_id)`, `(incident_id)` and `graph_edges(provenance_signal_id)` where not null. Rule, enforced by `test_every_foreign_key_has_a_supporting_index`: every foreign key to a parent other than the workspace has an index led by one of its identifying (non-`workspace_id`, non-`replay_scope`) columns, so parent-side key checks and reverse lookups avoid sequential scans. Workspace-only references are exempt; workspaces are not deleted row by row.
 - JSONB indexes are added only after query profiling.
 
 ## Retention (initial local targets)

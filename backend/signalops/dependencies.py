@@ -11,10 +11,11 @@ from typing import Protocol
 from confluent_kafka.admin import AdminClient
 from redis.asyncio import Redis
 from sqlalchemy import text
-from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
+from sqlalchemy.ext.asyncio import AsyncEngine
 
 from signalops.config import Settings
 from signalops.contracts.health import DependencyStatus, ReadinessResponse
+from signalops.persistence.database import create_engine
 
 logger = logging.getLogger(__name__)
 
@@ -70,14 +71,8 @@ class Resources:
 @asynccontextmanager
 async def open_resources(settings: Settings) -> AsyncIterator[Resources]:
     timeout = settings.readiness_timeout_seconds
-    engine = create_async_engine(
-        settings.validated_database_url(),
-        pool_size=5,
-        max_overflow=5,
-        pool_timeout=timeout,
-        pool_pre_ping=True,
-        connect_args={"connect_timeout": max(1, int(timeout))},
-    )
+    # The readiness probe is bounded by its own per-check limit, not the pool timeout.
+    engine = create_engine(settings)
     redis = Redis.from_url(
         str(settings.redis_url),
         socket_connect_timeout=timeout,

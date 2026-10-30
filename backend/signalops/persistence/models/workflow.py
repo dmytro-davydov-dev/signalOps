@@ -140,6 +140,12 @@ class Incident(Base):
         ),
         CheckConstraint("version >= 1", name="version_positive"),
         Index("ix_incidents_status_detected_at", "status", text("detected_at DESC")),
+        Index(
+            "ix_incidents_workspace_id_replay_scope_detected_at",
+            "workspace_id",
+            "replay_scope",
+            text("detected_at DESC"),
+        ),
     )
 
     id: Mapped[uuid.UUID] = uuid_pk()
@@ -172,6 +178,8 @@ class IncidentService(Base):
             ["workspace_id", "service_id"], ["services.workspace_id", "services.id"]
         ),
         CheckConstraint(one_of("role", IncidentServiceRole), name="role"),
+        # The primary key covers lookups by incident; this covers lookups by service.
+        Index("ix_incident_services_service_id", "service_id"),
     )
 
     incident_id: Mapped[uuid.UUID] = mapped_column(primary_key=True)
@@ -192,6 +200,7 @@ class IncidentSignal(Base):
             ["signals.workspace_id", "signals.replay_scope", "signals.id"],
         ),
         CheckConstraint("relevance BETWEEN 0 AND 1", name="relevance_range"),
+        Index("ix_incident_signals_signal_id", "signal_id"),
     )
 
     incident_id: Mapped[uuid.UUID] = mapped_column(primary_key=True)
@@ -226,6 +235,7 @@ class Investigation(Base):
         CheckConstraint(optional_json_object("diagnosis"), name="diagnosis_object"),
         CheckConstraint(diagnosis_status_rule(), name="diagnosis_status"),
         CheckConstraint("version >= 1", name="version_positive"),
+        Index("ix_investigations_incident_id_created_at", "incident_id", text("created_at DESC")),
     )
 
     id: Mapped[uuid.UUID] = uuid_pk()

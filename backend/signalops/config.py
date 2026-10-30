@@ -30,6 +30,17 @@ class Settings(BaseSettings):
 
     readiness_timeout_seconds: float = Field(default=2.0, gt=0, le=30)
 
+    # Per-process connection pool. Each process holds at most pool_size + max_overflow
+    # connections; size the sum across replicas below PostgreSQL's max_connections.
+    db_pool_size: int = Field(default=5, ge=1, le=50)
+    db_max_overflow: int = Field(default=5, ge=0, le=50)
+    db_pool_timeout_seconds: float = Field(default=5.0, gt=0, le=60)
+    db_connect_timeout_seconds: int = Field(default=5, ge=1, le=60)
+    # Server-side limits applied to every session; they bound runaway queries and lock waits.
+    db_statement_timeout_ms: int = Field(default=15_000, ge=100, le=600_000)
+    db_lock_timeout_ms: int = Field(default=5_000, ge=100, le=600_000)
+    db_idle_in_transaction_timeout_ms: int = Field(default=30_000, ge=1_000, le=600_000)
+
     # Relative to the working directory: the repository root locally, /app in the image.
     migrations_path: str = "migrations"
 

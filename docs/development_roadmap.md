@@ -25,13 +25,13 @@ PostgreSQL owns evidence, workflow progress, budgets, and the initial knowledge 
 
 | Field | Current value |
 | --- | --- |
-| Active phase | Phase 2 Persistence and contracts (in progress) |
+| Active phase | Phase 3 Streaming reliability (not started) |
 | Active task | None |
-| Last completed task | P02-T05 |
-| Latest verified commit | `7cf9c28` (P02-T04); P02-T05 pending commit, validated against the working tree |
-| Validation evidence | P02-T05: contract tests 176 passed (status mapping over every investigation × diagnosis status for the API body and completed event; schema freshness; refusal of breaking rewrites; additive change accepted; 10 checker cases; every committed schema compatible with itself). Integration: every status × diagnosis combination accepted or rejected by `ck_investigations_diagnosis_status` exactly as the Python map says. Frontend status module tests pass. Full suite with integration 338 passed; dev database upgraded to `0005_diagnosis_status_mapping`, `alembic check` no drift. P02-T04 and earlier evidence is in the work log |
+| Last completed task | P02-T06 |
+| Latest verified commit | `d555add` (P02-T05); P02-T06 pending commit, validated against the working tree |
+| Validation evidence | P02-T06: `SIGNALOPS_INTEGRATION=1 uv run pytest` 352 passed, including an empty scratch database upgrading to head with every model table present, rollback of a failed write and of an application error with no partial rows, idempotent deterministic seed, every foreign key backed by an index, session timeouts applied, statement timeout cancelling a slow query, and pool exhaustion raising after the pool timeout. Dev database upgraded to `0006_baseline_indexes`, `alembic check` no drift, `signalops seed` run twice. Earlier evidence is in the work log |
 | Blockers | None recorded |
-| Next task | P02-T06 |
+| Next task | P03-T01 |
 
 ### Scope and release boundaries
 
@@ -227,15 +227,25 @@ Start the React shell in Phase 1 and add API-backed incident views in Phase 5; P
 
 ### P02-T06 Add migrations and repository boundaries
 
-- [ ] Complete this task.
+- [x] Complete this task.
 
 **Implementation:** Create Alembic revisions, deterministic seed data, transaction helpers, and bounded database pools. Add baseline indexes and a schema migration test against real PostgreSQL.
 
 **Acceptance:** An empty database upgrades to head; repository transactions roll back failed writes without leaving partial state.
 
+**Notes (2026-10-30):**
+- `persistence/database.py`: `create_engine(settings)` builds the async engine with a bounded pool (`SIGNALOPS_DB_POOL_SIZE` 5 + `SIGNALOPS_DB_MAX_OVERFLOW` 5, `SIGNALOPS_DB_POOL_TIMEOUT_SECONDS` 5), pre-ping, a connect timeout, and server-side `statement_timeout` 15 s, `lock_timeout` 5 s, `idle_in_transaction_session_timeout` 30 s, and `timezone=UTC` set through libpq `options`. The API lifespan now uses it instead of its inline pool (which reused the 2 s readiness timeout for pool and connect waits). `Database.transaction()` is the unit of work: commit at block end, roll back on any exception; sessions use `expire_on_commit=False`.
+- Repository boundary: repositories take a session inside the caller's transaction and never commit. First one is `persistence/repositories/catalog.py` (`ensure_workspace`, `ensure_source`, `ensure_service`): `INSERT … ON CONFLICT DO NOTHING`, then read back by natural key, raising `CatalogConflictError` when the stored row has another id or kind.
+- `signalops seed` (`persistence/seed.py`) creates the demo workspace, three sources (one per adapter kind), and four services with fixed UUIDs; the workspace, structured-log source, `checkout`, and `payment` IDs are the ones already used by `fixtures/contracts/v1` (a unit test keeps them aligned). One transaction, idempotent.
+- Revision `0006_baseline_indexes` (hand-written, `alembic check` clean): `incidents(workspace_id, replay_scope, detected_at DESC)`, `investigations(incident_id, created_at DESC)`, `incident_services(service_id)`, `incident_signals(signal_id)`, partial `graph_nodes(service_id|deployment_id|incident_id)` and `graph_edges(provenance_signal_id)`. Found by listing foreign keys with no index led by one of their identifying columns; an integration test now enforces that rule.
+- **Deviations:** the existing revisions 0001–0005 already satisfied "create Alembic revisions"; this task adds only 0006. Seed data is the catalog only: evidence and incident scenarios belong to the fixture generator (P10-T01) and demo producer (P04-T01). No error translation layer over `IntegrityError` yet; P03-T02 adds the categories receipts need.
+- Left to later tasks: further repositories as their writers arrive (receipts/outbox P03-T02, signals P04, incidents P05, jobs P06); signal query indexes that include `replay_scope`, after P04-T05 fixes the query shapes.
+
 **Phase gate:** All tasks above are checked, acceptance evidence is recorded in the ledger, and the phase outcome is demonstrated against real infrastructure where relevant.
 
 **Suggested phase commit:** `feat: define persistence models and event contracts`. Split this into task-sized commits as needed.
+
+**Phase 2 gate (2026-10-30): passed.** All six tasks are checked with evidence in the work log. Outcome demonstrated against real PostgreSQL: an empty database upgrades to `0006_baseline_indexes`, downgrade to baseline and upgrade again succeed, `alembic check` reports no drift on the dev database, contract fixtures round-trip and match the seeded catalog, and repository transactions roll back failed writes. Open items carried forward: OpenAPI lists only health routes until the investigation and incident endpoints exist (P05–P08).
 
 ## Phase 3 Streaming reliability
 
@@ -858,13 +868,23 @@ Keep these outside the release critical path unless measurements justify promoti
 
 ### 2026-10-29 — P02-T05
 - Status: completed
-- Commit: pending (validated against the working tree)
+- Commit: `d555add`
 - Implemented: `contracts/investigations.py` (mapping, `InvestigationView`, `terminal_status_for`), `contracts/compatibility.py`, `contracts/export.py`, `signalops export-schemas [--check] [--allow-breaking]`; mapping enforced in `InvestigationCompletedPayload` and the persistence model; revision `0005_diagnosis_status_mapping`; exported schemas and OpenAPI under `backend/signalops/contracts/schemas/`; generated `apps/web/src/api/generated/investigationStatus.ts` plus `investigationStatus.ts` and its test; investigation fixtures; `tests/contract/test_status_mapping.py`, `test_schema_export.py`; integration mapping test and terminal-state helpers updated; docs (events, api, data-model, decisions Q6, development).
 - Validation commands and results: `uv run ruff check .`, `uv run ruff format --check .`, `uv run mypy` (57 files) pass; `uv run pytest` 190 passed, 148 skipped; with `.env` sourced, `SIGNALOPS_INTEGRATION=1 uv run pytest` 338 passed. First integration run failed `test_enumerations_reject_unknown_values[Investigation-status]` because the new CHECK rejected unknown statuses before the enumeration check; rule rephrased in model and migration (equality of the two texts checked). `uv run signalops export-schemas --check` exit 0. Negative checks: removing `span_id` from `StructuredLogInput` made `export-schemas` exit 1 ("property removed") and the freshness tests fail; mapping `budget_exceeded` to a diagnosis in Python without a migration failed the database mapping test; both restored. `docker compose run --rm --build migrate` upgraded the dev database `0004_graph_reliability -> 0005_diagnosis_status_mapping`; `alembic check` no new operations; API `/health/ready` 200. Frontend `pnpm lint`, `pnpm typecheck`, `pnpm test` (13 passed), `pnpm build` pass. `docker compose config --quiet` ok.
 - Evidence or artifact references: `backend/signalops/contracts/schemas/`, `fixtures/contracts/v1/investigations/`.
 - Deviations and reasons: see task notes (early `InvestigationView`, tightened completed payload, health-only OpenAPI).
 - Remaining issues: none for this task.
 - Next task: P02-T06
+
+### 2026-10-30 — P02-T06
+- Status: completed
+- Commit: pending (validated against the working tree)
+- Implemented: `persistence/database.py` (`create_engine`, `Database.transaction`); `SIGNALOPS_DB_*` pool and timeout settings; API lifespan uses the shared engine factory; `persistence/repositories/catalog.py`; `persistence/seed.py` and `signalops seed`; revision `0006_baseline_indexes` with matching model indexes; `tests/integration/test_repositories.py`, `tests/unit/test_seed.py`, CLI test; docs (development, data-model).
+- Validation commands and results: `uv run ruff check .`, `uv run ruff format --check .`, `uv run mypy` (63 files) pass; `uv run pytest` 194 passed, 158 skipped; with `.env` sourced, `SIGNALOPS_INTEGRATION=1 uv run pytest` 352 passed. Negative checks: removing the investigations index from model and revision failed `test_every_foreign_key_has_a_supporting_index`; a `transaction()` that commits in `finally` failed the application-error and conflict rollback tests (the integrity-error case still passed because PostgreSQL aborts the transaction itself); both restored. `docker compose run --rm --build migrate` upgraded the dev database `0005_diagnosis_status_mapping -> 0006_baseline_indexes`; `uv run alembic check` no new operations; `uv run signalops seed` twice → 3 sources and 4 services in the demo workspace; API container recreated, `/health/ready` 200. `docker compose config --quiet` ok. Frontend unchanged, not re-run.
+- Evidence or artifact references: none retained.
+- Deviations and reasons: see task notes (catalog-only seed, no IntegrityError translation yet).
+- Remaining issues: none for this task.
+- Next task: P03-T01
 
 ## Work log template
 

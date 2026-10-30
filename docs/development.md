@@ -1,6 +1,6 @@
 # Development guide
 
-> Status: Phase 1 complete. All commands below are verified in this repository.
+> Status: Phases 1–2 complete. All commands below are verified in this repository.
 
 ## Repository layout
 
@@ -47,6 +47,7 @@ uv run mypy                   # strict type check of backend/signalops and tests
 uv run pytest                 # unit tests; integration tests are skipped
 uv run signalops export-schemas          # regenerate JSON Schemas, OpenAPI, generated UI contracts
 uv run signalops export-schemas --check  # exit 1 if they are out of date (pytest checks this too)
+uv run signalops seed                    # create or verify the demo catalog (needs SIGNALOPS_DATABASE_URL)
 
 # Integration tests against the running Compose infrastructure
 set -a; . ./.env; set +a
@@ -126,7 +127,7 @@ uv run alembic revision --autogenerate -m "describe change"   # review the file 
 uv run alembic upgrade head
 ```
 
-Revisions live in `migrations/versions/` (`0001_baseline` is empty; `0002_source_evidence` adds the source and evidence tables; `0003_incident_workflow` adds incident and workflow tables and status-transition triggers; `0004_graph_reliability` adds graph, receipt, and outbox tables; `0005_diagnosis_status_mapping` ties the stored diagnosis to the investigation status). ORM models live in `backend/signalops/persistence/models/`, must use `signalops.persistence.base.Base` (whose naming convention keeps constraint names stable), and must be imported from `signalops.persistence.models` so Alembic sees them. Generate revisions against a throwaway database at the previous head, review them, and keep names under 63 characters (pass an explicit `name=` when the convention would exceed it). The integration test `test_migrations_match_models` fails if models and revisions drift. Autogenerate ignores triggers and functions, so add them by hand and cover them with tests.
+Revisions live in `migrations/versions/` (`0001_baseline` is empty; `0002_source_evidence` adds the source and evidence tables; `0003_incident_workflow` adds incident and workflow tables and status-transition triggers; `0004_graph_reliability` adds graph, receipt, and outbox tables; `0005_diagnosis_status_mapping` ties the stored diagnosis to the investigation status; `0006_baseline_indexes` adds foreign-key and scoped-listing indexes). ORM models live in `backend/signalops/persistence/models/`, must use `signalops.persistence.base.Base` (whose naming convention keeps constraint names stable), and must be imported from `signalops.persistence.models` so Alembic sees them. Generate revisions against a throwaway database at the previous head, review them, and keep names under 63 characters (pass an explicit `name=` when the convention would exceed it). The integration test `test_migrations_match_models` fails if models and revisions drift. Autogenerate ignores triggers and functions, so add them by hand and cover them with tests.
 
 nginx serves the built UI and proxies `/health/` and `/v1/` to the API, resolving the `api` container per request so a stopped API returns 502 immediately. UI routes therefore never use the `/health/` or `/v1/` prefixes.
 
@@ -152,6 +153,12 @@ Backend processes read `SIGNALOPS_`-prefixed variables (`backend/signalops/confi
 | `SIGNALOPS_READINESS_TIMEOUT_SECONDS` | `2.0` | per-dependency probe limit |
 | `SIGNALOPS_MODEL_PROVIDER` | `fake` | only `fake` is accepted until P07-T01; no model key is read |
 | `SIGNALOPS_MIGRATIONS_PATH` | `migrations` | Alembic environment, relative to the working directory |
+| `SIGNALOPS_DB_POOL_SIZE` / `SIGNALOPS_DB_MAX_OVERFLOW` | `5` / `5` | per process; keep the sum over all processes below PostgreSQL `max_connections` (100 by default) |
+| `SIGNALOPS_DB_POOL_TIMEOUT_SECONDS` | `5.0` | wait for a pooled connection before `sqlalchemy.exc.TimeoutError` |
+| `SIGNALOPS_DB_CONNECT_TIMEOUT_SECONDS` | `5` | TCP connect limit |
+| `SIGNALOPS_DB_STATEMENT_TIMEOUT_MS` | `15000` | server-side `statement_timeout` for every session |
+| `SIGNALOPS_DB_LOCK_TIMEOUT_MS` | `5000` | server-side `lock_timeout` |
+| `SIGNALOPS_DB_IDLE_IN_TRANSACTION_TIMEOUT_MS` | `30000` | ends sessions left idle inside a transaction |
 
 Compose-level variables in `.env` (see `.env.example`): `POSTGRES_DB`, `POSTGRES_USER`, `POSTGRES_PASSWORD` (required, no default), the loopback host ports `POSTGRES_HOST_PORT`, `REDIS_HOST_PORT`, `KAFKA_HOST_PORT`, `API_HOST_PORT`, `WEB_HOST_PORT`, and `SIGNALOPS_LOG_LEVEL`.
 
@@ -166,6 +173,8 @@ The frontend reads `VITE_API_BASE_URL` at build time (empty means same origin).
 - **Type annotations and explicit error categories** everywhere. No broad exception handling that silently acknowledges failed work.
 - **Timestamps** are UTC-aware. Source event IDs are stable, domain IDs are UUIDs, and money is stored in integer units.
 - **Migrations:** every constraint and index goes through an Alembic revision. Review generated revisions before applying them.
+- **Database access:** processes build their engine with `persistence.database.create_engine` (bounded pool, server-side timeouts, UTC sessions). A unit of work is `async with database.transaction() as session:`; it commits when the block ends and rolls back every write when it raises. Repositories (`persistence/repositories/`) take that session and never commit, roll back, or open their own transactions. Keep the block free of model calls, broker publication, and other slow I/O.
+- **Seed data:** `signalops seed` (`persistence/seed.py`) creates the demo workspace, one source per adapter kind, and the services `checkout`, `payment`, `inventory`, `bank-gateway` with fixed IDs that match `fixtures/contracts/v1`. It is idempotent and raises `CatalogConflictError` instead of overwriting a row whose identity matches but whose values differ.
 - **Frontend:** server data lives in the query layer, interaction state in components and hooks. Handle loading, empty, stale, disconnected, failed, and insufficient-evidence states.
 - **No new infrastructure** (Kubernetes, a graph database, an agent framework, a new service) without a concrete requirement recorded in [decisions.md](decisions.md).
 

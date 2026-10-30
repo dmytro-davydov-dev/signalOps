@@ -20,6 +20,7 @@ from sqlalchemy import (
     Index,
     Text,
     UniqueConstraint,
+    text,
 )
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -85,6 +86,12 @@ class GraphNode(Base):
         ),
         CheckConstraint(ENTITY_REFERENCE, name="entity_reference"),
         CheckConstraint(json_object("properties"), name="properties_object"),
+        *(
+            Index(
+                f"ix_graph_nodes_{column}", column, postgresql_where=text(f"{column} IS NOT NULL")
+            )
+            for column in ("service_id", "deployment_id", "incident_id")
+        ),
     )
 
     id: Mapped[uuid.UUID] = uuid_pk()
@@ -127,6 +134,11 @@ class GraphEdge(Base):
         CheckConstraint(json_object("properties"), name="properties_object"),
         Index("ix_graph_edges_from_node_id_relation", "from_node_id", "relation"),
         Index("ix_graph_edges_to_node_id_relation", "to_node_id", "relation"),
+        Index(
+            "ix_graph_edges_provenance_signal_id",
+            "provenance_signal_id",
+            postgresql_where=text("provenance_signal_id IS NOT NULL"),
+        ),
     )
 
     id: Mapped[uuid.UUID] = uuid_pk()
