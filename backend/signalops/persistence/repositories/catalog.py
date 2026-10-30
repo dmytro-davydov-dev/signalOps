@@ -66,3 +66,6 @@ class CatalogRepository:
         if service is None or service.id != service_id:
             raise CatalogConflictError(f"service {name!r} ({environment}) conflicts with a row")
         return service
+
+    async def get_source(self, source_id: uuid.UUID) -> Source | None:
+        return await self._session.get(Source, source_id)

@@ -1,0 +1,145 @@
+{
+  "$defs": {
+    "IngestFailureReason": {
+      "enum": [
+        "ambiguous_timeout",
+        "broker_unavailable"
+      ],
+      "title": "IngestFailureReason",
+      "type": "string"
+    },
+    "IngestRecordResult": {
+      "additionalProperties": false,
+      "properties": {
+        "detail": {
+          "anyOf": [
+            {
+              "maxLength": 2048,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Detail"
+        },
+        "event_id": {
+          "anyOf": [
+            {
+              "format": "uuid",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Event Id"
+        },
+        "index": {
+          "minimum": 0,
+          "title": "Index",
+          "type": "integer"
+        },
+        "reason": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/IngestRejectReason"
+            },
+            {
+              "$ref": "#/$defs/IngestFailureReason"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Reason"
+        },
+        "source_event_id": {
+          "anyOf": [
+            {
+              "maxLength": 512,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Source Event Id"
+        },
+        "status": {
+          "$ref": "#/$defs/IngestRecordStatus"
+        }
+      },
+      "required": [
+        "index",
+        "status"
+      ],
+      "title": "IngestRecordResult",
+      "type": "object"
+    },
+    "IngestRecordStatus": {
+      "enum": [
+        "accepted",
+        "rejected",
+        "failed"
+      ],
+      "title": "IngestRecordStatus",
+      "type": "string"
+    },
+    "IngestRejectReason": {
+      "enum": [
+        "invalid_record",
+        "oversized",
+        "timestamp_out_of_range",
+        "duplicate_in_batch"
+      ],
+      "title": "IngestRejectReason",
+      "type": "string"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "accepted": {
+      "minimum": 0,
+      "title": "Accepted",
+      "type": "integer"
+    },
+    "batch_id": {
+      "format": "uuid",
+      "title": "Batch Id",
+      "type": "string"
+    },
+    "failed": {
+      "minimum": 0,
+      "title": "Failed",
+      "type": "integer"
+    },
+    "rejected": {
+      "minimum": 0,
+      "title": "Rejected",
+      "type": "integer"
+    },
+    "results": {
+      "items": {
+        "$ref": "#/$defs/IngestRecordResult"
+      },
+      "title": "Results",
+      "type": "array"
+    }
+  },
+  "required": [
+    "batch_id",
+    "accepted",
+    "rejected",
+    "failed",
+    "results"
+  ],
+  "title": "IngestResponse",
+  "type": "object"
+}

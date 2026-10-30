@@ -8,7 +8,8 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from signalops import __version__
-from signalops.api import health
+from signalops.adapters.ingestion import IngestPolicy, SourceTokens
+from signalops.api import health, ingest
 from signalops.config import Settings, get_settings
 from signalops.dependencies import Resources, open_resources
 
@@ -40,6 +41,8 @@ def create_app(
 
     app = FastAPI(title="SignalOps API", version=__version__, lifespan=lifespan)
     app.state.settings = settings
+    app.state.source_tokens = SourceTokens(settings.ingest_tokens)
+    app.state.ingest_policy = IngestPolicy.from_settings(settings)
     if settings.cors_origins:
         app.add_middleware(
             CORSMiddleware,
@@ -48,4 +51,5 @@ def create_app(
             allow_headers=["Content-Type", "Idempotency-Key", "Last-Event-ID"],
         )
     app.include_router(health.router)
+    app.include_router(ingest.router)
     return app

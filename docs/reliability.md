@@ -88,7 +88,7 @@ Consumers and the outbox publisher log one structured line every `SIGNALOPS_STRE
 | Worker killed after a completed step | Lease expires, another worker resumes at the next unfinished step, stale writes rejected |
 | Redis restart or empty volume | Cache misses and briefly paused model calls. Investigations, windows, and SSE history intact |
 | Provider ambiguous timeout | Unknown cost recorded, reservation retained, retry reserved separately |
-| Kafka outage during ingest | No false acceptance. Client retries with the same IDs |
+| Kafka outage during ingest | No record reported accepted; 503 with per-record `failed` (`ambiguous_timeout` when the broker may have written it). Client retries with the same `source_event_id`s and gets the same event IDs. Verified against a stopped Compose broker (P04-T02) |
 | Permanent validation failure | Quarantined to `processing.failed.v1`, original not lost; redrivable while retained |
 | Failure event cannot be published | Original offset not committed; retried, then the consumer stops |
 | Consumer stopped or rebalanced mid-stream | Record in hand committed or redelivered; pending retry state dropped with the partition |

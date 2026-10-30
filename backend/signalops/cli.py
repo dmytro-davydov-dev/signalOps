@@ -36,6 +36,24 @@ def build_parser() -> argparse.ArgumentParser:
     demo.add_argument(
         "--labels", help="separate file for evaluator labels; never mixed into the signals"
     )
+    post = commands.add_parser(
+        "demo-post",
+        help="generate a demo dataset and post it to the ingestion API, then exit",
+    )
+    post.add_argument("scenario", choices=["healthy", "downstream-timeout"])
+    post.add_argument(
+        "--api-url", default="http://localhost:8010", help="API base URL (default %(default)s)"
+    )
+    post.add_argument(
+        "--seed",
+        type=int,
+        help="random seed (default: a new one per run, so reruns are distinct evidence)",
+    )
+    post.add_argument("--start", help="UTC start time, RFC 3339 (default: now minus the duration)")
+    post.add_argument(
+        "--duration-s", type=int, default=600, help="length of the dataset in seconds"
+    )
+    post.add_argument("--batch-size", type=int, default=200, help="records per request")
     redrive = commands.add_parser(
         "redrive-record",
         help="republish one quarantined record to its topic with a new redrive attempt ID",
@@ -260,6 +278,73 @@ def run_demo_generate(args: argparse.Namespace) -> int:
     return 0
 
 
+def run_demo_post(args: argparse.Namespace) -> int:
+    import logging
+    import os
+    import secrets
+    from datetime import UTC, datetime, timedelta
+
+    from pydantic import TypeAdapter, ValidationError
+
+    from signalops.demo.generator import Scenario, generate
+    from signalops.demo.poster import PostError, post_records, urllib_transport
+    from signalops.logs import configure_logging
+
+    configure_logging(os.environ.get("SIGNALOPS_LOG_LEVEL", "INFO"))
+    if not args.api_url.startswith(("http://", "https://")):
+        print("--api-url must use http or https", file=sys.stderr)
+        return 2
+    try:
+        tokens = TypeAdapter(dict[uuid.UUID, str]).validate_json(
+            os.environ.get("SIGNALOPS_INGEST_TOKENS", "{}")
+        )
+    except ValidationError:
+        print(
+            "SIGNALOPS_INGEST_TOKENS must be a JSON object of source ID to token", file=sys.stderr
+        )
+        return 2
+    duration = timedelta(seconds=args.duration_s)
+    if args.start is None:
+        start = datetime.now(UTC).replace(microsecond=0) - duration
+    else:
+        start = datetime.fromisoformat(args.start)
+        if start.tzinfo is None:
+            print("--start must include a UTC offset", file=sys.stderr)
+            return 2
+    # Source event IDs derive from scenario and seed; a fresh seed keeps reruns distinct.
+    seed = args.seed if args.seed is not None else secrets.randbelow(2**31)
+    try:
+        dataset = generate(Scenario(args.scenario), seed=seed, start=start, duration=duration)
+    except ValueError as error:
+        print(error, file=sys.stderr)
+        return 2
+    try:
+        summary = post_records(
+            dataset.records,
+            api_url=args.api_url,
+            tokens=tokens,
+            transport=urllib_transport(timeout_seconds=60),
+            batch_size=args.batch_size,
+        )
+    except PostError as error:
+        print(error, file=sys.stderr)
+        return 1
+    logging.getLogger(__name__).info(
+        "demo dataset posted",
+        extra={
+            "scenario": args.scenario,
+            "seed": seed,
+            "start": start.isoformat(),
+            "records": len(dataset.records),
+            "accepted": summary.accepted,
+            "rejected": summary.rejected,
+            "rejected_reasons": summary.rejected_reasons,
+            "retries": summary.retries,
+        },
+    )
+    return 1 if summary.rejected else 0
+
+
 def run_export_schemas(args: argparse.Namespace) -> int:
     from signalops.contracts.export import BreakingChangeError, stale_paths, write_all
 
@@ -294,6 +379,8 @@ def main(argv: list[str] | None = None) -> int:
         return run_export_schemas(args)
     if args.command == "demo-generate":
         return run_demo_generate(args)
+    if args.command == "demo-post":
+        return run_demo_post(args)
     if args.command == "redrive-record":
         return run_redrive_record(args)
     if args.command == "redrive-outbox":

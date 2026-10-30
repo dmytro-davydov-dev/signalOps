@@ -1,5 +1,6 @@
 """Process configuration loaded from environment variables."""
 
+import uuid
 from functools import lru_cache
 from typing import Literal
 
@@ -44,6 +45,38 @@ class Settings(BaseSettings):
     cors_origins: list[str] = Field(default_factory=list)
 
     readiness_timeout_seconds: float = Field(default=2.0, gt=0, le=30)
+
+    # Ingestion bearer token per source ID, as a JSON object. A source without
+    # a token cannot ingest.
+    ingest_tokens: dict[uuid.UUID, SecretStr] = Field(default_factory=dict)
+    ingest_max_records: int = Field(default=500, ge=1, le=10_000)
+    ingest_max_request_bytes: int = Field(default=4 * 1024 * 1024, ge=64 * 1024, le=64 * 1024**2)
+    # Coarse bounds on occurred_at relative to receipt. Records inside them but
+    # skewed or late are flagged by the normalizer, not rejected here.
+    ingest_max_future_seconds: int = Field(default=24 * 60 * 60, ge=0, le=7 * 24 * 60 * 60)
+    ingest_max_age_seconds: int = Field(default=30 * 24 * 60 * 60, ge=60, le=365 * 24 * 60 * 60)
+    # Payload keys whose values are replaced before publishing, at any depth.
+    # Matched case-insensitively with "-" and " " read as "_". A source's
+    # config may add more under "redact_fields".
+    ingest_redact_fields: list[str] = Field(
+        default_factory=lambda: [
+            "access_token",
+            "api_key",
+            "apikey",
+            "authorization",
+            "card_number",
+            "cookie",
+            "credit_card",
+            "passwd",
+            "password",
+            "private_key",
+            "refresh_token",
+            "secret",
+            "set_cookie",
+            "ssn",
+            "token",
+        ]
+    )
 
     # Per-process connection pool. Each process holds at most pool_size + max_overflow
     # connections; size the sum across replicas below PostgreSQL's max_connections.

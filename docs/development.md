@@ -112,11 +112,11 @@ Startup order: `postgres` and `kafka` become healthy → the one-shot `migrate` 
 
 ### Profiles
 
-The default `docker compose up` needs no paid model key and does not start the OpenTelemetry Demo. Optional profiles are reserved for later tasks; they currently contain no services:
+The default `docker compose up` needs no paid model key and does not start the OpenTelemetry Demo. Optional profiles hold services that are not started by default:
 
 | Profile | Will contain | Added in |
 | --- | --- | --- |
-| `demo` | Demo producer service that posts generated records to ingestion; optional instrumented demo application | P04-T02, P10-T03 |
+| `demo` | `demo-seed` (runs `signalops seed`) and `demo` (posts one generated `downstream-timeout` run to the API); later an optional instrumented demo application | P04-T02 (exists), P10-T03 |
 | `evaluation` | Evaluation runner for isolated replays | P10-T02 |
 | `observability` | Metrics and dashboards | P11-T01 |
 | `tools` | The bare backend image (`signalops --version`), used to build or run ad hoc commands | P01-T03 (exists) |
@@ -161,6 +161,11 @@ Backend processes read `SIGNALOPS_`-prefixed variables (`backend/signalops/confi
 | `SIGNALOPS_API_HOST` / `SIGNALOPS_API_PORT` | `0.0.0.0` / `8000` | |
 | `SIGNALOPS_CORS_ORIGINS` | empty | JSON list; only needed when the UI is served from another origin |
 | `SIGNALOPS_READINESS_TIMEOUT_SECONDS` | `2.0` | per-dependency probe limit |
+| `SIGNALOPS_INGEST_TOKENS` | `{}` | JSON object of source ID to bearer token for `POST /v1/ingest/{source_id}`; a source without a token cannot ingest. Contains credentials, never logged. See `.env.example` |
+| `SIGNALOPS_INGEST_MAX_RECORDS` | `500` | Records per ingestion request (`413` above it) |
+| `SIGNALOPS_INGEST_MAX_REQUEST_BYTES` | `4194304` | Ingestion request body limit (`413` above it) |
+| `SIGNALOPS_INGEST_MAX_FUTURE_SECONDS` / `SIGNALOPS_INGEST_MAX_AGE_SECONDS` | `86400` / `2592000` | Records with `occurred_at` further ahead of or behind receipt are rejected `timestamp_out_of_range` |
+| `SIGNALOPS_INGEST_REDACT_FIELDS` | password, token, authorization, cookie, … (`config.py`) | JSON list of payload keys whose values are replaced before publishing; a source's `config.redact_fields` adds more |
 | `SIGNALOPS_MODEL_PROVIDER` | `fake` | only `fake` is accepted until P07-T01; no model key is read |
 | `SIGNALOPS_MIGRATIONS_PATH` | `migrations` | Alembic environment, relative to the working directory |
 | `SIGNALOPS_DB_POOL_SIZE` / `SIGNALOPS_DB_MAX_OVERFLOW` | `5` / `5` | per process; keep the sum over all processes below PostgreSQL `max_connections` (100 by default) |
@@ -170,7 +175,7 @@ Backend processes read `SIGNALOPS_`-prefixed variables (`backend/signalops/confi
 | `SIGNALOPS_DB_LOCK_TIMEOUT_MS` | `5000` | server-side `lock_timeout` |
 | `SIGNALOPS_DB_IDLE_IN_TRANSACTION_TIMEOUT_MS` | `30000` | ends sessions left idle inside a transaction |
 
-Compose-level variables in `.env` (see `.env.example`): `POSTGRES_DB`, `POSTGRES_USER`, `POSTGRES_PASSWORD` (required, no default), the loopback host ports `POSTGRES_HOST_PORT`, `REDIS_HOST_PORT`, `KAFKA_HOST_PORT`, `API_HOST_PORT`, `WEB_HOST_PORT`, and `SIGNALOPS_LOG_LEVEL`.
+Compose-level variables in `.env` (see `.env.example`): `POSTGRES_DB`, `POSTGRES_USER`, `POSTGRES_PASSWORD` (required, no default), the loopback host ports `POSTGRES_HOST_PORT`, `REDIS_HOST_PORT`, `KAFKA_HOST_PORT`, `API_HOST_PORT`, `WEB_HOST_PORT`, `SIGNALOPS_LOG_LEVEL`, and `SIGNALOPS_INGEST_TOKENS` (passed to every backend container).
 
 The frontend reads `VITE_API_BASE_URL` at build time (empty means same origin).
 
@@ -185,7 +190,8 @@ The frontend reads `VITE_API_BASE_URL` at build time (empty means same origin).
 - **Migrations:** every constraint and index goes through an Alembic revision. Review generated revisions before applying them.
 - **Database access:** processes build their engine with `persistence.database.create_engine` (bounded pool, server-side timeouts, UTC sessions). A unit of work is `async with database.transaction() as session:`; it commits when the block ends and rolls back every write when it raises. Repositories (`persistence/repositories/`) take that session and never commit, roll back, or open their own transactions. Keep the block free of model calls, broker publication, and other slow I/O.
 - **Seed data:** `signalops seed` (`persistence/seed.py`) creates the demo workspace, one source per adapter kind, and the services `checkout`, `payment`, `inventory`, `bank-gateway`, `orders-db` with fixed IDs that match `fixtures/contracts/v1`. It is idempotent and raises `CatalogConflictError` instead of overwriting a row whose identity matches but whose values differ.
-- **Demo data:** `signalops demo-generate SCENARIO` (`demo/generator.py`) writes a deterministic synthetic dataset for the seeded demo sources: checkout, inventory, orders-db, payment, and bank-gateway traffic with noise, trace-linked logs and trace summaries, and a versioned deployment. Scenarios are `healthy` and `downstream-timeout` (bank-gateway latency makes payment time out between 40% and 80% of the run). Defaults: seed 42, start `2026-10-16T10:30:00Z`, 600 s. `--out` gets JSON Lines of ingestion records (`source_id`, `source_event_id`, `occurred_at`, `payload`); `--labels` gets the evaluator labels in a separate file, and nothing that identifies the scenario or fault is written into a record. `fixtures/scenarios/v1/*.labels.json` pin each scenario's dataset hash; a unit test regenerates and compares. If a generator change is intended, regenerate those files with `--labels` (and bump `GENERATOR_VERSION` when old datasets must stay distinguishable). Posting the records to the ingestion API arrives with P04-T02.
+- **Demo data:** `signalops demo-generate SCENARIO` (`demo/generator.py`) writes a deterministic synthetic dataset for the seeded demo sources: checkout, inventory, orders-db, payment, and bank-gateway traffic with noise, trace-linked logs and trace summaries, and a versioned deployment. Scenarios are `healthy` and `downstream-timeout` (bank-gateway latency makes payment time out between 40% and 80% of the run). Defaults: seed 42, start `2026-10-16T10:30:00Z`, 600 s. `--out` gets JSON Lines of ingestion records (`source_id`, `source_event_id`, `occurred_at`, `payload`); `--labels` gets the evaluator labels in a separate file, and nothing that identifies the scenario or fault is written into a record. `fixtures/scenarios/v1/*.labels.json` pin each scenario's dataset hash; a unit test regenerates and compares. If a generator change is intended, regenerate those files with `--labels` (and bump `GENERATOR_VERSION` when old datasets must stay distinguishable).
+- **Posting demo data:** `signalops demo-post SCENARIO [--api-url URL] [--seed N] [--start T] [--duration-s S] [--batch-size N]` (`demo/poster.py`) generates a run and posts it per source with the tokens from `SIGNALOPS_INGEST_TOKENS`. Failed records are resent with the same IDs (5 attempts, exponential backoff); rejected ones are counted and make the command exit 1. Defaults: start = now minus the duration (so timestamps pass the ingestion bounds) and a fresh random seed per run, because source event IDs derive from scenario and seed and a rerun with the same seed would be deduplicated as the same evidence. Pass `--seed` and `--start` for a reproducible run. In Compose: set `SIGNALOPS_INGEST_TOKENS` in `.env`, then `docker compose --profile demo up demo` (or `docker compose --profile demo run --rm demo demo-post healthy --api-url http://api:8000`).
 - **Frontend:** server data lives in the query layer, interaction state in components and hooks. Handle loading, empty, stale, disconnected, failed, and insufficient-evidence states.
 - **No new infrastructure** (Kubernetes, a graph database, an agent framework, a new service) without a concrete requirement recorded in [decisions.md](decisions.md).
 

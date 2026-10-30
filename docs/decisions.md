@@ -75,6 +75,17 @@ Format: **Decision**, **Reason**, **Trade-off**, **Revisit when**.
 **Reason:** It avoids presenting a bigger budget as an architectural gain.
 **Trade-off:** More evaluation work, and repeated paid runs need explicit budget approval.
 
+## ADR-011: Ingestion acknowledges per record after Kafka, with derived event IDs
+
+**Decision:**
+- `POST /v1/ingest/{source_id}` reports each record as `accepted` only after Kafka acknowledged it, `rejected` when the record itself is invalid, or `failed` when it was not acknowledged. Any failed record makes the response 503 with the same per-record body.
+- The raw envelope's `event_id` is UUIDv5 of source, replay scope, and `source_event_id`, so every retry of a record, including after an ambiguous timeout, carries the same event ID and consumer receipts deduplicate it.
+- Source tokens come from `SIGNALOPS_INGEST_TOKENS` (source ID to token), compared as SHA-256 digests in constant time. `sources.config` holds only non-secret settings such as `redact_fields`.
+- Ingestion checks shape, size, and coarse timestamp bounds only; payloads go to the normalizer unvalidated, so malformed records become auditable quarantined evidence.
+**Reason:** No false acceptance during a broker outage, and safe blind retries of a whole batch. Keeping tokens out of the database follows the rule that source configuration stores no credentials.
+**Trade-off:** Adding or rotating a token requires restarting the API; one token per source. A client that resends a `source_event_id` with a different payload gets the first version kept downstream.
+**Revisit when:** Sources are created at runtime, or rotation without a restart is needed (P11-T02 covers source credential rotation): move digests to a table or secret store.
+
 ---
 
 ## Open questions

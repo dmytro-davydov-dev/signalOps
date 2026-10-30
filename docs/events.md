@@ -55,7 +55,7 @@ The `service_hint` is the source's own string, used as given: two spellings of o
 
 | Field | Notes |
 | --- | --- |
-| `event_id` | UUID that stays stable across republish and redrive. Consumers deduplicate on it. |
+| `event_id` | UUID that stays stable across republish and redrive. Consumers deduplicate on it. For `signal.raw`, ingestion derives it as UUIDv5 of source, replay scope, and `source_event_id`, so client retries share one ID ([ADR-011](decisions.md#adr-011-ingestion-acknowledges-per-record-after-kafka-with-derived-event-ids)). |
 | `event_type`, `schema_version` | Select the Pydantic payload model. Unsupported versions are quarantined. |
 | `workspace_id` | Required on every event. |
 | `source_id` | UUID, required for `signal.raw` and `signal.normalized`, optional for other domain events. |

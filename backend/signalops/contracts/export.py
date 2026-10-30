@@ -21,6 +21,7 @@ from signalops.contracts.diagnosis import Diagnosis, DiagnosisStatus
 from signalops.contracts.events import EVENT_PAYLOADS, EventEnvelope
 from signalops.contracts.evidence import NormalizedSignal
 from signalops.contracts.incidents import IncidentDetail, IncidentPage, IncidentSummary
+from signalops.contracts.ingestion import IngestRequest, IngestResponse
 from signalops.contracts.investigations import (
     DIAGNOSIS_STATUS_BY_INVESTIGATION_STATUS,
     InvestigationView,
@@ -135,6 +136,8 @@ def artifacts() -> list[Artifact]:
     ]
     found += [
         Artifact(SCHEMA_DIR / "evidence" / "normalized-signal.v1.json", _schema(NormalizedSignal)),
+        Artifact(SCHEMA_DIR / "ingestion" / "ingest-request.v1.json", _schema(IngestRequest)),
+        Artifact(SCHEMA_DIR / "ingestion" / "ingest-response.v1.json", _schema(IngestResponse)),
         Artifact(SCHEMA_DIR / "incidents" / "incident-summary.v1.json", _schema(IncidentSummary)),
         Artifact(SCHEMA_DIR / "incidents" / "incident-detail.v1.json", _schema(IncidentDetail)),
         Artifact(SCHEMA_DIR / "incidents" / "incident-page.v1.json", _schema(IncidentPage)),

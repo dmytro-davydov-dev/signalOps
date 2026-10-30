@@ -34,6 +34,157 @@
         "title": "DependencyStatus",
         "type": "object"
       },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "title": "Detail",
+            "type": "array"
+          }
+        },
+        "title": "HTTPValidationError",
+        "type": "object"
+      },
+      "IngestFailureReason": {
+        "enum": [
+          "ambiguous_timeout",
+          "broker_unavailable"
+        ],
+        "title": "IngestFailureReason",
+        "type": "string"
+      },
+      "IngestRecordResult": {
+        "additionalProperties": false,
+        "properties": {
+          "detail": {
+            "anyOf": [
+              {
+                "maxLength": 2048,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Detail"
+          },
+          "event_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Event Id"
+          },
+          "index": {
+            "minimum": 0.0,
+            "title": "Index",
+            "type": "integer"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/IngestRejectReason"
+              },
+              {
+                "$ref": "#/components/schemas/IngestFailureReason"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "source_event_id": {
+            "anyOf": [
+              {
+                "maxLength": 512,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Event Id"
+          },
+          "status": {
+            "$ref": "#/components/schemas/IngestRecordStatus"
+          }
+        },
+        "required": [
+          "index",
+          "status"
+        ],
+        "title": "IngestRecordResult",
+        "type": "object"
+      },
+      "IngestRecordStatus": {
+        "enum": [
+          "accepted",
+          "rejected",
+          "failed"
+        ],
+        "title": "IngestRecordStatus",
+        "type": "string"
+      },
+      "IngestRejectReason": {
+        "enum": [
+          "invalid_record",
+          "oversized",
+          "timestamp_out_of_range",
+          "duplicate_in_batch"
+        ],
+        "title": "IngestRejectReason",
+        "type": "string"
+      },
+      "IngestResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "accepted": {
+            "minimum": 0.0,
+            "title": "Accepted",
+            "type": "integer"
+          },
+          "batch_id": {
+            "format": "uuid",
+            "title": "Batch Id",
+            "type": "string"
+          },
+          "failed": {
+            "minimum": 0.0,
+            "title": "Failed",
+            "type": "integer"
+          },
+          "rejected": {
+            "minimum": 0.0,
+            "title": "Rejected",
+            "type": "integer"
+          },
+          "results": {
+            "items": {
+              "$ref": "#/components/schemas/IngestRecordResult"
+            },
+            "title": "Results",
+            "type": "array"
+          }
+        },
+        "required": [
+          "batch_id",
+          "accepted",
+          "rejected",
+          "failed",
+          "results"
+        ],
+        "title": "IngestResponse",
+        "type": "object"
+      },
       "LivenessResponse": {
         "properties": {
           "status": {
@@ -70,6 +221,53 @@
         ],
         "title": "ReadinessResponse",
         "type": "object"
+      },
+      "ValidationError": {
+        "properties": {
+          "ctx": {
+            "title": "Context",
+            "type": "object"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "title": "Location",
+            "type": "array"
+          },
+          "msg": {
+            "title": "Message",
+            "type": "string"
+          },
+          "type": {
+            "title": "Error Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError",
+        "type": "object"
+      }
+    },
+    "securitySchemes": {
+      "HTTPBearer": {
+        "description": "Source-specific ingestion token",
+        "scheme": "bearer",
+        "type": "http"
       }
     }
   },
@@ -130,6 +328,116 @@
         "summary": "Ready",
         "tags": [
           "health"
+        ]
+      }
+    },
+    "/v1/ingest/{source_id}": {
+      "post": {
+        "description": "Publish a batch of source records; each is accepted only after Kafka acknowledges it.",
+        "operationId": "ingest_v1_ingest__source_id__post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "source_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Source Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "description": "Documents the request body. The route validates `records` item by item.",
+                "properties": {
+                  "records": {
+                    "items": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "occurred_at": {
+                          "format": "date-time",
+                          "title": "Occurred At",
+                          "type": "string"
+                        },
+                        "payload": {
+                          "additionalProperties": {},
+                          "title": "Payload",
+                          "type": "object"
+                        },
+                        "source_event_id": {
+                          "maxLength": 512,
+                          "minLength": 1,
+                          "title": "Source Event Id",
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "source_event_id",
+                        "occurred_at",
+                        "payload"
+                      ],
+                      "title": "IngestRecord",
+                      "type": "object"
+                    },
+                    "minItems": 1,
+                    "title": "Records",
+                    "type": "array"
+                  }
+                },
+                "required": [
+                  "records"
+                ],
+                "title": "IngestRequest",
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IngestResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IngestResponse"
+                }
+              }
+            },
+            "description": "At least one record failed; retry those with the same IDs"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Ingest",
+        "tags": [
+          "ingestion"
         ]
       }
     }

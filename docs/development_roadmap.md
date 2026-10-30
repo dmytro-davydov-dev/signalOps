@@ -27,11 +27,11 @@ PostgreSQL owns evidence, workflow progress, budgets, and the initial knowledge 
 | --- | --- |
 | Active phase | Phase 4 Ingestion and data quality; Phase 3 gate passed |
 | Active task | None |
-| Last completed task | P04-T01 |
-| Latest verified commit | `7d6490f` (P03-T05); P04-T01 pending commit, validated against the working tree |
-| Validation evidence | P04-T01: `generate` with seed 42 reproduces the committed dataset hashes (healthy 931 records `8163ba51…`, downstream-timeout 991 records `92f1ca3f…`); the same seed gives identical bytes and another seed a different hash. All records validate against their adapter contracts and seeded services; serialized signals contain no label words or scenario names; fault records share their shapes with healthy ones. Downstream-timeout has 49 payment timeout logs inside the window and at most 5 outside. `SIGNALOPS_INTEGRATION=1 uv run pytest` 465 passed. Earlier evidence is in the work log |
+| Last completed task | P04-T02 |
+| Latest verified commit | `05d5df5` (P04-T01); P04-T02 pending commit, validated against the working tree |
+| Validation evidence | P04-T02: against the Compose stack, `docker compose stop kafka` then a 2-record post returned 503 after 30 s with both records `failed`/`ambiguous_timeout` and no new offsets on `signals.raw.v1`; after restarting Kafka the same batch returned 200 with the same event IDs and offsets grew by exactly 2. `docker compose --profile demo run --rm demo` posted 1028 records, all accepted (topic offsets 701+122+205). `SIGNALOPS_INTEGRATION=1 uv run pytest` 514 passed. Earlier evidence is in the work log |
 | Blockers | None recorded |
-| Next task | P04-T02 |
+| Next task | P04-T03 |
 
 ### Scope and release boundaries
 
@@ -369,11 +369,22 @@ Start the React shell in Phase 1 and add API-backed incident views in Phase 5; P
 
 ### P04-T02 Implement authenticated batch ingestion
 
-- [ ] Complete this task.
+- [x] Complete this task.
 
 **Implementation:** Build POST /v1/ingest/{source_id}; validate source credentials, batch size, timestamps, payload bounds, and redaction. Acknowledge each accepted item only after Kafka acknowledgement. Define partial-success and ambiguous-timeout behavior.
 
 **Acceptance:** Broker outage does not produce a false acceptance; client retry uses the same source event ID.
+
+**Notes (2026-10-30):**
+- Route `api/ingest.py`; logic in `adapters/ingestion.py` (`ingest_batch`, `SourceTokens`, `Redactor`, `DatabaseSourceLookup`, `ReplaceablePublisher`); bodies in `contracts/ingestion.py` (`IngestRecord`, `IngestRequest`, `IngestRecordResult`, `IngestResponse`), exported under `contracts/schemas/ingestion/` and in OpenAPI. Behavior is specified in docs/api.md#ingestion.
+- Order of checks: bearer token (401) → source row (404 unknown, 403 disabled, 500 invalid config, 503 database down) → body size and record count (413) → batch shape (422) → per-record validation → redaction → publish.
+- Partial success: each record is `accepted` (Kafka acknowledged), `rejected` with a reason (`invalid_record`, `oversized`, `timestamp_out_of_range`, `duplicate_in_batch`), or `failed` (`ambiguous_timeout` for a delivery timeout, where the broker may have written it; `broker_unavailable` otherwise). 200 when nothing failed; 503 + `Retry-After` with the same body when anything failed. Resending the whole batch is safe.
+- **Decision (ADR-011):** raw `event_id` = UUIDv5(source, replay scope, `source_event_id`), so retries after an ambiguous timeout carry the same ID and consumer receipts deduplicate them. Tokens come from `SIGNALOPS_INGEST_TOKENS` (source ID → token, compared as SHA-256 digests in constant time), not from `sources.config`, which holds only non-secret `redact_fields`. Invalid source config fails closed with 500 instead of skipping redaction.
+- **Decision:** ingestion does not validate payloads against the adapter contracts and rejects only coarse timestamp outliers (±1 day ahead, 30 days behind by default). Malformed payloads, skew, and late arrival are the normalizer's quality outcomes (P04-T03/T04), so they stay auditable as evidence.
+- Producer: one `EventProducer` per API process, called from a worker thread. `ReplaceablePublisher` creates a new producer after a fatal idempotence error; the batch that hit it is reported failed.
+- Demo: `signalops demo-post` and the Compose `demo` profile (`demo-seed`, `demo`) finish the poster deferred from P04-T01. Default seed is random per run because source event IDs derive from scenario and seed; a rerun with a fixed seed would be deduplicated.
+- **Deviation:** the per-source 429 rate limit in docs/api.md is not implemented; the task's implementation list does not include it and no task owns it yet. Recorded under remaining issues.
+- Left: rate limiting; free-text redaction inside messages (field names only); token rotation without restart (P11-T02); the normalizer consuming `signals.raw.v1` (P04-T03).
 
 ### P04-T03 Implement three source adapters
 
@@ -994,13 +1005,23 @@ Keep these outside the release critical path unless measurements justify promoti
 
 ### 2026-10-30 — P04-T01
 - Status: completed
-- Commit: pending (validated against the working tree)
+- Commit: `05d5df5`
 - Implemented: `backend/signalops/demo/generator.py` (`Scenario`, `DemoRecord`, `ScenarioLabels`, `generate`, `serialize_records`); `signalops demo-generate`; `orders-db` service in the demo seed; `fixtures/scenarios/v1/healthy.labels.json` and `downstream-timeout.labels.json`; `tests/unit/test_demo_generator.py`; docs (development, evaluation). Ledger now records `7d6490f` for P03-T05.
 - Validation commands and results: `uv run ruff check .`, `uv run ruff format --check .`, `uv run mypy` (83 files) pass; `uv run pytest` 283 passed, 182 skipped; with `.env` sourced, `SIGNALOPS_INTEGRATION=1 uv run pytest` 465 passed. `uv run signalops seed` twice against the dev database: services now include `orders-db`. Negative checks: an unseeded `random.Random()` failed 5 tests (fixture hashes, reproducibility, CLI); writing the scenario/seed into log attributes failed the no-label tests and fixture hashes; a fault-only attribute on payment logs failed the shared-shape test and the downstream-timeout hash; all restored and re-run green. Frontend and Compose unchanged, not re-run.
 - Evidence or artifact references: `fixtures/scenarios/v1/`.
 - Deviations and reasons: no publishing or Compose `demo` service until the ingestion endpoint exists (P04-T02); records are not committed, only labels and hashes (see task notes).
 - Remaining issues: none for this task.
 - Next task: P04-T02
+
+### 2026-10-30 — P04-T02
+- Status: completed
+- Commit: pending (validated against the working tree)
+- Implemented: `POST /v1/ingest/{source_id}` (`api/ingest.py`, `adapters/ingestion.py`, `contracts/ingestion.py`); `CatalogRepository.get_source`; ingestion settings (`SIGNALOPS_INGEST_TOKENS`, record/byte limits, timestamp bounds, redaction list); API resources gain a source lookup and an ingest producer; `signalops demo-post` (`demo/poster.py`); Compose `SIGNALOPS_INGEST_TOKENS` passthrough and `demo` profile services; `.env.example` placeholder; exported schemas and OpenAPI; ADR-011; docs (api, development, events, reliability, decisions).
+- Validation commands and results: `uv run ruff check .`, `uv run ruff format --check .`, `uv run mypy` (90 files), `uv run signalops export-schemas --check` pass; `uv run pytest` 329 passed, 185 skipped; with `.env` sourced, `SIGNALOPS_INTEGRATION=1 uv run pytest` 514 passed; `docker compose config --quiet` passes. Live stack (image rebuilt, API restarted with temporary tokens set only in the shell, then restored): demo profile posted 1028/1028 records; broker-outage check as in the ledger. Negative checks: reporting every delivery as accepted failed 7 tests (including the integration outage test); a random `event_id` failed 9; skipping redaction failed the unit and integration redaction tests; all restored and re-run green. Frontend unchanged (it does not consume the OpenAPI file), not re-run.
+- Evidence or artifact references: `tests/unit/test_ingestion.py`, `tests/unit/test_demo_poster.py`, `tests/integration/test_ingestion_api.py`.
+- Deviations and reasons: no 429 rate limit (not in the task's implementation list; no owning task yet). Integration tests redirect messages to a scratch topic so `signals.raw.v1` stays clean for workers; the live-stack checks used the real topic.
+- Remaining issues: rate limiting unowned; message-text redaction not done; token changes need an API restart. The live checks left 1030 demo/outage records on the dev `signals.raw.v1` (3-day retention); the P04-T03 normalizer will consume them.
+- Next task: P04-T03
 
 ## Work log template
 

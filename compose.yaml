@@ -12,6 +12,8 @@ x-backend-env: &backend-env
   SIGNALOPS_KAFKA_BOOTSTRAP_SERVERS: kafka:9092
   # Only the deterministic fake provider exists; no model key is read.
   SIGNALOPS_MODEL_PROVIDER: fake
+  # JSON object of source ID to ingestion token; empty means no source can ingest.
+  SIGNALOPS_INGEST_TOKENS: ${SIGNALOPS_INGEST_TOKENS:-{}}
 
 x-backend: &backend
   image: signalops-backend:local
@@ -147,6 +149,25 @@ services:
       timeout: 5s
       retries: 6
     networks: [signalops]
+
+  # Demo profile: seed the demo catalog, then post one generated scenario
+  # through the ingestion API. Rerun with `docker compose run --rm demo …`.
+  demo-seed:
+    <<: *backend
+    profiles: [demo]
+    command: ["seed"]
+    restart: "no"
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+
+  demo:
+    <<: *backend
+    profiles: [demo]
+    command: ["demo-post", "downstream-timeout", "--api-url", "http://api:8000"]
+    restart: "no"
+    depends_on:
+      demo-seed: { condition: service_completed_successfully }
+      api: { condition: service_healthy }
 
   backend:
     <<: *backend

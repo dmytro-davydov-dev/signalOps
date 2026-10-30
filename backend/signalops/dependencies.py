@@ -13,9 +13,16 @@ from redis.asyncio import Redis
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine
 
+from signalops.adapters.ingestion import (
+    DatabaseSourceLookup,
+    Publisher,
+    ReplaceablePublisher,
+    SourceLookup,
+)
 from signalops.config import Settings
 from signalops.contracts.health import DependencyStatus, ReadinessResponse
-from signalops.persistence.database import create_engine
+from signalops.persistence.database import Database, create_engine
+from signalops.streaming.producer import EventProducer
 
 logger = logging.getLogger(__name__)
 
@@ -66,6 +73,9 @@ class Resources:
     engine: AsyncEngine | None = None
     redis: Redis | None = None
     kafka_admin: AdminClient | None = field(default=None, repr=False)
+    # Ingestion; the route answers 503 while either is missing.
+    sources: SourceLookup | None = None
+    ingest_publisher: Publisher | None = field(default=None, repr=False)
 
 
 @asynccontextmanager
@@ -85,6 +95,10 @@ async def open_resources(settings: Settings) -> AsyncIterator[Resources]:
         },
         logger=logging.getLogger("signalops.kafka"),
     )
+    # Creating a producer does not connect; deliveries fail per record while Kafka is down.
+    publisher = ReplaceablePublisher(
+        lambda: EventProducer(settings, client_id="signalops-api-ingest")
+    )
     try:
         yield Resources(
             checks=[
@@ -95,8 +109,14 @@ async def open_resources(settings: Settings) -> AsyncIterator[Resources]:
             engine=engine,
             redis=redis,
             kafka_admin=kafka_admin,
+            sources=DatabaseSourceLookup(Database.from_engine(engine)),
+            ingest_publisher=publisher,
         )
     finally:
+        # Requests have finished; nothing still queued was reported accepted to a client.
+        undelivered = await asyncio.to_thread(publisher.close, timeout)
+        if undelivered:
+            logger.warning("ingest producer closed undelivered", extra={"count": undelivered})
         await redis.aclose()
         await engine.dispose()
 

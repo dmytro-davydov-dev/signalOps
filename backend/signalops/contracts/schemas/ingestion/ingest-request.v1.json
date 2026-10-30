@@ -1,0 +1,53 @@
+{
+  "$defs": {
+    "IngestRecord": {
+      "additionalProperties": false,
+      "properties": {
+        "occurred_at": {
+          "format": "date-time",
+          "title": "Occurred At",
+          "type": "string"
+        },
+        "payload": {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "title": "Payload",
+          "type": "object"
+        },
+        "source_event_id": {
+          "maxLength": 512,
+          "minLength": 1,
+          "title": "Source Event Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "source_event_id",
+        "occurred_at",
+        "payload"
+      ],
+      "title": "IngestRecord",
+      "type": "object"
+    },
+    "JsonValue": {}
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "Documents the request body. The route validates `records` item by item.",
+  "properties": {
+    "records": {
+      "items": {
+        "$ref": "#/$defs/IngestRecord"
+      },
+      "minItems": 1,
+      "title": "Records",
+      "type": "array"
+    }
+  },
+  "required": [
+    "records"
+  ],
+  "title": "IngestRequest",
+  "type": "object"
+}

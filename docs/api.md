@@ -1,6 +1,6 @@
 # HTTP API
 
-> Status: planned design. The source is [SignalOps_Implementation_Plan.md](SignalOps_Implementation_Plan.md) §9. The generated OpenAPI document, [`openapi.v1.json`](../backend/signalops/contracts/schemas/openapi.v1.json), is authoritative for implemented routes (currently health only); body schemas for planned routes are exported alongside it (for example `investigations/investigation.v1.json`). Compatibility rules are in [events.md](events.md#versioning-rules).
+> Status: planned design. The source is [SignalOps_Implementation_Plan.md](SignalOps_Implementation_Plan.md) §9. The generated OpenAPI document, [`openapi.v1.json`](../backend/signalops/contracts/schemas/openapi.v1.json), is authoritative for implemented routes (health and ingestion); body schemas for planned routes are exported alongside it (for example `investigations/investigation.v1.json`). Compatibility rules are in [events.md](events.md#versioning-rules).
 
 All endpoints are versioned under `/v1`. Request and response bodies are Pydantic models. Timestamps are UTC (RFC 3339) and IDs are UUIDs.
 
@@ -23,18 +23,36 @@ Liveness and readiness endpoints arrive in P01-T04. Readiness reports missing re
 
 ## Ingestion
 
+Implemented in P04-T02 (`api/ingest.py`, `adapters/ingestion.py`; bodies in `contracts/ingestion.py`, schemas under `contracts/schemas/ingestion/`).
+
 ```http
 POST /v1/ingest/{source_id}
-Authorization: Bearer <source credential>
+Authorization: Bearer <source token>
 Content-Type: application/json
 
-{ "records": [ { "source_event_id": "…", "occurred_at": "…", "payload": { … } } ] }
+{ "records": [ { "source_event_id": "…", "occurred_at": "2026-10-30T10:00:00Z", "payload": { … } } ] }
 ```
 
-- The API validates the source credential, batch size, payload bounds, and timestamps, then redacts configured sensitive fields.
-- A record is reported `accepted` **only after Kafka acknowledges it**. A broker outage never produces a false acceptance.
-- Responses report outcomes per record (accepted, rejected with reason, or failed). Clients retry with the **same** `source_event_id`, and the pipeline deduplicates downstream.
-- When a per-source rate limit is exceeded, the API returns `429`.
+Checks, in order:
+
+1. **Credential.** The bearer token must match the token configured for this `source_id` in `SIGNALOPS_INGEST_TOKENS`. Missing, wrong, or another source's token → `401`. Tokens never live in `sources.config`.
+2. **Source.** Looked up in PostgreSQL: unknown → `404`, disabled → `403`, invalid `config` → `500` (fails closed rather than skipping redaction), database unavailable → `503`.
+3. **Size.** Body over `SIGNALOPS_INGEST_MAX_REQUEST_BYTES` (Content-Length or streamed) or more than `SIGNALOPS_INGEST_MAX_RECORDS` records → `413`. A body that is not `{"records": [ … ]}` with at least one record → `422`.
+4. **Each record, independently.** Rejected with a reason when: the record does not match `IngestRecord` (unknown fields, naive or numeric timestamp, missing payload) → `invalid_record`; the payload exceeds 64 KiB serialized → `oversized`; `occurred_at` is more than `SIGNALOPS_INGEST_MAX_FUTURE_SECONDS` ahead or `SIGNALOPS_INGEST_MAX_AGE_SECONDS` behind receipt → `timestamp_out_of_range`; the `source_event_id` already appeared earlier in the batch → `duplicate_in_batch`. Smaller skew and late arrival are flagged by the normalizer (P04-T04), not rejected. Payloads are not validated against the adapter contracts here; the normalizer quarantines malformed ones so the outcome stays auditable. Rejection details list field locations, never values.
+5. **Redaction.** Values of sensitive keys are replaced with `"[REDACTED]"` at any depth before publishing: `SIGNALOPS_INGEST_REDACT_FIELDS` plus the source's `config.redact_fields`. Keys match case-insensitively, with `-` and spaces read as `_`. Field names only; free text inside messages is not scrubbed.
+6. **Publish.** Each remaining record becomes a `signal.raw` envelope on `signals.raw.v1`. `event_id` is UUIDv5 of source, replay scope, and `source_event_id` (`raw_event_id`), so a retry carries the same ID. `correlation_id` is the response's `batch_id`. `service_hint` is the payload's `service` when it is a valid name.
+
+Per-record outcomes (`results`, in request order, with counts):
+
+| `status` | Meaning | Client action |
+| --- | --- | --- |
+| `accepted` | Kafka acknowledged the record | None |
+| `rejected` | The record is invalid (`reason` above) | Fix it; resending unchanged fails again |
+| `failed` | Not acknowledged. `ambiguous_timeout`: no answer within the delivery timeout, so the broker may have written it. `broker_unavailable`: another broker or client error | Retry with the same `source_event_id` |
+
+The response is `200` when every record is accepted or rejected, and `503` with `Retry-After` and the same body when any record failed. Resending the whole batch is safe: accepted records reproduce their event IDs and are deduplicated downstream. If the HTTP call itself times out, the outcome is unknown; retry the batch with the same IDs. Worst-case latency is about `SIGNALOPS_KAFKA_DELIVERY_TIMEOUT_MS` (30 s by default) when the broker is down, so client timeouts should exceed it.
+
+Not yet implemented: the per-source `429` rate limit (Redis). No roadmap task owns it yet. Token rotation is P11-T02.
 
 ## Investigation requests and idempotency
 
