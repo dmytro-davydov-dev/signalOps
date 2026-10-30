@@ -151,6 +151,7 @@ def run_outbox_publisher() -> int:
             batch_size=settings.outbox_batch_size,
             idle_interval_seconds=settings.outbox_idle_interval_ms / 1000,
             retry_policy=RetryPolicy.from_settings(settings),
+            stats_interval_seconds=settings.streaming_stats_interval_ms / 1000,
         )
         try:
             await publisher.run(stop)

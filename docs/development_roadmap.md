@@ -25,13 +25,13 @@ PostgreSQL owns evidence, workflow progress, budgets, and the initial knowledge 
 
 | Field | Current value |
 | --- | --- |
-| Active phase | Phase 3 Streaming reliability (in progress) |
+| Active phase | Phase 4 Ingestion and data quality (not started); Phase 3 gate passed |
 | Active task | None |
-| Last completed task | P03-T04 |
-| Latest verified commit | `edf2a43` (P03-T03); P03-T04 pending commit, validated against the working tree |
-| Validation evidence | P03-T04: against Compose PostgreSQL and Kafka, an undecodable record between two good ones is published to `processing.failed.v1` (deterministic event ID, original position, `malformed_json`) and the group's committed offset reaches 3. With a failure publisher that never acknowledges, the runner schedules two retries through real pause/seek/resume, stops with `RecordProcessingError` (stage `quarantine`), and the committed offset stays before the record; a restart with a working producer quarantines it and commits. A handler failing twice transiently is retried in place and applied once while the next record waits. A quarantined record redriven by `redrive_record` keeps key, value, and event ID, carries the attempt header, and is applied once by the fixed consumer. A broker-rejected outbox row (topic `max.message.bytes`=128) is quarantined, holds back version 2 of its aggregate, and after `redrive` both publish in order. `SIGNALOPS_INTEGRATION=1 uv run pytest` 432 passed. Earlier evidence is in the work log |
+| Last completed task | P03-T05 |
+| Latest verified commit | `aac21fd` (P03-T04); P03-T05 pending commit, validated against the working tree |
+| Validation evidence | P03-T05: against Compose PostgreSQL and Kafka, a runner stopped while applying the second of five records commits offset 2 and closes; a restarted runner applies records 3–5, leaving 5 receipts and committed offset 5. `report_stats` shows lag 2 after one of three records, 6 after four more are produced, and 0 after draining. A partition paused for a 300 s retry is revoked by leaving the group: the retry is dropped, the pause lifted, and after rejoining both records are applied once (without the resume, the reassigned partition is never fetched). A stop between outbox rounds publishes version 1 and leaves version 2 pending for the next process; `outbox stats` reports published/failed counts and the backlog's oldest age. `SIGNALOPS_INTEGRATION=1 uv run pytest` 447 passed. Earlier evidence is in the work log |
 | Blockers | None recorded |
-| Next task | P03-T05 |
+| Next task | P04-T01 |
 
 ### Scope and release boundaries
 
@@ -318,16 +318,25 @@ Start the React shell in Phase 1 and add API-backed incident views in Phase 5; P
 - No new `ContractErrorCategory` for handler rejections yet: handlers reuse the contract categories (normally `invalid_payload`). An additive value can be added when Phase 4 needs a distinct one; `processing.failed.v1` has no consumer yet.
 - Outbox (migration `0007_outbox_retry`): `next_attempt_at`, `quarantined_at`, `last_error`, check constraints, and a partial `(aggregate_id, aggregate_version)` index on pending rows. `pending` excludes a row while it or an earlier pending version of its aggregate is deferred or quarantined. Transient delivery failures are deferred and never abandoned; `rejected` quarantines. `record_failed_attempts` was replaced by `schedule_retry` and `quarantine`.
 - Redrive: `signalops redrive-record --topic --partition --offset` reads the original by position with a non-committing assigned consumer and republishes it with a new attempt ID; it refuses `processing.failed.v1`, unretained or out-of-range offsets, and keyless or empty records. `signalops redrive-outbox EVENT_ID` clears a quarantine. There is no command to discard an outbox row.
-- Rebalance: retry state is per partition in memory and is not cleared on revoke. After a reassignment a stale entry can rewind to an already-committed offset; receipts absorb the repeat. P03-T05 owns rebalance callbacks.
+- Rebalance: retry state is per partition in memory and is not cleared on revoke. After a reassignment a stale entry can rewind to an already-committed offset; receipts absorb the repeat. P03-T05 owns rebalance callbacks. Resolved in P03-T05 (revoke drops the entry and lifts the pause).
 - Left: failure metrics and outbox age (P03-T05); a consumer entry command arrives with the normalizer (P04); `processing.failed.v1` has no reader or triage UI.
 
 ### P03-T05 Add streaming observability and lifecycle
 
-- [ ] Complete this task.
+- [x] Complete this task.
 
 **Implementation:** Measure lag, consumed/produced counts, receipt deduplications, processing latency, retry counts, and outbox age. Implement graceful shutdown and safe rebalance behavior.
 
 **Acceptance:** Stopping a worker mid-batch resumes from a safe offset; backlog growth is visible in logs or metrics.
+
+**Notes (2026-10-30):**
+- Observability is structured logs, not a metrics endpoint: `consumer stats` and `outbox stats` every `SIGNALOPS_STREAMING_STATS_INTERVAL_MS` (30 s) and on shutdown. Fields are listed in docs/reliability.md#streaming-stats. No new dependency; exported metrics and dashboards stay with P11-T01.
+- Consumer: `ConsumerStats` counts consumed, applied, duplicates (receipt hits), quarantined, retries scheduled, and processing latency (poll return to offset commit, committed outcomes only). Lag per assigned partition is the high watermark minus the committed offset, queried from the broker at report time (two short broker calls per interval); without a committed offset the low watermark stands in. `null` on timeout or broker error.
+- Outbox: `PublishSummary` totals per interval plus `OutboxRepository.backlog()` (unpublished count, quarantined count, oldest row age via the partial pending index).
+- Lifecycle: `ConsumerRunner.run` checks `stop` between records and closes the consumer (leaving the group) in `finally`; the final stats line is skipped when the runner stops on an error. `OutboxPublisher.publish_once(stop)` stops between rounds. Compose gives `outbox-publisher` a 40 s stop grace period, longer than the 30 s delivery timeout.
+- Rebalance: `create_consumer` no longer subscribes; `ConsumerRunner.subscribe(topics)` registers `on_assign`/`on_revoke`/`on_lost`. Revoke and lost drop the partition's pending retry and resume it if paused. **Found while testing:** librdkafka keeps an application pause across a revoke, so before this fix a partition paused for retry and then reassigned to the same member was never fetched again (a latent P03-T04 stall). No commit on revoke: records are committed synchronously before the next poll, so nothing is in progress when callbacks run.
+- The stats report runs only between records, so a single slow record delays the next line; a stuck handler shows up as missing stats lines rather than rising lag in the log.
+- Left: no consumer entry command until the normalizer (P04-T02), which should wire SIGTERM/SIGINT the way `outbox-publisher` does; a failed offset commit is still not retried on revoke (receipts absorb the redelivery); no producer-level delivery counters beyond the publisher's summary.
 
 **Phase gate:** All tasks above are checked, acceptance evidence is recorded in the ledger, and the phase outcome is demonstrated against real infrastructure where relevant.
 
@@ -954,13 +963,23 @@ Keep these outside the release critical path unless measurements justify promoti
 
 ### 2026-10-30 — P03-T04
 - Status: completed
-- Commit: pending (validated against the working tree); P03-T03 committed as `edf2a43`
+- Commit: `aac21fd`
 - Implemented: `streaming/retry.py` (`RetryPolicy`); `streaming/failures.py` (failure envelope, deterministic failure event ID, redrive header); `ConsumerRunner` quarantine and pause/seek/resume retries; `OutgoingMessage.headers`; outbox `schedule_retry`, `quarantine`, `redrive` and the blocking `pending` query; migration `0007_outbox_retry` and model columns; `streaming/redrive.py` and the `redrive-record` and `redrive-outbox` commands; retry settings; tests `tests/unit/test_consumer.py` (rewritten), `test_retry.py`, `test_failures.py`, CLI cases, `tests/integration/test_failure_handling.py`, new outbox cases; docs (events, reliability, data model, development).
 - Validation commands and results: `uv run ruff check .`, `uv run ruff format --check .`, `uv run mypy` (79 files) pass; `uv run pytest` 255 passed, 177 skipped; `uv run signalops export-schemas --check` ok; with `.env` sourced, `SIGNALOPS_INTEGRATION=1 uv run pytest` 432 passed; `docker compose config --quiet` ok. On the host against Compose: `signalops migrate` applied 0007 to the dev database; `redrive-outbox` with an unknown ID exited 1; `redrive-record` for an out-of-range offset on an empty topic timed out with an error. Negative checks: committing the original when the failure event was not acknowledged failed 2 unit and 2 integration tests; removing the earlier-version blocker from `pending` failed 2 outbox integration tests; removing the partition pause failed 3 unit tests; all restored and re-run green. Frontend unchanged, not re-run. Containers were not rebuilt.
 - Evidence or artifact references: none retained.
 - Deviations and reasons: see task notes (exhausted transient failures stop rather than quarantine; nil workspace for unreadable originals; failure events published directly, not through the outbox).
 - Remaining issues: retry state survives a partition revoke until P03-T05; no failure metrics yet.
 - Next task: P03-T05
+
+### 2026-10-30 — P03-T05
+- Status: completed
+- Commit: pending (validated against the working tree); P03-T04 committed as `aac21fd`
+- Implemented: `ConsumerStats`, `ConsumerRunner.report_stats`, lag, `subscribe` with rebalance callbacks (retry state dropped and pause lifted on revoke/lost), stop-aware `run` with a final report; `create_consumer` no longer subscribes; `OutboxRepository.backlog` and `OutboxBacklog`; `OutboxPublisher.report_stats`, `PublishSummary.__add__`, stop between rounds; setting `SIGNALOPS_STREAMING_STATS_INTERVAL_MS`; Compose `stop_grace_period` for `outbox-publisher`; tests: new unit cases in `tests/unit/test_consumer.py` and `test_outbox.py`, `tests/integration/test_streaming_lifecycle.py`, two outbox integration cases, call sites updated for `subscribe`; docs (reliability, development).
+- Validation commands and results: `uv run ruff check .`, `uv run ruff format --check .`, `uv run mypy` (80 files) pass; `uv run pytest` 265 passed, 182 skipped; `uv run signalops export-schemas --check` ok; with `.env` sourced, `SIGNALOPS_INTEGRATION=1 uv run pytest` 447 passed; `docker compose config --quiet` ok. On the host against Compose, `.venv/bin/signalops outbox-publisher` with a 1 s stats interval logged `outbox stats` each second and, on SIGTERM, a final line and `outbox publisher stopped`, exit 0. Negative checks: removing the resume on revoke failed 2 unit tests and the integration revoke test (the reassigned partition was never fetched); keeping retry state on revoke failed the same 3; removing the stop check between outbox rounds failed the stop integration test; all restored and re-run green. Frontend unchanged, not re-run. Containers were not rebuilt.
+- Evidence or artifact references: none retained.
+- Deviations and reasons: logs instead of a metrics endpoint (acceptance allows either; metrics are P11-T01); see task notes.
+- Remaining issues: no consumer entry command yet (P04-T02); failed offset commits are not retried on revoke.
+- Next task: P04-T01
 
 ## Work log template
 

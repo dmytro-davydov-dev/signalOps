@@ -4,7 +4,7 @@ from pathlib import Path
 
 from signalops.contracts.events import decode_event
 from signalops.persistence.models import OutboxEvent
-from signalops.streaming.outbox import outgoing_message, publish_rounds
+from signalops.streaming.outbox import PublishSummary, outgoing_message, publish_rounds
 
 FIXTURES = Path(__file__).resolve().parents[2] / "fixtures" / "contracts" / "v1" / "events"
 
@@ -63,3 +63,8 @@ def test_outgoing_message_uses_stored_topic_key_and_envelope() -> None:
         envelope.event_id,
     )
     assert decode_event(message.value) == envelope
+
+
+def test_summaries_add_field_by_field() -> None:
+    total = PublishSummary(1, 2, 1, 3) + PublishSummary(4, 0, 0, 1)
+    assert total == PublishSummary(published=5, failed=2, quarantined=1, deferred=4)

@@ -126,6 +126,8 @@ services:
     <<: *backend
     command: ["outbox-publisher"]
     restart: unless-stopped
+    # Longer than SIGNALOPS_KAFKA_DELIVERY_TIMEOUT_MS so an in-flight round can finish.
+    stop_grace_period: 40s
     depends_on:
       migrate: { condition: service_completed_successfully }
       init-topics: { condition: service_completed_successfully }

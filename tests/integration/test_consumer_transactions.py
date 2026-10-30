@@ -6,7 +6,7 @@ database from the module's migrated fixture.
 
 import time
 import uuid
-from collections.abc import AsyncIterator, Iterator
+from collections.abc import AsyncIterator, Callable, Iterator
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Literal
@@ -85,6 +85,20 @@ class CrashingCommit:
     def seek(self, partition: TopicPartition) -> None:
         self.inner.seek(partition)
 
+    def subscribe(self, topics: list[str], **callbacks: Callable[..., None]) -> None:
+        self.inner.subscribe(topics, **callbacks)
+
+    def assignment(self) -> list[TopicPartition]:
+        return self.inner.assignment()
+
+    def committed(self, partitions: list[TopicPartition], timeout: float) -> list[TopicPartition]:
+        return self.inner.committed(partitions, timeout=timeout)
+
+    def get_watermark_offsets(
+        self, partition: TopicPartition, timeout: float, cached: bool
+    ) -> tuple[int, int] | None:
+        return self.inner.get_watermark_offsets(partition, timeout=timeout, cached=cached)
+
     def close(self) -> None:
         self.inner.close()
 
@@ -126,8 +140,8 @@ def _publish(settings: Settings, topic: str, envelopes: list[EventEnvelope[Event
     assert all(result.delivered for result in producer.publish(messages))
 
 
-def _consumer(settings: Settings, group: str, topic: str) -> Consumer:
-    return create_consumer(settings, group_id=group, client_id=f"{group}-member", topics=[topic])
+def _consumer(settings: Settings, group: str) -> Consumer:
+    return create_consumer(settings, group_id=group, client_id=f"{group}-member")
 
 
 def _runner(
@@ -135,16 +149,19 @@ def _runner(
     consumer: KafkaConsumerLike,
     processor: TransactionalProcessor,
     group: str,
+    topic: str,
     *,
     max_attempts: int = 5,
 ) -> ConsumerRunner:
-    return ConsumerRunner(
+    runner = ConsumerRunner(
         consumer,
         processor,
         consumer_group=group,
         failure_publisher=EventProducer(settings, client_id=f"{group}-failures"),
         retry_policy=RetryPolicy(max_attempts, base_delay_seconds=0.05, max_delay_seconds=0.2),
     )
+    runner.subscribe([topic])
+    return runner
 
 
 async def _next_outcome(runner: ConsumerRunner) -> ProcessOutcome:
@@ -186,19 +203,19 @@ async def test_crash_after_db_commit_redelivers_without_duplicate_effect(
     _publish(infra_settings, topic, [envelope])
     processor = TransactionalProcessor(database, group, EmitDerivedEvent())
 
-    crashing = CrashingCommit(_consumer(infra_settings, group, topic))
+    crashing = CrashingCommit(_consumer(infra_settings, group))
     try:
         with pytest.raises(SimulatedCrashError):
-            await _next_outcome(_runner(infra_settings, crashing, processor, group))
+            await _next_outcome(_runner(infra_settings, crashing, processor, group, topic))
     finally:
         crashing.close()
     # The effect committed; the offset did not.
     assert await _effects(database, envelope.event_id) == 1
     assert _committed_offset(infra_settings, group, topic) < 0
 
-    restarted = _consumer(infra_settings, group, topic)
+    restarted = _consumer(infra_settings, group)
     try:
-        runner = _runner(infra_settings, restarted, processor, group)
+        runner = _runner(infra_settings, restarted, processor, group, topic)
         assert await _next_outcome(runner) is ProcessOutcome.DUPLICATE
     finally:
         restarted.close()
@@ -213,8 +230,8 @@ async def test_duplicate_message_has_one_logical_effect(
     envelope = _envelope()
     _publish(infra_settings, topic, [envelope, envelope])
     processor = TransactionalProcessor(database, group, EmitDerivedEvent())
-    consumer = _consumer(infra_settings, group, topic)
-    runner = _runner(infra_settings, consumer, processor, group)
+    consumer = _consumer(infra_settings, group)
+    runner = _runner(infra_settings, consumer, processor, group, topic)
     try:
         outcomes = [await _next_outcome(runner), await _next_outcome(runner)]
     finally:
@@ -244,10 +261,10 @@ async def test_failed_record_is_redelivered_and_never_skipped(
     _publish(infra_settings, topic, [first, failing, third])
 
     broken = EmitDerivedEvent(fail_on={failing.event_id})
-    consumer = _consumer(infra_settings, group, topic)
+    consumer = _consumer(infra_settings, group)
     # One attempt: the runner stops at the failure instead of retrying it.
     processor = TransactionalProcessor(database, group, broken)
-    runner = _runner(infra_settings, consumer, processor, group, max_attempts=1)
+    runner = _runner(infra_settings, consumer, processor, group, topic, max_attempts=1)
     try:
         assert await _next_outcome(runner) is ProcessOutcome.APPLIED
         with pytest.raises(RecordProcessingError) as raised:
@@ -262,9 +279,9 @@ async def test_failed_record_is_redelivered_and_never_skipped(
     assert await _receipts(database, group) == 1
     assert _committed_offset(infra_settings, group, topic) == 1
 
-    consumer = _consumer(infra_settings, group, topic)
+    consumer = _consumer(infra_settings, group)
     processor = TransactionalProcessor(database, group, EmitDerivedEvent())
-    healthy = _runner(infra_settings, consumer, processor, group)
+    healthy = _runner(infra_settings, consumer, processor, group, topic)
     try:
         outcomes = [await _next_outcome(healthy), await _next_outcome(healthy)]
     finally:

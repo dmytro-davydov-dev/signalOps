@@ -1,5 +1,6 @@
 import asyncio
 import uuid
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Literal
@@ -84,11 +85,18 @@ class FakeConsumer:
     records: list[FakeRecord | None]
     calls: list[str] = field(default_factory=list)
     commit_error: KafkaException | None = None
-    committed: list[tuple[str, int, int]] = field(default_factory=list)
+    commits: list[tuple[str, int, int]] = field(default_factory=list)
     timeouts: list[float] = field(default_factory=list)
     fetched: list[FakeRecord] = field(default_factory=list)
     paused: bool = False
     closed: bool = False
+    callbacks: dict[str, Callable[[object, list[TopicPartition]], None]] = field(
+        default_factory=dict
+    )
+    assigned: list[TopicPartition] = field(default_factory=list)
+    # (low, high) per partition; None simulates a watermark query timeout.
+    watermarks: dict[int, tuple[int, int] | None] = field(default_factory=dict)
+    lag_error: KafkaException | None = None
 
     def poll(self, timeout: float) -> FakeRecord | None:
         self.calls.append("poll")
@@ -105,7 +113,7 @@ class FakeConsumer:
         self.calls.append("commit")
         if self.commit_error is not None:
             raise self.commit_error
-        self.committed.extend((tp.topic, tp.partition, tp.offset) for tp in offsets)
+        self.commits.extend((tp.topic, tp.partition, tp.offset) for tp in offsets)
 
     def pause(self, partitions: list[TopicPartition]) -> None:
         self.calls.append("pause")
@@ -123,6 +131,29 @@ class FakeConsumer:
         self.records = replayed + queued
         self.fetched = [r for r in self.fetched if r.offset() < partition.offset]
 
+    def subscribe(
+        self, topics: list[str], **callbacks: Callable[[object, list[TopicPartition]], None]
+    ) -> None:
+        self.callbacks = callbacks
+
+    def assignment(self) -> list[TopicPartition]:
+        return self.assigned
+
+    def committed(self, partitions: list[TopicPartition], timeout: float) -> list[TopicPartition]:
+        if self.lag_error is not None:
+            raise self.lag_error
+        last = {(t, p): o for t, p, o in self.commits}
+        return [
+            TopicPartition(tp.topic, tp.partition, last.get((tp.topic, tp.partition), -1001))
+            for tp in partitions
+        ]
+
+    def get_watermark_offsets(
+        self, partition: TopicPartition, timeout: float, cached: bool
+    ) -> tuple[int, int] | None:
+        assert cached is False
+        return self.watermarks[partition.partition]
+
     def close(self) -> None:
         self.closed = True
 
@@ -133,10 +164,13 @@ class FakeProcessor:
     outcome: ProcessOutcome = ProcessOutcome.APPLIED
     errors: list[Exception] = field(default_factory=list)
     seen: list[uuid.UUID] = field(default_factory=list)
+    before: Callable[[], None] | None = None
 
     async def process(self, envelope: EventEnvelope[EventPayload]) -> ProcessOutcome:
         self.calls.append("process")
         self.seen.append(envelope.event_id)
+        if self.before is not None:
+            self.before()
         if self.errors:
             raise self.errors.pop(0)
         return self.outcome
@@ -218,7 +252,7 @@ async def test_next_offset_is_committed_after_processing(outcome: ProcessOutcome
     h = _harness([FakeRecord(41, _envelope_bytes())], outcome=outcome)
     assert await h.runner.run_once() is outcome
     assert h.consumer.calls == ["poll", "process", "commit"]
-    assert h.consumer.committed == [(TOPIC, 1, 42)]
+    assert h.consumer.commits == [(TOPIC, 1, 42)]
 
 
 async def test_empty_poll_commits_nothing() -> None:
@@ -232,7 +266,7 @@ async def test_transient_failure_pauses_rewinds_and_retries_after_backoff() -> N
 
     assert await h.runner.run_once() is ProcessOutcome.RETRY_SCHEDULED
     assert h.consumer.calls == ["poll", "process", "pause", "seek:7"]
-    assert h.consumer.committed == []
+    assert h.consumer.commits == []
 
     # Still paused: the runner keeps polling (poll deadline) but gets nothing.
     assert await h.runner.run_once() is None
@@ -241,7 +275,7 @@ async def test_transient_failure_pauses_rewinds_and_retries_after_backoff() -> N
     h.clock.now += 1.0  # the first retry waits at most base_delay
     assert await h.runner.run_once() is ProcessOutcome.APPLIED
     assert h.consumer.calls[-4:] == ["resume", "poll", "process", "commit"]
-    assert h.consumer.committed == [(TOPIC, 1, 8)]
+    assert h.consumer.commits == [(TOPIC, 1, 8)]
 
 
 async def test_poll_waits_no_longer_than_the_pending_backoff() -> None:
@@ -266,7 +300,7 @@ async def test_exhausted_retries_stop_without_commit() -> None:
     assert raised.value.stage is FailureStage.PROCESS
     assert raised.value.position == RecordPosition(TOPIC, 1, 7)
     assert raised.value.attempts == 2
-    assert h.consumer.committed == []
+    assert h.consumer.commits == []
     assert h.publisher.sent == []
 
 
@@ -285,7 +319,7 @@ async def test_later_records_wait_for_the_retried_record() -> None:
     assert await h.runner.run_once() is ProcessOutcome.APPLIED
     assert await h.runner.run_once() is ProcessOutcome.APPLIED
     assert h.processor.seen == [first.event_id, failing.event_id, failing.event_id, third.event_id]
-    assert h.consumer.committed == [(TOPIC, 1, 1), (TOPIC, 1, 2), (TOPIC, 1, 3)]
+    assert h.consumer.commits == [(TOPIC, 1, 1), (TOPIC, 1, 2), (TOPIC, 1, 3)]
 
 
 async def test_record_fetched_past_a_pending_retry_is_rewound_not_processed() -> None:
@@ -298,7 +332,7 @@ async def test_record_fetched_past_a_pending_retry_is_rewound_not_processed() ->
     assert await h.runner.run_once() is None
     assert h.processor.calls.count("process") == 1
     assert h.consumer.calls[-3:] == ["poll", "pause", "seek:7"]
-    assert h.consumer.committed == []
+    assert h.consumer.commits == []
 
 
 @pytest.mark.parametrize("value", [b"not json", None])
@@ -308,7 +342,7 @@ async def test_undecodable_record_is_quarantined_then_committed(value: bytes | N
     assert await h.runner.run_once() is ProcessOutcome.QUARANTINED
 
     assert h.consumer.calls == ["poll", "publish_failure", "commit"]
-    assert h.consumer.committed == [(TOPIC, 1, 4)]
+    assert h.consumer.commits == [(TOPIC, 1, 4)]
     [message] = h.publisher.sent
     failure = decode_event(message.value)
     assert message.topic == "processing.failed.v1"
@@ -364,12 +398,12 @@ async def test_unacknowledged_failure_event_does_not_commit_the_original() -> No
     h = _harness([FakeRecord(3, b"not json")], acks=[False, True])
 
     assert await h.runner.run_once() is ProcessOutcome.RETRY_SCHEDULED
-    assert h.consumer.committed == []
+    assert h.consumer.commits == []
     assert h.consumer.calls == ["poll", "publish_failure", "pause", "seek:3"]
 
     h.clock.now += 1.0
     assert await h.runner.run_once() is ProcessOutcome.QUARANTINED
-    assert h.consumer.committed == [(TOPIC, 1, 4)]
+    assert h.consumer.commits == [(TOPIC, 1, 4)]
     # Both attempts carry the same failure event, so consumers deduplicate it.
     assert len({message.event_id for message in h.publisher.sent}) == 1
 
@@ -381,7 +415,7 @@ async def test_failure_event_that_never_publishes_stops_the_runner() -> None:
     with pytest.raises(RecordProcessingError) as raised:
         await h.runner.run_once()
     assert raised.value.stage is FailureStage.QUARANTINE
-    assert h.consumer.committed == []
+    assert h.consumer.commits == []
 
 
 async def test_failure_of_a_redriven_record_carries_the_redrive_attempt() -> None:
@@ -419,7 +453,7 @@ async def test_run_closes_the_consumer_on_failure() -> None:
     with pytest.raises(RecordProcessingError):
         await h.runner.run(asyncio.Event())
     assert h.consumer.closed
-    assert h.consumer.committed == []
+    assert h.consumer.commits == []
 
 
 async def test_run_stops_when_requested() -> None:
@@ -428,4 +462,105 @@ async def test_run_stops_when_requested() -> None:
     stop.set()
     await h.runner.run(stop)
     assert h.consumer.closed
+    assert h.consumer.calls == []
+
+
+async def test_run_stops_after_committing_the_record_in_hand() -> None:
+    h = _harness([FakeRecord(3, _envelope_bytes()), FakeRecord(4, _envelope_bytes())])
+    stop = asyncio.Event()
+    h.processor.before = stop.set
+    await h.runner.run(stop)
+    # The stop arrived mid-record: that record committed, the next was not read.
+    assert h.consumer.commits == [(TOPIC, 1, 4)]
+    assert h.processor.calls.count("process") == 1
+    assert h.consumer.closed
+
+
+async def test_stats_count_outcomes_and_latency_then_reset() -> None:
+    h = _harness(
+        [FakeRecord(0, _envelope_bytes()), FakeRecord(1, b"not json")],
+        errors=[RuntimeError("db down")],
+    )
+
+    def take_250ms() -> None:
+        h.clock.now += 0.25
+
+    h.processor.before = take_250ms
+    assert await h.runner.run_once() is ProcessOutcome.RETRY_SCHEDULED
+    h.clock.now += 5
+    assert await h.runner.run_once() is ProcessOutcome.APPLIED
+    assert await h.runner.run_once() is ProcessOutcome.QUARANTINED
+
+    h.clock.now += 1
+    report = await h.runner.report_stats()
+    assert report["consumed"] == 3
+    assert report["retries_scheduled"] == 1
+    assert report["quarantined"] == 1
+    assert report["applied"] == 1
+    assert report["duplicates"] == 0
+    # The quarantine took no processor time; the applied record took 250 ms.
+    assert report["processing_ms_max"] == 250.0
+    assert report["processing_ms_avg"] == 125.0
+    assert report["interval_seconds"] == 6.5
+
+    again = await h.runner.report_stats()
+    assert again["consumed"] == 0
+    assert again["processing_ms_avg"] is None
+
+
+async def test_lag_is_high_watermark_minus_committed_offset() -> None:
+    h = _harness([FakeRecord(10, _envelope_bytes())])
+    h.consumer.assigned = [TopicPartition(TOPIC, 1), TopicPartition(TOPIC, 2)]
+    # Partition 2 has no committed offset; the group would start at its low watermark.
+    h.consumer.watermarks = {1: (0, 25), 2: (5, 9)}
+    await h.runner.run_once()
+
+    report = await h.runner.report_stats()
+    assert report["lag"] == {f"{TOPIC}[1]": 14, f"{TOPIC}[2]": 4}
+    assert report["lag_total"] == 18
+
+
+@pytest.mark.parametrize("timed_out", [True, False])
+async def test_lag_is_none_when_the_broker_cannot_answer(timed_out: bool) -> None:
+    h = _harness([])
+    h.consumer.assigned = [TopicPartition(TOPIC, 1)]
+    if timed_out:
+        h.consumer.watermarks = {1: None}
+    else:
+        h.consumer.lag_error = KafkaException(KafkaError(KafkaError._TRANSPORT))
+    report = await h.runner.report_stats()
+    assert report["lag"] is None
+    assert report["lag_total"] is None
+
+
+async def test_report_counts_partitions_paused_for_retry() -> None:
+    h = _harness([FakeRecord(7, _envelope_bytes())], errors=[RuntimeError("db down")])
+    await h.runner.run_once()
+    assert (await h.runner.report_stats())["paused_partitions"] == 1
+
+
+@pytest.mark.parametrize("callback", ["on_revoke", "on_lost"])
+async def test_revoked_partition_forgets_its_pending_retry(callback: str) -> None:
+    h = _harness([FakeRecord(7, _envelope_bytes())], errors=[RuntimeError("db down")])
+    h.runner.subscribe([TOPIC])
+    assert await h.runner.run_once() is ProcessOutcome.RETRY_SCHEDULED
+
+    h.consumer.callbacks[callback](h.consumer, [TopicPartition(TOPIC, 1)])
+    # A new owner starts at the committed offset; the old backoff no longer
+    # applies, and the pause is lifted so a reassignment here is fetched.
+    assert h.consumer.calls[-1] == "resume"
+    assert not h.consumer.paused
+    assert (await h.runner.report_stats())["paused_partitions"] == 0
+    h.consumer.records = [FakeRecord(5, _envelope_bytes())]
+    assert await h.runner.run_once() is ProcessOutcome.APPLIED
+    assert h.consumer.commits == [(TOPIC, 1, 6)]
+
+
+async def test_subscribe_registers_rebalance_callbacks() -> None:
+    h = _harness([])
+    h.runner.subscribe([TOPIC])
+    assert set(h.consumer.callbacks) == {"on_assign", "on_revoke", "on_lost"}
+    h.consumer.callbacks["on_assign"](h.consumer, [TopicPartition(TOPIC, 0)])
+    # Revoking a partition with no pending retry touches nothing.
+    h.consumer.callbacks["on_revoke"](h.consumer, [TopicPartition(TOPIC, 0)])
     assert h.consumer.calls == []

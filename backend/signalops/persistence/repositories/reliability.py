@@ -3,6 +3,7 @@
 import json
 import uuid
 from collections.abc import Sequence
+from dataclasses import dataclass
 from datetime import timedelta
 
 from sqlalchemy import func, or_, select, update
@@ -14,6 +15,14 @@ from signalops.contracts.common import MAX_ERROR_DETAIL_LENGTH
 from signalops.contracts.events import EventEnvelope, EventPayload
 from signalops.persistence.models import ConsumerReceipt, OutboxEvent
 from signalops.streaming.topics import message_key, topic_for
+
+
+@dataclass(frozen=True)
+class OutboxBacklog:
+    pending: int
+    quarantined: int
+    # Age of the oldest unpublished row, quarantined or not; None when there is none.
+    oldest_age_seconds: float | None
 
 
 class ReceiptRepository:
@@ -151,6 +160,16 @@ class OutboxRepository:
             .values(quarantined_at=None, next_attempt_at=None)
         )
         return result.rowcount == 1  # type: ignore[attr-defined, no-any-return]
+
+    async def backlog(self) -> OutboxBacklog:
+        """Unpublished rows, read through the partial index on pending rows."""
+        query = select(
+            func.count(),
+            func.count().filter(OutboxEvent.quarantined_at.is_not(None)),
+            func.extract("epoch", func.clock_timestamp() - func.min(OutboxEvent.created_at)),
+        ).where(OutboxEvent.published_at.is_(None))
+        pending, quarantined, age = (await self._session.execute(query)).one()
+        return OutboxBacklog(pending, quarantined, float(age) if age is not None else None)
 
 
 def _error_text(error: str) -> str:

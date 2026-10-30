@@ -154,6 +154,7 @@ Backend processes read `SIGNALOPS_`-prefixed variables (`backend/signalops/confi
 | `SIGNALOPS_OUTBOX_IDLE_INTERVAL_MS` | `500` | Publisher wait after a poll that published nothing (empty or all failed) |
 | `SIGNALOPS_RETRY_MAX_ATTEMPTS` | `5` | Attempts per consumed record (including the first) for transient failures before the consumer stops without committing. The outbox never gives up on transient failures |
 | `SIGNALOPS_RETRY_BASE_DELAY_MS` / `SIGNALOPS_RETRY_MAX_DELAY_MS` | `1000` / `30000` | Full-jitter backoff: retry n waits a random time up to min(max, base × 2^(n−1)) |
+| `SIGNALOPS_STREAMING_STATS_INTERVAL_MS` | `30000` | Interval of the `consumer stats` and `outbox stats` log lines (see [reliability.md](reliability.md#streaming-stats)) |
 | `SIGNALOPS_LOG_LEVEL` | `INFO` | JSON logs on stdout |
 | `SIGNALOPS_ENVIRONMENT` | `development` | `development`, `test`, `production` |
 | `SIGNALOPS_API_HOST` / `SIGNALOPS_API_PORT` | `0.0.0.0` / `8000` | |

@@ -22,6 +22,16 @@ Failures (see `streaming.failures`):
   never exceeded. When the backoff elapses the partition resumes and the
   record is redelivered. After `RetryPolicy.max_attempts` failures the runner
   stops with `RecordProcessingError`, still without committing.
+
+Lifecycle: `stop` is checked between records, so a stopped runner finishes the
+record in hand through its commit, then closes the consumer, which leaves the
+group. Rebalance callbacks run inside `poll`, when no record is in progress;
+a revoked partition's retry state is dropped and its pause lifted, because its
+next owner (possibly this process again) starts from the committed offset.
+
+Every `stats_interval_seconds` the runner logs `consumer stats`: counts since
+the previous report, processing latency, and lag per assigned partition
+(high watermark minus committed offset), so a growing backlog is visible.
 """
 
 import asyncio
@@ -128,6 +138,25 @@ class KafkaConsumerLike(Protocol):
 
     def seek(self, partition: TopicPartition) -> None: ...
 
+    def subscribe(
+        self,
+        topics: list[str],
+        *,
+        on_assign: Callable[[Any, list[TopicPartition]], None],
+        on_revoke: Callable[[Any, list[TopicPartition]], None],
+        on_lost: Callable[[Any, list[TopicPartition]], None],
+    ) -> None: ...
+
+    def assignment(self) -> list[TopicPartition]: ...
+
+    def committed(
+        self, partitions: list[TopicPartition], timeout: float
+    ) -> list[TopicPartition]: ...
+
+    def get_watermark_offsets(
+        self, partition: TopicPartition, timeout: float, cached: bool
+    ) -> tuple[int, int] | None: ...
+
     def close(self) -> None: ...
 
 
@@ -144,14 +173,11 @@ def consumer_config(settings: Settings, *, group_id: str, client_id: str) -> dic
     }
 
 
-def create_consumer(
-    settings: Settings, *, group_id: str, client_id: str, topics: list[str]
-) -> Consumer:
+def create_consumer(settings: Settings, *, group_id: str, client_id: str) -> Consumer:
+    """An unsubscribed consumer; `ConsumerRunner.subscribe` adds the rebalance callbacks."""
     config = consumer_config(settings, group_id=group_id, client_id=client_id)
     config["logger"] = logging.getLogger("signalops.kafka")
-    consumer = Consumer(config)
-    consumer.subscribe(topics)
-    return consumer
+    return Consumer(config)
 
 
 @dataclass
@@ -160,6 +186,47 @@ class _PendingRetry:
     failures: int
     due_at: float
     resumed: bool = False
+
+
+@dataclass
+class ConsumerStats:
+    """Counts since the last report. Redeliveries are counted again."""
+
+    consumed: int = 0
+    applied: int = 0
+    duplicates: int = 0
+    quarantined: int = 0
+    retries_scheduled: int = 0
+    processing_seconds_total: float = 0.0
+    processing_seconds_max: float = 0.0
+    # Records that reached a committed outcome, the latency denominator.
+    completed: int = 0
+
+    def observe(self, outcome: ProcessOutcome, seconds: float) -> None:
+        if outcome is ProcessOutcome.RETRY_SCHEDULED:
+            self.retries_scheduled += 1
+            return
+        if outcome is ProcessOutcome.APPLIED:
+            self.applied += 1
+        elif outcome is ProcessOutcome.DUPLICATE:
+            self.duplicates += 1
+        else:
+            self.quarantined += 1
+        self.completed += 1
+        self.processing_seconds_total += seconds
+        self.processing_seconds_max = max(self.processing_seconds_max, seconds)
+
+    def log_fields(self) -> dict[str, Any]:
+        average = self.processing_seconds_total / self.completed if self.completed else None
+        return {
+            "consumed": self.consumed,
+            "applied": self.applied,
+            "duplicates": self.duplicates,
+            "quarantined": self.quarantined,
+            "retries_scheduled": self.retries_scheduled,
+            "processing_ms_avg": round(average * 1000, 3) if average is not None else None,
+            "processing_ms_max": round(self.processing_seconds_max * 1000, 3),
+        }
 
 
 class ConsumerRunner:
@@ -172,6 +239,8 @@ class ConsumerRunner:
         failure_publisher: MessagePublisher,
         retry_policy: RetryPolicy | None = None,
         poll_timeout_seconds: float = 1.0,
+        stats_interval_seconds: float = 30.0,
+        broker_timeout_seconds: float = 5.0,
         clock: Callable[[], float] = time.monotonic,
         rng: random.Random | None = None,
     ) -> None:
@@ -181,17 +250,52 @@ class ConsumerRunner:
         self._failure_publisher = failure_publisher
         self._policy = retry_policy or RetryPolicy()
         self._poll_timeout = poll_timeout_seconds
+        self._stats_interval = stats_interval_seconds
+        self._broker_timeout = broker_timeout_seconds
         self._clock = clock
         self._rng = rng
         self._retries: dict[tuple[str, int], _PendingRetry] = {}
+        self._stats = ConsumerStats()
+        self._stats_since = clock()
+
+    def subscribe(self, topics: list[str]) -> None:
+        self._consumer.subscribe(
+            topics, on_assign=self._on_assign, on_revoke=self._on_revoke, on_lost=self._on_lost
+        )
 
     async def run(self, stop: asyncio.Event) -> None:
-        """Process records until `stop` is set or a record fails; always closes the consumer."""
+        """Process records until `stop` is set or a record fails; always closes the consumer.
+
+        A stop takes effect between records: the record in hand is committed
+        (or left for redelivery) before the consumer closes.
+        """
         try:
             while not stop.is_set():
                 await self.run_once()
+                if self._clock() - self._stats_since >= self._stats_interval:
+                    await self.report_stats()
+            await self.report_stats()
         finally:
+            # Leaves the group; the revoke callback runs inside close.
             await asyncio.to_thread(self._consumer.close)
+            logger.info("consumer stopped", extra={"consumer_group": self._consumer_group})
+
+    async def report_stats(self) -> dict[str, Any]:
+        """Log and return counts since the last report plus current lag, then reset counts."""
+        now = self._clock()
+        lag = await asyncio.to_thread(self._lag)
+        report: dict[str, Any] = {
+            "consumer_group": self._consumer_group,
+            "interval_seconds": round(now - self._stats_since, 3),
+            **self._stats.log_fields(),
+            "paused_partitions": sum(1 for p in self._retries.values() if not p.resumed),
+            "lag_total": sum(lag.values()) if lag is not None else None,
+            "lag": lag,
+        }
+        self._stats = ConsumerStats()
+        self._stats_since = now
+        logger.info("consumer stats", extra=report)
+        return report
 
     async def run_once(self) -> ProcessOutcome | None:
         """Poll once and handle the record, if any, through its offset commit or retry."""
@@ -220,6 +324,13 @@ class ConsumerRunner:
             self._rewind(pending)
             return None
 
+        self._stats.consumed += 1
+        started = self._clock()
+        outcome = await self._handle(record, position)
+        self._stats.observe(outcome, self._clock() - started)
+        return outcome
+
+    async def _handle(self, record: Message, position: RecordPosition) -> ProcessOutcome:
         value = record.value() or b""
         redrive = redrive_attempt_id(record.headers())
         try:
@@ -233,7 +344,7 @@ class ConsumerRunner:
             return await self._quarantine(position, value, exc, envelope, redrive)
         except Exception as exc:  # noqa: BLE001 - never acknowledged; retried, then raised
             return self._retry_or_stop(position, FailureStage.PROCESS, type(exc).__name__, exc)
-        self._retries.pop((topic, partition), None)
+        self._retries.pop((position.topic, position.partition), None)
         await asyncio.to_thread(self._commit, position)
         return outcome
 
@@ -342,6 +453,70 @@ class ConsumerRunner:
                 "kafka offset commit failed",
                 extra={**_position_fields(position), "error_detail": str(exc.args[0])},
             )
+
+    def _lag(self) -> dict[str, int] | None:
+        """High watermark minus committed offset per assigned partition; None if unavailable.
+
+        Without a committed offset the group starts from the earliest retained
+        record, so the low watermark stands in for it.
+        """
+        try:
+            assigned = self._consumer.assignment()
+            if not assigned:
+                return {}
+            committed = self._consumer.committed(assigned, timeout=self._broker_timeout)
+            lag: dict[str, int] = {}
+            for tp in committed:
+                watermarks = self._consumer.get_watermark_offsets(
+                    tp, timeout=self._broker_timeout, cached=False
+                )
+                if watermarks is None:
+                    return None
+                low, high = watermarks
+                start = tp.offset if tp.offset >= 0 else low
+                lag[f"{tp.topic}[{tp.partition}]"] = max(0, high - start)
+        except KafkaException as exc:
+            logger.warning("consumer lag unavailable", extra={"error_detail": str(exc.args[0])})
+            return None
+        return lag
+
+    def _on_assign(self, consumer: object, partitions: list[TopicPartition]) -> None:
+        logger.info(
+            "partitions assigned",
+            extra={"consumer_group": self._consumer_group, "partitions": _names(partitions)},
+        )
+
+    def _on_revoke(self, consumer: object, partitions: list[TopicPartition]) -> None:
+        # Every record handed out before this poll was committed or left for
+        # redelivery, so there is nothing to finish; only local state goes.
+        self._forget(partitions)
+        logger.info(
+            "partitions revoked",
+            extra={"consumer_group": self._consumer_group, "partitions": _names(partitions)},
+        )
+
+    def _on_lost(self, consumer: object, partitions: list[TopicPartition]) -> None:
+        # Another member may already own these; commits for them would fail.
+        self._forget(partitions)
+        logger.warning(
+            "partitions lost",
+            extra={"consumer_group": self._consumer_group, "partitions": _names(partitions)},
+        )
+
+    def _forget(self, partitions: list[TopicPartition]) -> None:
+        paused = []
+        for tp in partitions:
+            pending = self._retries.pop((tp.topic, tp.partition), None)
+            if pending is not None and not pending.resumed:
+                paused.append(TopicPartition(tp.topic, tp.partition))
+        if paused:
+            # librdkafka keeps the pause across a revoke; without this, a
+            # partition reassigned to this member would never be fetched again.
+            self._consumer.resume(paused)
+
+
+def _names(partitions: list[TopicPartition]) -> list[str]:
+    return [f"{tp.topic}[{tp.partition}]" for tp in partitions]
 
 
 def _position_fields(position: RecordPosition) -> dict[str, Any]:

@@ -36,6 +36,8 @@ class Settings(BaseSettings):
     retry_max_attempts: int = Field(default=5, ge=1, le=20)
     retry_base_delay_ms: int = Field(default=1_000, ge=10, le=60_000)
     retry_max_delay_ms: int = Field(default=30_000, ge=10, le=300_000)
+    # How often consumers and the outbox publisher log counts, lag, and backlog.
+    streaming_stats_interval_ms: int = Field(default=30_000, ge=1_000, le=3_600_000)
 
     api_host: str = "0.0.0.0"  # noqa: S104 - container listener; Compose publishes on loopback.
     api_port: int = Field(default=8000, ge=1, le=65535)

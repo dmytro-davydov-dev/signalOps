@@ -32,6 +32,8 @@ commit Kafka offset (next)
 - A receipt insert that races a concurrent uncommitted insert of the same receipt waits for it, then reports a duplicate.
 - A handler failure rolls back the transaction, including the receipt.
 - A permanent failure (`ContractError`) is published to `processing.failed.v1`; the offset is committed only after that event is acknowledged. A transient failure pauses and rewinds the partition, retries with backoff while the runner keeps polling, and after the last attempt stops the runner without committing. See [events.md](events.md#failure-handling).
+- Lifecycle: a stop (SIGTERM/SIGINT once an entry command wires it) is checked between records, so the record in hand finishes through its offset commit before the consumer closes and leaves the group. A kill at any point is covered by the redelivery rule above. Verified by `tests/integration/test_streaming_lifecycle.py`.
+- Rebalance: callbacks run inside `poll`, when no record is in progress, so there is nothing to finish or commit on revoke. A revoked or lost partition's pending retry is dropped and its pause lifted (librdkafka keeps a pause across a revoke, so a partition reassigned to the same member would otherwise never be fetched); the next owner starts at the committed offset.
 - If parallelism is added later, only the contiguous completed offset frontier is committed.
 - No transaction stays open during a broker call or a model call.
 
@@ -48,6 +50,7 @@ on ack: UPDATE published_at
 - Within a batch, rows go out in rounds: each aggregate's lowest pending version first, all its topics together. An aggregate whose row fails sits out the rest of the batch, so a later version is never acknowledged before an earlier one.
 - `OutboxRepository.add` sets `created_at` with `clock_timestamp()`, so when versions are allocated under the aggregate's row lock, a later version also sorts later across batches.
 - A crash after the ack but before `published_at` is set causes a republish with the same event ID and key. Consumers deduplicate.
+- A stop is checked between publish rounds; rows not yet sent stay pending for the next process. Compose gives the publisher a stop grace period longer than the delivery timeout, so an in-flight round normally finishes; a kill mid-round republishes acknowledged rows.
 - A failed delivery leaves the row pending and increments `attempts` (also incremented when the row is marked published). A transient failure sets `next_attempt_at` by capped, jittered backoff; a broker rejection sets `quarantined_at`. `OutboxRepository.pending` skips a row while it or an earlier pending version of its aggregate is deferred or quarantined, so order holds across batches. `signalops redrive-outbox` clears a quarantine.
 
 ## Job leases
@@ -64,6 +67,18 @@ on ack: UPDATE published_at
 - Older events are kept as evidence with a late flag. They never silently create historical incidents.
 - Live mode closes windows by wall clock. Replay uses a simulated clock plus a final flush.
 
+## Streaming stats
+
+Consumers and the outbox publisher log one structured line every `SIGNALOPS_STREAMING_STATS_INTERVAL_MS` (default 30 s) and once on shutdown. Counts cover the interval since the previous line; redeliveries are counted again.
+
+| Message | Fields |
+| --- | --- |
+| `consumer stats` | `consumer_group`, `interval_seconds`, `consumed`, `applied`, `duplicates` (receipt hits), `quarantined`, `retries_scheduled`, `processing_ms_avg`/`processing_ms_max` (poll return to offset commit, committed outcomes only), `paused_partitions`, `lag` per assigned partition and `lag_total` |
+| `outbox stats` | `interval_seconds`, `outbox_published`, `outbox_failed`, `outbox_quarantined`, `outbox_deferred`, `outbox_pending` (all unpublished rows), `outbox_pending_quarantined`, `outbox_oldest_age_seconds` |
+
+- Lag is the high watermark minus the group's committed offset, queried from the broker at report time; without a committed offset the low watermark is used. It is `null` when the broker does not answer in time. A rising `lag_total` or `outbox_oldest_age_seconds` across lines is backlog growth.
+- These are logs, not a metrics endpoint. Exported metrics and dashboards are P11-T01.
+
 ## What survives what
 
 | Failure | Expected outcome |
@@ -76,6 +91,7 @@ on ack: UPDATE published_at
 | Kafka outage during ingest | No false acceptance. Client retries with the same IDs |
 | Permanent validation failure | Quarantined to `processing.failed.v1`, original not lost; redrivable while retained |
 | Failure event cannot be published | Original offset not committed; retried, then the consumer stops |
+| Consumer stopped or rebalanced mid-stream | Record in hand committed or redelivered; pending retry state dropped with the partition |
 | Database down during consumption | Partition paused and retried with backoff, then the consumer stops at the same offset; nothing quarantined |
 
 ## Verification checklist
@@ -85,6 +101,7 @@ These come from the plan's §13. Each needs a meaningful automated or scripted c
 - [ ] Contract fixtures: missing fields, unsupported versions, malformed timestamps, oversized payloads, contradictory service identity.
 - [x] Duplicate Kafka message plus a crash between DB commit and offset commit leaves one logical effect (P03-T02).
 - [x] Outbox crash after broker ack causes a harmless duplicate (P03-T03).
+- [x] A consumer stopped mid-stream resumes after its last committed record with nothing skipped or repeated; a revoke drops a pending retry and the reassigned partition is fetched again (P03-T05).
 - [x] Permanent failures are quarantined to `processing.failed.v1`; an unacknowledged failure event never commits the original; transient failures retry in place; a redriven record is applied once (P03-T04).
 - [ ] Worker killed after one step: lease expiry, checkpoint reuse, stale-writer rejection.
 - [ ] Provider throttling, ambiguous timeout, malformed output, parallel budget exhaustion.

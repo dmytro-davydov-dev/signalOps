@@ -18,15 +18,20 @@ an aggregate stops for the rest of the batch at its first failure. Across
 batches, a deferred or quarantined row holds back its aggregate's later
 versions (`OutboxRepository.pending`), so a later version is never
 acknowledged before an earlier one.
+
+A stop takes effect between publish rounds; rows not yet sent stay pending.
+Every `stats_interval_seconds` the publisher logs `outbox stats`: counts since
+the previous report and the unpublished backlog with its oldest row's age.
 """
 
 import asyncio
 import contextlib
 import json
 import logging
+import time
 import uuid
-from collections.abc import Sequence
-from dataclasses import dataclass
+from collections.abc import Callable, Sequence
+from dataclasses import asdict, dataclass
 from typing import Protocol
 
 from signalops.persistence.database import Database
@@ -56,6 +61,14 @@ class PublishSummary:
     # Rows behind a failed earlier version of their aggregate, left pending.
     deferred: int = 0
 
+    def __add__(self, other: "PublishSummary") -> "PublishSummary":
+        return PublishSummary(
+            self.published + other.published,
+            self.failed + other.failed,
+            self.quarantined + other.quarantined,
+            self.deferred + other.deferred,
+        )
+
 
 def outgoing_message(row: OutboxEvent) -> OutgoingMessage:
     """The stored topic, key, and envelope; nothing is re-derived from current code."""
@@ -83,28 +96,58 @@ class OutboxPublisher:
         batch_size: int = 100,
         idle_interval_seconds: float = 0.5,
         retry_policy: RetryPolicy | None = None,
+        stats_interval_seconds: float = 30.0,
+        clock: Callable[[], float] = time.monotonic,
     ) -> None:
         self._database = database
         self._producer = producer
         self._batch_size = batch_size
         self._idle_interval = idle_interval_seconds
         self._policy = retry_policy or RetryPolicy()
+        self._stats_interval = stats_interval_seconds
+        self._clock = clock
+        self._totals = PublishSummary()
+        self._stats_since = clock()
 
     async def run(self, stop: asyncio.Event) -> None:
         """Publish until `stop` is set; waits only after a poll that published nothing."""
         while not stop.is_set():
-            summary = await self.publish_once()
+            summary = await self.publish_once(stop)
+            if self._clock() - self._stats_since >= self._stats_interval:
+                await self.report_stats()
             if summary.published == 0:
                 with contextlib.suppress(TimeoutError):
                     await asyncio.wait_for(stop.wait(), self._idle_interval)
+        await self.report_stats()
+        logger.info("outbox publisher stopped")
 
-    async def publish_once(self) -> PublishSummary:
+    async def report_stats(self) -> dict[str, object]:
+        """Log and return counts since the last report and the current backlog."""
+        now = self._clock()
+        async with self._database.transaction() as session:
+            backlog = await OutboxRepository(session).backlog()
+        age = backlog.oldest_age_seconds
+        report: dict[str, object] = {
+            "interval_seconds": round(now - self._stats_since, 3),
+            **{f"outbox_{name}": value for name, value in asdict(self._totals).items()},
+            "outbox_pending": backlog.pending,
+            "outbox_pending_quarantined": backlog.quarantined,
+            "outbox_oldest_age_seconds": round(age, 3) if age is not None else None,
+        }
+        self._totals = PublishSummary()
+        self._stats_since = now
+        logger.info("outbox stats", extra=report)
+        return report
+
+    async def publish_once(self, stop: asyncio.Event | None = None) -> PublishSummary:
         async with self._database.transaction() as session:
             rows = await OutboxRepository(session).pending(self._batch_size)
 
         published = failed = quarantined = deferred = 0
         blocked: set[uuid.UUID] = set()
         for round_rows in publish_rounds(rows):
+            if stop is not None and stop.is_set():
+                break
             ready = [row for row in round_rows if row.aggregate_id not in blocked]
             deferred += len(round_rows) - len(ready)
             if not ready:
@@ -130,6 +173,7 @@ class OutboxPublisher:
             failed += len(undelivered)
 
         summary = PublishSummary(published, failed, quarantined, deferred)
+        self._totals += summary
         if rows:
             logger.info(
                 "outbox batch published",

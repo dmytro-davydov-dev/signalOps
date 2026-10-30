@@ -143,9 +143,7 @@ def _runner(
     *,
     max_attempts: int = 5,
 ) -> tuple[Consumer, ConsumerRunner]:
-    consumer = create_consumer(
-        settings, group_id=group, client_id=f"{group}-member", topics=[topic]
-    )
+    consumer = create_consumer(settings, group_id=group, client_id=f"{group}-member")
     runner = ConsumerRunner(
         consumer,
         TransactionalProcessor(database, group, handler),
@@ -153,6 +151,7 @@ def _runner(
         failure_publisher=publisher,
         retry_policy=RetryPolicy(max_attempts, base_delay_seconds=0.05, max_delay_seconds=0.2),
     )
+    runner.subscribe([topic])
     return consumer, runner
 
 

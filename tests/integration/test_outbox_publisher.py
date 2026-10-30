@@ -171,13 +171,14 @@ async def test_crash_after_ack_republishes_and_consumer_deduplicates(
     async def record(session: object, envelope: EventEnvelope[EventPayload]) -> None:
         applied.append(envelope.event_id)
 
-    consumer = create_consumer(infra_settings, group_id=group, client_id=group, topics=[topic])
+    consumer = create_consumer(infra_settings, group_id=group, client_id=group)
     runner = ConsumerRunner(
         consumer,
         TransactionalProcessor(database, group, record),
         consumer_group=group,
         failure_publisher=producer,
     )
+    runner.subscribe([topic])
     outcomes: list[ProcessOutcome] = []
     try:
         deadline = time.monotonic() + POLL_DEADLINE_SECONDS
@@ -301,3 +302,61 @@ async def test_rejected_row_is_quarantined_blocks_its_aggregate_and_can_be_redri
     assert await publisher.publish_once() == PublishSummary(published=2)
     assert _read_event_ids(infra_settings, topic, expected=2) == [first, second]
     assert (await _row(database, first)).attempts == 2
+
+
+@dataclass
+class StopAfterPublish:
+    """Delivers through a real producer, then requests a stop."""
+
+    inner: EventProducer
+    stop: asyncio.Event
+
+    def publish(self, messages: Sequence[OutgoingMessage]) -> list[DeliveryResult]:
+        results = self.inner.publish(messages)
+        self.stop.set()
+        return results
+
+
+async def test_stop_between_rounds_leaves_later_versions_pending(
+    infra_settings: Settings, database: db.Database, producer: EventProducer, topic: str
+) -> None:
+    aggregate = uuid.uuid4()
+    v1 = await _stage(database, topic, aggregate_id=aggregate, aggregate_version=1)
+    v2 = await _stage(database, topic, aggregate_id=aggregate, aggregate_version=2)
+    stop = asyncio.Event()
+
+    publisher = OutboxPublisher(database, StopAfterPublish(producer, stop))
+    assert await publisher.publish_once(stop) == PublishSummary(published=1)
+    assert (await _row(database, v1)).published_at is not None
+    assert (await _row(database, v2)).published_at is None
+
+    # The next process picks up where the stopped one left off.
+    assert await OutboxPublisher(database, producer).publish_once() == PublishSummary(published=1)
+    assert _read_event_ids(infra_settings, topic, expected=2) == [v1, v2]
+
+
+async def test_stats_report_counts_and_backlog_age(
+    database: db.Database, producer: EventProducer, topic: str
+) -> None:
+    missing = f"test.missing.{uuid.uuid4().hex[:8]}"
+    await _stage(database, topic)
+    await _stage(database, missing)
+    publisher = OutboxPublisher(database, producer, retry_policy=FAST_RETRY)
+
+    before = await publisher.report_stats()
+    assert before["outbox_pending"] == 2
+    assert isinstance(before["outbox_oldest_age_seconds"], float)
+    assert before["outbox_published"] == 0
+
+    await publisher.publish_once()
+    after = await publisher.report_stats()
+    assert after["outbox_published"] == 1
+    assert after["outbox_failed"] == 1
+    # The undeliverable row is the backlog, and it keeps ageing.
+    assert after["outbox_pending"] == 1
+    assert after["outbox_pending_quarantined"] == 0
+    assert isinstance(after["outbox_oldest_age_seconds"], float)
+    assert after["outbox_oldest_age_seconds"] >= before["outbox_oldest_age_seconds"]
+
+    reset = await publisher.report_stats()
+    assert reset["outbox_published"] == 0
