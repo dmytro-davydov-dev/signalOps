@@ -27,11 +27,11 @@ PostgreSQL owns evidence, workflow progress, budgets, and the initial knowledge 
 | --- | --- |
 | Active phase | Phase 3 Streaming reliability (in progress) |
 | Active task | None |
-| Last completed task | P03-T01 |
-| Latest verified commit | `40284c3` (P02-T06); P03-T01 pending commit, validated against the working tree |
-| Validation evidence | P03-T01: against the Compose broker, acknowledged messages report a partition and offset that a consumer reads back with the same key and value; 20 keys map to identical partitions across two producer instances and a repeat publish; an unknown topic, an oversized message (others in the batch still delivered), and an unreachable broker each return a failed result to the caller. Unit tests pin the key of every event fixture and the producer settings. `SIGNALOPS_INTEGRATION=1 uv run pytest` 372 passed. Earlier evidence is in the work log |
+| Last completed task | P03-T02 |
+| Latest verified commit | `f438f0f` (P03-T01); P03-T02 pending commit, validated against the working tree |
+| Validation evidence | P03-T02: against Compose PostgreSQL and Kafka, a consumer that dies after the database commit but before the offset commit leaves one effect and no committed offset; the restarted member receives the record again, hits the receipt, adds no effect, and commits offset 1. The same event published twice yields one effect and committed offset 2. A handler failure on the second of three records rolls back its receipt and outbox row and leaves the committed offset at 1; a healthy restart processes records 2 and 3 once each and commits 3. `SIGNALOPS_INTEGRATION=1 uv run pytest` 388 passed. Earlier evidence is in the work log |
 | Blockers | None recorded |
-| Next task | P03-T02 |
+| Next task | P03-T03 |
 
 ### Scope and release boundaries
 
@@ -271,11 +271,19 @@ Start the React shell in Phase 1 and add API-backed incident views in Phase 5; P
 
 ### P03-T02 Build the consumer transaction pattern
 
-- [ ] Complete this task.
+- [x] Complete this task.
 
 **Implementation:** Disable automatic commits. Process one record at a time per partition initially; insert receipt, domain effect, and outbox records in one database transaction, then commit the next Kafka offset.
 
 **Acceptance:** A crash after DB commit but before offset commit causes redelivery with no duplicate logical effect; offsets never skip unfinished earlier records.
+
+**Notes (2026-10-30):**
+- `persistence/repositories/reliability.py`: `ReceiptRepository.record` (`INSERT … ON CONFLICT DO NOTHING RETURNING`, False on duplicate) and `OutboxRepository.add`, which stores `topic_for`/`message_key` and the encoded envelope, rejecting an oversized envelope before commit. The outbox row `id` is the envelope's `event_id`, so a second staging of the same event fails on the primary key.
+- `streaming/consumer.py`: `TransactionalProcessor` (receipt, then the `EventHandler` effect, in one `Database.transaction()`) and `ConsumerRunner`, which polls in a worker thread, processes one record to completion, then commits offset + 1 synchronously. Config: `enable.auto.commit=false`, `enable.auto.offset.store=false`, `auto.offset.reset=earliest`.
+- One record at a time per consumer, not per partition: simpler than per-partition queues; revisit when measurements show a need. Parallelism would need the contiguous-frontier commit described in docs/reliability.md.
+- A failed offset commit is logged and processing continues; the effect is durable, and a later commit or a receipt-hit redelivery covers it.
+- **Deviation:** a decode or handler failure stops the runner without committing (`RecordProcessingError` with stage and position) instead of quarantining. P03-T04 owns quarantine and retry; until then a poison record halts its consumer, which is the safe direction.
+- No process entry command yet: the first real consumer is the normalizer in Phase 4. Rebalance callbacks and graceful shutdown are P03-T05.
 
 ### P03-T03 Implement the outbox publisher
 
@@ -896,13 +904,23 @@ Keep these outside the release critical path unless measurements justify promoti
 
 ### 2026-10-30 — P03-T01
 - Status: completed
-- Commit: pending (validated against the working tree)
+- Commit: `f438f0f`
 - Implemented: topic routing and `message_key` in `streaming/topics.py`; `streaming/producer.py` (`EventProducer`, `OutgoingMessage`, `DeliveryResult`, error categories); `SIGNALOPS_KAFKA_DELIVERY_TIMEOUT_MS`; `tests/unit/test_topics.py` (pinned fixture keys, key stability), `tests/unit/test_producer.py` (fake producer: ordering, categories, fatal), `tests/integration/test_producer_delivery.py` (real broker, scratch topics); docs (events key table and producer settings, development configuration).
 - Validation commands and results: `uv run ruff check .`, `uv run ruff format --check .`, `uv run mypy` (66 files) pass; `uv run pytest` 209 passed, 163 skipped; with `.env` sourced, `SIGNALOPS_INTEGRATION=1 uv run pytest` 372 passed. Negative checks: treating every delivery callback as success failed the unknown-topic and unreachable-broker integration tests and two producer unit tests; keying raw signals by `event_id` failed the pinned-key and key-stability tests; both restored and re-run green. `docker compose config --quiet` ok. Frontend unchanged, not re-run.
 - Evidence or artifact references: none retained.
 - Deviations and reasons: see task notes (no headers; key separator and omission rule chosen here).
 - Remaining issues: none for this task.
 - Next task: P03-T02
+
+### 2026-10-30 — P03-T02
+- Status: completed
+- Commit: pending (validated against the working tree)
+- Implemented: `persistence/repositories/reliability.py` (`ReceiptRepository`, `OutboxRepository`); `streaming/consumer.py` (`consumer_config`, `create_consumer`, `TransactionalProcessor`, `ConsumerRunner`, `RecordProcessingError`); `tests/unit/test_consumer.py` (fake consumer: commit ordering, failure without commit, decode failure, commit failure, record errors, close); `tests/integration/test_consumer_transactions.py` (real broker and scratch database: crash between commits, duplicate message, failed record not skipped); docs/events.md and docs/reliability.md consumer sections.
+- Validation commands and results: `uv run ruff check .`, `uv run ruff format --check .`, `uv run mypy` (70 files) pass; `uv run pytest` 222 passed, 166 skipped; with `.env` sourced, `SIGNALOPS_INTEGRATION=1 uv run pytest` 388 passed; `docker compose config --quiet` ok. Negative checks: ignoring the receipt result failed the crash and duplicate integration tests; committing the offset before processing failed two integration and four unit tests; both restored and re-run green. Frontend unchanged, not re-run.
+- Evidence or artifact references: none retained.
+- Deviations and reasons: see task notes (failures stop the runner until P03-T04; one record at a time per consumer).
+- Remaining issues: none for this task.
+- Next task: P03-T03
 
 ## Work log template
 

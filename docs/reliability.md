@@ -27,7 +27,10 @@ poll record
 commit Kafka offset (next)
 ```
 
-- Records are processed one at a time per partition initially.
+- Implemented in `streaming/consumer.py` (`ConsumerRunner`, `TransactionalProcessor`) and `persistence/repositories/reliability.py` (`ReceiptRepository`, `OutboxRepository`). Verified against Compose PostgreSQL and Kafka by `tests/integration/test_consumer_transactions.py`.
+- Records are processed one at a time per consumer, so the next poll waits for the previous offset commit.
+- A receipt insert that races a concurrent uncommitted insert of the same receipt waits for it, then reports a duplicate.
+- A decode or handler failure rolls back the transaction, commits nothing, and stops the runner. Until P03-T04 adds quarantine, a poison record halts its consumer.
 - If parallelism is added later, only the contiguous completed offset frontier is committed.
 - No transaction stays open during a broker call or a model call.
 
@@ -74,7 +77,7 @@ on ack: UPDATE published_at
 These come from the plan's §13. Each needs a meaningful automated or scripted check before it can be claimed.
 
 - [ ] Contract fixtures: missing fields, unsupported versions, malformed timestamps, oversized payloads, contradictory service identity.
-- [ ] Duplicate Kafka message plus a crash between DB commit and offset commit leaves one logical effect.
+- [x] Duplicate Kafka message plus a crash between DB commit and offset commit leaves one logical effect (P03-T02).
 - [ ] Outbox crash after broker ack causes a harmless duplicate.
 - [ ] Worker killed after one step: lease expiry, checkpoint reuse, stale-writer rejection.
 - [ ] Provider throttling, ambiguous timeout, malformed output, parallel budget exhaustion.
