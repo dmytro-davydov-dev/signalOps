@@ -30,6 +30,12 @@ class Settings(BaseSettings):
     # fully failed poll.
     outbox_batch_size: int = Field(default=100, ge=1, le=1_000)
     outbox_idle_interval_ms: int = Field(default=500, ge=50, le=60_000)
+    # Transient failures: attempts per record (including the first) before a
+    # consumer stops, and the capped exponential backoff between them. The
+    # outbox applies the same backoff but never gives up on a transient failure.
+    retry_max_attempts: int = Field(default=5, ge=1, le=20)
+    retry_base_delay_ms: int = Field(default=1_000, ge=10, le=60_000)
+    retry_max_delay_ms: int = Field(default=30_000, ge=10, le=300_000)
 
     api_host: str = "0.0.0.0"  # noqa: S104 - container listener; Compose publishes on loopback.
     api_port: int = Field(default=8000, ge=1, le=65535)

@@ -60,12 +60,17 @@ class DeliveryError:
         return cls(category, f"{error.name()}: {error.str()}")
 
 
+MessageHeaders = tuple[tuple[str, bytes], ...]
+
+
 @dataclass(frozen=True)
 class OutgoingMessage:
     topic: str
     key: str
     value: bytes
-    event_id: uuid.UUID
+    # None only when redriving a record whose envelope could not be parsed.
+    event_id: uuid.UUID | None
+    headers: MessageHeaders = ()
 
     @classmethod
     def from_envelope(cls, envelope: EventEnvelope[EventPayload]) -> Self:
@@ -95,6 +100,7 @@ class KafkaProducerLike(Protocol):
         value: bytes,
         key: str,
         *,
+        headers: list[tuple[str, str | bytes | None]],
         on_delivery: Callable[[KafkaError | None, Message], None],
     ) -> None: ...
 
@@ -154,7 +160,11 @@ class EventProducer:
         for index, message in enumerate(messages):
             try:
                 self._producer.produce(
-                    message.topic, message.value, message.key, on_delivery=callback_for(index)
+                    message.topic,
+                    message.value,
+                    message.key,
+                    headers=[(name, value) for name, value in message.headers],
+                    on_delivery=callback_for(index),
                 )
             except BufferError:
                 error = DeliveryError(DeliveryErrorCategory.QUEUE_FULL, "local producer queue full")
@@ -181,7 +191,7 @@ class EventProducer:
                 "kafka delivery failed",
                 extra={
                     "topic": result.message.topic,
-                    "event_id": str(result.message.event_id),
+                    "event_id": _optional_str(result.message.event_id),
                     "error_category": result.error.category.value,
                     "error_detail": result.error.detail,
                 },
@@ -191,3 +201,7 @@ class EventProducer:
     def close(self, timeout_seconds: float = 10.0) -> int:
         """Wait for outstanding deliveries; returns the number still undelivered."""
         return self._producer.flush(timeout_seconds)
+
+
+def _optional_str(value: object | None) -> str | None:
+    return None if value is None else str(value)

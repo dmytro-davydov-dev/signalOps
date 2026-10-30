@@ -116,17 +116,26 @@ These rules cover every exported contract: event envelopes and payloads, adapter
   | `fatal` | The idempotent producer lost its guarantees; later `publish` calls raise `ProducerUnusableError` | Replace the producer (restart the process) |
 
   A message is never reported as delivered without a broker acknowledgement. Async callers run `publish` in a worker thread.
-- **Consumers.** Auto-commit is off. Consumers assume at-least-once delivery. A consumer commits the next offset only after its database transaction commits, and it never commits past an unfinished earlier record in the partition. `ConsumerRunner` (`streaming/consumer.py`) handles one record at a time: decode, one transaction through `TransactionalProcessor` (receipt, the handler's effect, outbox rows via `OutboxRepository`), then a synchronous commit of offset + 1. A new group starts at the earliest retained offset. A failed offset commit is logged, not raised: the effect is durable and a later commit or a redelivery that hits the receipt covers it. A record that fails to decode or apply stops the runner without committing; quarantine to `processing.failed.v1` arrives with P03-T04.
+- **Consumers.** Auto-commit is off. Consumers assume at-least-once delivery. A consumer commits the next offset only after its database transaction commits, and it never commits past an unfinished earlier record in the partition. `ConsumerRunner` (`streaming/consumer.py`) handles one record at a time: decode, one transaction through `TransactionalProcessor` (receipt, the handler's effect, outbox rows via `OutboxRepository`), then a synchronous commit of offset + 1. A new group starts at the earliest retained offset. A failed offset commit is logged, not raised: the effect is durable and a later commit or a redelivery that hits the receipt covers it. Failures follow [Failure handling](#failure-handling).
 - **Idempotent effects.** Consumer receipts (`consumer_group`, `event_id`) plus business uniqueness constraints make redelivery harmless. Kafka producer idempotence does **not** make database writes or model calls exactly-once.
-- **Outbox.** Events derived from database changes go through the transactional outbox. The publisher sends the stored topic, key, and envelope (re-serialized from JSONB, so key order may differ from the original encoding) with the row ID as event ID. A row is marked published only after broker acknowledgement, so a crash in between causes a harmless republish. See [reliability.md](reliability.md).
+- **Outbox.** Events derived from database changes go through the transactional outbox. The publisher sends the stored topic, key, and envelope (re-serialized from JSONB, so key order may differ from the original encoding) with the row ID as event ID. A row is marked published only after broker acknowledgement, so a crash in between causes a harmless republish. A transient delivery failure defers the row with backoff; a `rejected` result quarantines it. See [reliability.md](reliability.md).
 
 ## Failure handling
 
 | Failure | Handling |
 | --- | --- |
-| Transient (broker, database, network) | Capped exponential backoff with jitter: 5 attempts, 30 s maximum delay. Long delays are persisted in job state, never slept through a poll deadline. |
-| Permanent (validation, unsupported version) | Publish to `processing.failed.v1` with redacted error details and the original identifiers. |
-| Failure event cannot be published | The original is **not** acknowledged. |
-| Redrive | Keeps the original `event_id` and records a separate redrive attempt ID. |
+| Permanent: `ContractError` from `decode_event` (malformed JSON, unknown type, unsupported version, invalid envelope or payload, oversized) or raised by the handler for content it cannot accept | `ConsumerRunner` publishes a `processing.failed.v1` event, then commits the record's offset. No receipt is written, so a redrive is processed. |
+| Transient: any other handler exception (database, network, bugs) | The partition is paused and rewound to the record while the runner keeps polling; it resumes after a full-jitter backoff (`SIGNALOPS_RETRY_*`: 5 attempts, 1 s base, 30 s cap). After the last attempt the runner raises `RecordProcessingError` without committing; the process exits and its restart policy brings it back at the same offset. |
+| Failure event not acknowledged | Treated as transient: the original is **not** committed. The retry republishes the same failure event ID. |
+| Outbox: `timeout`, `transient`, `queue_full` | Row deferred (`next_attempt_at`) with the same backoff, never abandoned. Its aggregate's later versions wait. |
+| Outbox: `rejected` | Row quarantined (`quarantined_at`, `last_error`); later versions of its aggregate wait until `signalops redrive-outbox EVENT_ID`. Nothing discards an outbox row. |
+| Redrive of a record | `signalops redrive-record --topic --partition --offset` (from the failure event) reads the original from Kafka and republishes key, value, and headers unchanged to the same topic, with a new `signalops-redrive-attempt-id` header. The envelope, and so `event_id`, is the original's. A failure of the redriven copy records that attempt ID in `redrive_attempt_id`. `processing.failed.v1` itself is not redrivable. |
+
+Failure event fields:
+
+- `event_id`: UUIDv5 of consumer group, topic, partition, and offset, so a republished failure event deduplicates.
+- `workspace_id` and `replay_run_id`: from the original envelope, else from those fields of the raw document when they parse. A failure event whose original names no readable workspace uses the nil UUID `00000000-0000-0000-0000-000000000000`.
+- `causation_id`, `original_event_id`: the original event ID when known. `correlation_id` and `trace_id` are copied when the original decoded.
+- `error_detail`: the `ContractError` detail (field locations and messages, never values).
 
 Local Kafka is a single broker with replication factor 1. Persistent volumes survive container recreation, not machine failure.

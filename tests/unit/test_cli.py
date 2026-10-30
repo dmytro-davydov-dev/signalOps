@@ -48,3 +48,24 @@ def test_seed_command_runs_the_demo_seed(monkeypatch: pytest.MonkeyPatch) -> Non
     finally:
         get_settings.cache_clear()
     assert len(calls) == 1
+
+
+def test_redrive_record_rejects_a_non_redrivable_topic_before_connecting(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setenv("SIGNALOPS_DATABASE_URL", "postgresql+psycopg://u@db/x")
+    from signalops.config import get_settings
+
+    get_settings.cache_clear()
+    try:
+        argv = ["redrive-record", "--topic", "processing.failed.v1", "--partition", "0"]
+        assert main([*argv, "--offset", "3"]) == 1
+    finally:
+        get_settings.cache_clear()
+    assert "not a redrivable topic" in capsys.readouterr().err
+
+
+def test_redrive_outbox_requires_a_uuid() -> None:
+    with pytest.raises(SystemExit) as exc:
+        main(["redrive-outbox", "not-a-uuid"])
+    assert exc.value.code == 2

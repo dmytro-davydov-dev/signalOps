@@ -45,7 +45,13 @@ class FakeProducer:
     flushed: int = 0
 
     def produce(
-        self, topic: str, value: bytes, key: str, *, on_delivery: Callable[..., None]
+        self,
+        topic: str,
+        value: bytes,
+        key: str,
+        *,
+        headers: list[tuple[str, str | bytes | None]],
+        on_delivery: Callable[..., None],
     ) -> None:
         outcome = self.outcomes.pop(0)
         if isinstance(outcome, BaseException):

@@ -2,6 +2,7 @@
 
 import argparse
 import sys
+import uuid
 
 from signalops import __version__
 
@@ -19,6 +20,17 @@ def build_parser() -> argparse.ArgumentParser:
     commands.add_parser(
         "seed", help="create or verify the deterministic demo workspace catalog, then exit"
     )
+    redrive = commands.add_parser(
+        "redrive-record",
+        help="republish one quarantined record to its topic with a new redrive attempt ID",
+    )
+    redrive.add_argument("--topic", required=True, help="original_topic from the failure event")
+    redrive.add_argument("--partition", required=True, type=int, help="original_partition")
+    redrive.add_argument("--offset", required=True, type=int, help="original_offset")
+    redrive_outbox = commands.add_parser(
+        "redrive-outbox", help="make one quarantined outbox row due for publication again"
+    )
+    redrive_outbox.add_argument("event_id", type=uuid.UUID, help="outbox row id (event_id)")
     export = commands.add_parser(
         "export-schemas", help="write JSON Schemas, OpenAPI, and generated frontend contracts"
     )
@@ -121,6 +133,7 @@ def run_outbox_publisher() -> int:
     from signalops.persistence.database import Database, create_engine
     from signalops.streaming.outbox import OutboxPublisher
     from signalops.streaming.producer import EventProducer
+    from signalops.streaming.retry import RetryPolicy
 
     settings = get_settings()
     configure_logging(settings.log_level)
@@ -137,6 +150,7 @@ def run_outbox_publisher() -> int:
             producer,
             batch_size=settings.outbox_batch_size,
             idle_interval_seconds=settings.outbox_idle_interval_ms / 1000,
+            retry_policy=RetryPolicy.from_settings(settings),
         )
         try:
             await publisher.run(stop)
@@ -145,6 +159,50 @@ def run_outbox_publisher() -> int:
             await engine.dispose()
 
     asyncio.run(publish())
+    return 0
+
+
+def run_redrive_record(args: argparse.Namespace) -> int:
+    from signalops.config import get_settings
+    from signalops.logs import configure_logging
+    from signalops.streaming.failures import RecordPosition
+    from signalops.streaming.redrive import RedriveError, redrive_record
+
+    settings = get_settings()
+    configure_logging(settings.log_level)
+    try:
+        result = redrive_record(settings, RecordPosition(args.topic, args.partition, args.offset))
+    except RedriveError as error:
+        print(error, file=sys.stderr)
+        return 1
+    location = f"{result.topic}[{result.partition}]@{result.offset}"
+    print(f"redrive attempt {result.attempt_id} published at {location}")
+    return 0
+
+
+def run_redrive_outbox(args: argparse.Namespace) -> int:
+    import asyncio
+
+    from signalops.config import get_settings
+    from signalops.logs import configure_logging
+    from signalops.persistence.database import Database, create_engine
+    from signalops.persistence.repositories.reliability import OutboxRepository
+
+    settings = get_settings()
+    configure_logging(settings.log_level)
+
+    async def redrive() -> bool:
+        engine = create_engine(settings)
+        try:
+            async with Database.from_engine(engine).transaction() as session:
+                return await OutboxRepository(session).redrive(args.event_id)
+        finally:
+            await engine.dispose()
+
+    if not asyncio.run(redrive()):
+        print(f"no quarantined pending outbox row {args.event_id}", file=sys.stderr)
+        return 1
+    print(f"outbox row {args.event_id} is due for publication")
     return 0
 
 
@@ -180,6 +238,10 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     if args.command == "export-schemas":
         return run_export_schemas(args)
+    if args.command == "redrive-record":
+        return run_redrive_record(args)
+    if args.command == "redrive-outbox":
+        return run_redrive_outbox(args)
     command = COMMANDS.get(args.command)
     if command is None:
         parser.print_help()

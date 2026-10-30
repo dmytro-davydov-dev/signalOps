@@ -30,7 +30,8 @@ commit Kafka offset (next)
 - Implemented in `streaming/consumer.py` (`ConsumerRunner`, `TransactionalProcessor`) and `persistence/repositories/reliability.py` (`ReceiptRepository`, `OutboxRepository`). Verified against Compose PostgreSQL and Kafka by `tests/integration/test_consumer_transactions.py`.
 - Records are processed one at a time per consumer, so the next poll waits for the previous offset commit.
 - A receipt insert that races a concurrent uncommitted insert of the same receipt waits for it, then reports a duplicate.
-- A decode or handler failure rolls back the transaction, commits nothing, and stops the runner. Until P03-T04 adds quarantine, a poison record halts its consumer.
+- A handler failure rolls back the transaction, including the receipt.
+- A permanent failure (`ContractError`) is published to `processing.failed.v1`; the offset is committed only after that event is acknowledged. A transient failure pauses and rewinds the partition, retries with backoff while the runner keeps polling, and after the last attempt stops the runner without committing. See [events.md](events.md#failure-handling).
 - If parallelism is added later, only the contiguous completed offset frontier is committed.
 - No transaction stays open during a broker call or a model call.
 
@@ -42,12 +43,12 @@ publish each with stored event_id and key   -- outside any transaction
 on ack: UPDATE published_at
 ```
 
-- Implemented in `streaming/outbox.py` (`OutboxPublisher`, run by `signalops outbox-publisher`) with `OutboxRepository.pending`, `mark_published`, and `record_failed_attempts`. Verified against Compose PostgreSQL and Kafka by `tests/integration/test_outbox_publisher.py`.
+- Implemented in `streaming/outbox.py` (`OutboxPublisher`, run by `signalops outbox-publisher`) with `OutboxRepository.pending`, `mark_published`, `schedule_retry`, `quarantine`, and `redrive`. Verified against Compose PostgreSQL and Kafka by `tests/integration/test_outbox_publisher.py`.
 - A single publisher in the MVP keeps each aggregate's events in order. Compose runs one `outbox-publisher`; nothing yet prevents a second instance, which would publish duplicates and could reorder.
 - Within a batch, rows go out in rounds: each aggregate's lowest pending version first, all its topics together. An aggregate whose row fails sits out the rest of the batch, so a later version is never acknowledged before an earlier one.
 - `OutboxRepository.add` sets `created_at` with `clock_timestamp()`, so when versions are allocated under the aggregate's row lock, a later version also sorts later across batches.
 - A crash after the ack but before `published_at` is set causes a republish with the same event ID and key. Consumers deduplicate.
-- A failed delivery leaves the row pending and increments `attempts` (also incremented when the row is marked published). A permanently rejected row blocks its aggregate until P03-T04 adds quarantine.
+- A failed delivery leaves the row pending and increments `attempts` (also incremented when the row is marked published). A transient failure sets `next_attempt_at` by capped, jittered backoff; a broker rejection sets `quarantined_at`. `OutboxRepository.pending` skips a row while it or an earlier pending version of its aggregate is deferred or quarantined, so order holds across batches. `signalops redrive-outbox` clears a quarantine.
 
 ## Job leases
 
@@ -73,7 +74,9 @@ on ack: UPDATE published_at
 | Redis restart or empty volume | Cache misses and briefly paused model calls. Investigations, windows, and SSE history intact |
 | Provider ambiguous timeout | Unknown cost recorded, reservation retained, retry reserved separately |
 | Kafka outage during ingest | No false acceptance. Client retries with the same IDs |
-| Permanent validation failure | Quarantined to `processing.failed.v1`, original not lost |
+| Permanent validation failure | Quarantined to `processing.failed.v1`, original not lost; redrivable while retained |
+| Failure event cannot be published | Original offset not committed; retried, then the consumer stops |
+| Database down during consumption | Partition paused and retried with backoff, then the consumer stops at the same offset; nothing quarantined |
 
 ## Verification checklist
 
@@ -82,6 +85,7 @@ These come from the plan's §13. Each needs a meaningful automated or scripted c
 - [ ] Contract fixtures: missing fields, unsupported versions, malformed timestamps, oversized payloads, contradictory service identity.
 - [x] Duplicate Kafka message plus a crash between DB commit and offset commit leaves one logical effect (P03-T02).
 - [x] Outbox crash after broker ack causes a harmless duplicate (P03-T03).
+- [x] Permanent failures are quarantined to `processing.failed.v1`; an unacknowledged failure event never commits the original; transient failures retry in place; a redriven record is applied once (P03-T04).
 - [ ] Worker killed after one step: lease expiry, checkpoint reuse, stale-writer rejection.
 - [ ] Provider throttling, ambiguous timeout, malformed output, parallel budget exhaustion.
 - [ ] Redis restart mid-investigation: durable work survives and SSE catches up.

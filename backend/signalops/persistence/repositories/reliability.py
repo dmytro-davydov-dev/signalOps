@@ -3,11 +3,14 @@
 import json
 import uuid
 from collections.abc import Sequence
+from datetime import timedelta
 
-from sqlalchemy import func, select, update
+from sqlalchemy import func, or_, select, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import aliased
 
+from signalops.contracts.common import MAX_ERROR_DETAIL_LENGTH
 from signalops.contracts.events import EventEnvelope, EventPayload
 from signalops.persistence.models import ConsumerReceipt, OutboxEvent
 from signalops.streaming.topics import message_key, topic_for
@@ -68,10 +71,29 @@ class OutboxRepository:
         return row
 
     async def pending(self, limit: int) -> list[OutboxEvent]:
-        """The oldest unpublished rows, served by the partial index on created_at."""
+        """The oldest rows that are due for publication.
+
+        A row is skipped while it, or an earlier pending version of its
+        aggregate, is quarantined or waiting out a retry delay, so an
+        aggregate's versions are never published out of order.
+        """
+        blocker = aliased(OutboxEvent)
+        blocked = (
+            select(blocker.id)
+            .where(
+                blocker.aggregate_id == OutboxEvent.aggregate_id,
+                blocker.aggregate_version <= OutboxEvent.aggregate_version,
+                blocker.published_at.is_(None),
+                or_(
+                    blocker.quarantined_at.is_not(None),
+                    blocker.next_attempt_at > func.clock_timestamp(),
+                ),
+            )
+            .exists()
+        )
         query = (
             select(OutboxEvent)
-            .where(OutboxEvent.published_at.is_(None))
+            .where(OutboxEvent.published_at.is_(None), ~blocked)
             .order_by(OutboxEvent.created_at, OutboxEvent.aggregate_version)
             .limit(limit)
         )
@@ -84,16 +106,52 @@ class OutboxRepository:
         result = await self._session.execute(
             update(OutboxEvent)
             .where(OutboxEvent.id.in_(ids), OutboxEvent.published_at.is_(None))
-            .values(published_at=func.clock_timestamp(), attempts=OutboxEvent.attempts + 1)
+            .values(
+                published_at=func.clock_timestamp(),
+                attempts=OutboxEvent.attempts + 1,
+                next_attempt_at=None,
+            )
         )
         return result.rowcount  # type: ignore[attr-defined, no-any-return]
 
-    async def record_failed_attempts(self, ids: Sequence[uuid.UUID]) -> None:
-        """Count a failed publish; the row stays pending for the next poll."""
-        if not ids:
-            return
+    async def schedule_retry(self, event_id: uuid.UUID, delay_seconds: float, error: str) -> None:
+        """Count a transient failure and defer the row (and its aggregate) by the delay."""
         await self._session.execute(
             update(OutboxEvent)
-            .where(OutboxEvent.id.in_(ids), OutboxEvent.published_at.is_(None))
-            .values(attempts=OutboxEvent.attempts + 1)
+            .where(OutboxEvent.id == event_id, OutboxEvent.published_at.is_(None))
+            .values(
+                attempts=OutboxEvent.attempts + 1,
+                next_attempt_at=func.clock_timestamp() + timedelta(seconds=delay_seconds),
+                last_error=_error_text(error),
+            )
         )
+
+    async def quarantine(self, event_id: uuid.UUID, error: str) -> None:
+        """Count a permanent rejection and stop retrying the row until it is redriven."""
+        await self._session.execute(
+            update(OutboxEvent)
+            .where(OutboxEvent.id == event_id, OutboxEvent.published_at.is_(None))
+            .values(
+                attempts=OutboxEvent.attempts + 1,
+                quarantined_at=func.clock_timestamp(),
+                next_attempt_at=None,
+                last_error=_error_text(error),
+            )
+        )
+
+    async def redrive(self, event_id: uuid.UUID) -> bool:
+        """Make a quarantined row due again; False when no such quarantined row is pending."""
+        result = await self._session.execute(
+            update(OutboxEvent)
+            .where(
+                OutboxEvent.id == event_id,
+                OutboxEvent.published_at.is_(None),
+                OutboxEvent.quarantined_at.is_not(None),
+            )
+            .values(quarantined_at=None, next_attempt_at=None)
+        )
+        return result.rowcount == 1  # type: ignore[attr-defined, no-any-return]
+
+
+def _error_text(error: str) -> str:
+    return error[:MAX_ERROR_DETAIL_LENGTH] or "unknown"

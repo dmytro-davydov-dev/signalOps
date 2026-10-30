@@ -27,11 +27,11 @@ PostgreSQL owns evidence, workflow progress, budgets, and the initial knowledge 
 | --- | --- |
 | Active phase | Phase 3 Streaming reliability (in progress) |
 | Active task | None |
-| Last completed task | P03-T03 |
-| Latest verified commit | `82da93b` (P03-T02); P03-T03 pending commit, validated against the working tree |
-| Validation evidence | P03-T03: against Compose PostgreSQL and Kafka, a publisher that dies after the broker acknowledges but before marking leaves the row pending; the next poll republishes it with the same event ID, marks it (`attempts` 1), and the topic holds two copies that a `TransactionalProcessor` consumer applies once (APPLIED, DUPLICATE). A row for a missing topic stays pending with `attempts` 1. A failed version 1 holds back version 2 of the same aggregate while another aggregate publishes; after the fix both go out in version order. `SIGNALOPS_INTEGRATION=1 uv run pytest` 395 passed. Earlier evidence is in the work log |
+| Last completed task | P03-T04 |
+| Latest verified commit | `edf2a43` (P03-T03); P03-T04 pending commit, validated against the working tree |
+| Validation evidence | P03-T04: against Compose PostgreSQL and Kafka, an undecodable record between two good ones is published to `processing.failed.v1` (deterministic event ID, original position, `malformed_json`) and the group's committed offset reaches 3. With a failure publisher that never acknowledges, the runner schedules two retries through real pause/seek/resume, stops with `RecordProcessingError` (stage `quarantine`), and the committed offset stays before the record; a restart with a working producer quarantines it and commits. A handler failing twice transiently is retried in place and applied once while the next record waits. A quarantined record redriven by `redrive_record` keeps key, value, and event ID, carries the attempt header, and is applied once by the fixed consumer. A broker-rejected outbox row (topic `max.message.bytes`=128) is quarantined, holds back version 2 of its aggregate, and after `redrive` both publish in order. `SIGNALOPS_INTEGRATION=1 uv run pytest` 432 passed. Earlier evidence is in the work log |
 | Blockers | None recorded |
-| Next task | P03-T04 |
+| Next task | P03-T05 |
 
 ### Scope and release boundaries
 
@@ -303,11 +303,23 @@ Start the React shell in Phase 1 and add API-backed incident views in Phase 5; P
 
 ### P03-T04 Implement retry and failure handling
 
-- [ ] Complete this task.
+- [x] Complete this task.
 
 **Implementation:** Separate transient infrastructure failures from permanent validation failures. Add bounded retry with jitter, structured attempt metadata, redacted failure events, and a controlled redrive command. Pause/retry partitions without violating poll deadlines.
 
 **Acceptance:** Permanent failures are explicitly quarantined; failure-event publication errors do not silently acknowledge the original.
+
+**Notes (2026-10-30):**
+- `streaming/retry.py`: `RetryPolicy` (full-jitter capped exponential backoff; `SIGNALOPS_RETRY_MAX_ATTEMPTS` 5, `SIGNALOPS_RETRY_BASE_DELAY_MS` 1000, `SIGNALOPS_RETRY_MAX_DELAY_MS` 30000).
+- `streaming/failures.py`: classification, `failure_envelope`, `failure_event_id` (UUIDv5 of group and position), and the `signalops-redrive-attempt-id` Kafka header. `OutgoingMessage` gained `headers` and an optional `event_id`.
+- `ConsumerRunner` now takes `consumer_group`, `failure_publisher`, and `retry_policy`. Permanent = `ContractError` from decoding or from the handler; the failure event is published synchronously through `EventProducer` (not the outbox), and the offset is committed only after its acknowledgement. No receipt is written for a quarantined record, so a redrive is processed by the group that rejected it. Everything else is transient: pause the partition, seek back, keep polling, resume after the backoff. Poll timeouts shrink to the next due retry. A record fetched past a pending retry (prefetch) is rewound, not processed.
+- After `max_attempts` transient failures the runner raises without committing. **Decision:** exhausted transient failures stop the consumer instead of quarantining, so a database or broker outage can never mass-quarantine valid records; the restart policy brings the process back at the same offset. A handler bug therefore halts its partition until fixed; a handler that knows content is invalid must raise `ContractError`.
+- **Decision:** failure events whose original has no readable `workspace_id` use the nil UUID instead of making `workspace_id` optional on the envelope (a contract change for every consumer). `replay_run_id` is preserved when readable.
+- No new `ContractErrorCategory` for handler rejections yet: handlers reuse the contract categories (normally `invalid_payload`). An additive value can be added when Phase 4 needs a distinct one; `processing.failed.v1` has no consumer yet.
+- Outbox (migration `0007_outbox_retry`): `next_attempt_at`, `quarantined_at`, `last_error`, check constraints, and a partial `(aggregate_id, aggregate_version)` index on pending rows. `pending` excludes a row while it or an earlier pending version of its aggregate is deferred or quarantined. Transient delivery failures are deferred and never abandoned; `rejected` quarantines. `record_failed_attempts` was replaced by `schedule_retry` and `quarantine`.
+- Redrive: `signalops redrive-record --topic --partition --offset` reads the original by position with a non-committing assigned consumer and republishes it with a new attempt ID; it refuses `processing.failed.v1`, unretained or out-of-range offsets, and keyless or empty records. `signalops redrive-outbox EVENT_ID` clears a quarantine. There is no command to discard an outbox row.
+- Rebalance: retry state is per partition in memory and is not cleared on revoke. After a reassignment a stale entry can rewind to an already-committed offset; receipts absorb the repeat. P03-T05 owns rebalance callbacks.
+- Left: failure metrics and outbox age (P03-T05); a consumer entry command arrives with the normalizer (P04); `processing.failed.v1` has no reader or triage UI.
 
 ### P03-T05 Add streaming observability and lifecycle
 
@@ -939,6 +951,16 @@ Keep these outside the release critical path unless measurements justify promoti
 - Deviations and reasons: see task notes (no single-publisher enforcement).
 - Remaining issues: rejected rows block their aggregate until P03-T04.
 - Next task: P03-T04
+
+### 2026-10-30 — P03-T04
+- Status: completed
+- Commit: pending (validated against the working tree); P03-T03 committed as `edf2a43`
+- Implemented: `streaming/retry.py` (`RetryPolicy`); `streaming/failures.py` (failure envelope, deterministic failure event ID, redrive header); `ConsumerRunner` quarantine and pause/seek/resume retries; `OutgoingMessage.headers`; outbox `schedule_retry`, `quarantine`, `redrive` and the blocking `pending` query; migration `0007_outbox_retry` and model columns; `streaming/redrive.py` and the `redrive-record` and `redrive-outbox` commands; retry settings; tests `tests/unit/test_consumer.py` (rewritten), `test_retry.py`, `test_failures.py`, CLI cases, `tests/integration/test_failure_handling.py`, new outbox cases; docs (events, reliability, data model, development).
+- Validation commands and results: `uv run ruff check .`, `uv run ruff format --check .`, `uv run mypy` (79 files) pass; `uv run pytest` 255 passed, 177 skipped; `uv run signalops export-schemas --check` ok; with `.env` sourced, `SIGNALOPS_INTEGRATION=1 uv run pytest` 432 passed; `docker compose config --quiet` ok. On the host against Compose: `signalops migrate` applied 0007 to the dev database; `redrive-outbox` with an unknown ID exited 1; `redrive-record` for an out-of-range offset on an empty topic timed out with an error. Negative checks: committing the original when the failure event was not acknowledged failed 2 unit and 2 integration tests; removing the earlier-version blocker from `pending` failed 2 outbox integration tests; removing the partition pause failed 3 unit tests; all restored and re-run green. Frontend unchanged, not re-run. Containers were not rebuilt.
+- Evidence or artifact references: none retained.
+- Deviations and reasons: see task notes (exhausted transient failures stop rather than quarantine; nil workspace for unreadable originals; failure events published directly, not through the outbox).
+- Remaining issues: retry state survives a partition revoke until P03-T05; no failure metrics yet.
+- Next task: P03-T05
 
 ## Work log template
 
