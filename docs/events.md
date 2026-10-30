@@ -1,6 +1,6 @@
 # Kafka event contracts
 
-> Status: envelope and payload contracts implemented in `backend/signalops/contracts/events.py` (P02-T04); valid examples for every event type are in [`fixtures/contracts/v1/events/`](../fixtures/contracts/v1/events/). The source is [SignalOps_Implementation_Plan.md](SignalOps_Implementation_Plan.md) §4. JSON Schema export and compatibility rules are P02-T05; producer settings are P03-T01.
+> Status: envelope and payload contracts implemented in `backend/signalops/contracts/events.py` (P02-T04); valid examples for every event type are in [`fixtures/contracts/v1/events/`](../fixtures/contracts/v1/events/). The source is [SignalOps_Implementation_Plan.md](SignalOps_Implementation_Plan.md) §4. JSON Schema export and compatibility rules are P02-T05. Topic routing, message keys, and producer settings are implemented in `backend/signalops/streaming/topics.py` and `producer.py` (P03-T01).
 
 ## Topics
 
@@ -12,6 +12,18 @@
 | `investigations.requested.v1` | `investigation_id` | `dispatcher-v1` | 1 |
 | `investigations.completed.v1` | `investigation_id` | `evaluation-projector-v1` | 1 |
 | `processing.failed.v1` | original `event_id` | failure triage, controlled redrive | 1 |
+
+Exact key strings (`message_key` in `streaming/topics.py`). Parts are joined with `:`; an absent optional part is omitted, not replaced by a placeholder. Keys use only identifiers that stay the same across republish, redrive, and replay, never `event_id` (except as the original's ID for failures), timestamps, or correlation IDs. Unit tests pin the key of every event fixture.
+
+| Topic | Key | Example |
+| --- | --- | --- |
+| `signals.raw.v1` | `{source_id}:{service_hint}`, or `{source_id}` without a hint | `b6c72d79-…-1d4332c88808:payment` |
+| `signals.normalized.v1` | `{workspace_id}:{service_id}`, or `{workspace_id}` when the service is unresolved | `82631aa1-…:5f3e2d1c-…` |
+| `incidents.changed.v1` | `{incident_id}` | |
+| `investigations.requested.v1`, `investigations.completed.v1` | `{investigation_id}` | |
+| `processing.failed.v1` | `{original_event_id}`, or `{original_topic}:{original_partition}:{original_offset}` when the original could not be parsed | `signals.raw.v1:2:1187` |
+
+The `service_hint` is the source's own string, used as given: two spellings of one service land on different raw partitions until the normalizer resolves identity. Unresolved normalized signals of a workspace share one partition. Producers use the `murmur2_random` partitioner, the Java client's default mapping, so the same key reaches the same partition from any client while the partition count is unchanged.
 
 - Ordering is guaranteed **only within a partition**. Nothing assumes a global order across sources.
 - Each consumer group receives every event independently. Members of one group split the partitions between them.
@@ -93,7 +105,17 @@ These rules cover every exported contract: event envelopes and payloads, adapter
 
 ## Delivery rules
 
-- **Producers.** Producer idempotence is on, `acks=all`, and delivery callbacks report failures to the caller.
+- **Producers.** `EventProducer` (`streaming/producer.py`) sets `enable.idempotence=true`, `acks=all`, at most 5 in-flight requests, `message.timeout.ms` from `SIGNALOPS_KAFKA_DELIVERY_TIMEOUT_MS`, and `linger.ms=5`. `publish(messages)` blocks until each message is acknowledged or failed and returns one result per message, in order, with the partition and offset or an error category:
+
+  | Category | Meaning | Caller action |
+  | --- | --- | --- |
+  | `timeout` | No acknowledgement within the delivery timeout. The broker may have written it. An unknown topic also ends here, because librdkafka waits for the topic to appear. | Treat as not sent; retrying may duplicate, which consumers absorb by `event_id` |
+  | `transient` | Retriable broker or network error that outlasted librdkafka's internal retries | Retry later |
+  | `rejected` | Permanent for this message (size, authorization) | Do not retry unchanged |
+  | `queue_full` | Local queue full; never handed to librdkafka | Retry after backoff |
+  | `fatal` | The idempotent producer lost its guarantees; later `publish` calls raise `ProducerUnusableError` | Replace the producer (restart the process) |
+
+  A message is never reported as delivered without a broker acknowledgement. Async callers run `publish` in a worker thread.
 - **Consumers.** Auto-commit is off. Consumers assume at-least-once delivery. A consumer commits the next offset only after its database transaction commits, and it never commits past an unfinished earlier record in the partition.
 - **Idempotent effects.** Consumer receipts (`consumer_group`, `event_id`) plus business uniqueness constraints make redelivery harmless. Kafka producer idempotence does **not** make database writes or model calls exactly-once.
 - **Outbox.** Events derived from database changes go through the transactional outbox. A row is marked published only after broker acknowledgement, so a crash in between causes a harmless republish. See [reliability.md](reliability.md).

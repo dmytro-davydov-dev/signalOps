@@ -25,13 +25,13 @@ PostgreSQL owns evidence, workflow progress, budgets, and the initial knowledge 
 
 | Field | Current value |
 | --- | --- |
-| Active phase | Phase 3 Streaming reliability (not started) |
+| Active phase | Phase 3 Streaming reliability (in progress) |
 | Active task | None |
-| Last completed task | P02-T06 |
-| Latest verified commit | `d555add` (P02-T05); P02-T06 pending commit, validated against the working tree |
-| Validation evidence | P02-T06: `SIGNALOPS_INTEGRATION=1 uv run pytest` 352 passed, including an empty scratch database upgrading to head with every model table present, rollback of a failed write and of an application error with no partial rows, idempotent deterministic seed, every foreign key backed by an index, session timeouts applied, statement timeout cancelling a slow query, and pool exhaustion raising after the pool timeout. Dev database upgraded to `0006_baseline_indexes`, `alembic check` no drift, `signalops seed` run twice. Earlier evidence is in the work log |
+| Last completed task | P03-T01 |
+| Latest verified commit | `40284c3` (P02-T06); P03-T01 pending commit, validated against the working tree |
+| Validation evidence | P03-T01: against the Compose broker, acknowledged messages report a partition and offset that a consumer reads back with the same key and value; 20 keys map to identical partitions across two producer instances and a repeat publish; an unknown topic, an oversized message (others in the batch still delivered), and an unreachable broker each return a failed result to the caller. Unit tests pin the key of every event fixture and the producer settings. `SIGNALOPS_INTEGRATION=1 uv run pytest` 372 passed. Earlier evidence is in the work log |
 | Blockers | None recorded |
-| Next task | P03-T01 |
+| Next task | P03-T02 |
 
 ### Scope and release boundaries
 
@@ -255,11 +255,19 @@ Start the React shell in Phase 1 and add API-backed incident views in Phase 5; P
 
 ### P03-T01 Provision Kafka topics and producer settings
 
-- [ ] Complete this task.
+- [x] Complete this task.
 
 **Implementation:** Create signals.raw.v1, signals.normalized.v1, incidents.changed.v1, investigations.requested.v1, investigations.completed.v1, and processing.failed.v1. Configure keys, retention, producer idempotence, acknowledgements, and delivery callbacks.
 
 **Acceptance:** Producer acknowledgement failures reach the caller; partition keys are stable and documented.
+
+**Notes (2026-10-30):**
+- Topics and retention already existed from P01-T05 (`streaming/topics.py`, `signalops init-topics`); unchanged here.
+- `streaming/topics.py` adds `TOPIC_BY_EVENT_TYPE`, `topic_for`, and `message_key`. Key formats are in docs/events.md: parts joined with `:`, absent optional parts omitted (raw signal without `service_hint` → `{source_id}`; unresolved normalized signal → `{workspace_id}`; unparseable failure original → `{topic}:{partition}:{offset}`). The plan says only "source_id plus service hint" and "workspace_id plus service_id"; the separator and the omission rule are this task's choice.
+- `streaming/producer.py`: `EventProducer.publish(messages)` returns one `DeliveryResult` per message in input order, with partition/offset or a `DeliveryErrorCategory` (`timeout`, `transient`, `rejected`, `queue_full`, `fatal`). Settings: idempotence, `acks=all`, 5 in flight, `message.timeout.ms` from new `SIGNALOPS_KAFKA_DELIVERY_TIMEOUT_MS` (30 s), `linger.ms=5`, `murmur2_random` partitioner (Java-compatible mapping). A message with no callback by the end of flush is reported as `timeout`, never delivered. After a `fatal` result the instance refuses further publishes (`ProducerUnusableError`).
+- Observed: an unknown topic (auto-creation is off) surfaces as `timeout` after the full delivery timeout, because librdkafka waits for the topic to appear; an oversized message is refused locally at `produce()` and reported as `rejected`.
+- **Deviation:** no message headers. Consumers decode the envelope, so `event_type`/`event_id` headers would duplicate it; add them if a consumer needs to route before decoding.
+- Left to later tasks: wiring the producer into ingestion (P04-T02, run in a worker thread from async code) and the outbox publisher (P03-T03); producer metrics (P03-T05).
 
 ### P03-T02 Build the consumer transaction pattern
 
@@ -878,13 +886,23 @@ Keep these outside the release critical path unless measurements justify promoti
 
 ### 2026-10-30 — P02-T06
 - Status: completed
-- Commit: pending (validated against the working tree)
+- Commit: `40284c3`
 - Implemented: `persistence/database.py` (`create_engine`, `Database.transaction`); `SIGNALOPS_DB_*` pool and timeout settings; API lifespan uses the shared engine factory; `persistence/repositories/catalog.py`; `persistence/seed.py` and `signalops seed`; revision `0006_baseline_indexes` with matching model indexes; `tests/integration/test_repositories.py`, `tests/unit/test_seed.py`, CLI test; docs (development, data-model).
 - Validation commands and results: `uv run ruff check .`, `uv run ruff format --check .`, `uv run mypy` (63 files) pass; `uv run pytest` 194 passed, 158 skipped; with `.env` sourced, `SIGNALOPS_INTEGRATION=1 uv run pytest` 352 passed. Negative checks: removing the investigations index from model and revision failed `test_every_foreign_key_has_a_supporting_index`; a `transaction()` that commits in `finally` failed the application-error and conflict rollback tests (the integrity-error case still passed because PostgreSQL aborts the transaction itself); both restored. `docker compose run --rm --build migrate` upgraded the dev database `0005_diagnosis_status_mapping -> 0006_baseline_indexes`; `uv run alembic check` no new operations; `uv run signalops seed` twice → 3 sources and 4 services in the demo workspace; API container recreated, `/health/ready` 200. `docker compose config --quiet` ok. Frontend unchanged, not re-run.
 - Evidence or artifact references: none retained.
 - Deviations and reasons: see task notes (catalog-only seed, no IntegrityError translation yet).
 - Remaining issues: none for this task.
 - Next task: P03-T01
+
+### 2026-10-30 — P03-T01
+- Status: completed
+- Commit: pending (validated against the working tree)
+- Implemented: topic routing and `message_key` in `streaming/topics.py`; `streaming/producer.py` (`EventProducer`, `OutgoingMessage`, `DeliveryResult`, error categories); `SIGNALOPS_KAFKA_DELIVERY_TIMEOUT_MS`; `tests/unit/test_topics.py` (pinned fixture keys, key stability), `tests/unit/test_producer.py` (fake producer: ordering, categories, fatal), `tests/integration/test_producer_delivery.py` (real broker, scratch topics); docs (events key table and producer settings, development configuration).
+- Validation commands and results: `uv run ruff check .`, `uv run ruff format --check .`, `uv run mypy` (66 files) pass; `uv run pytest` 209 passed, 163 skipped; with `.env` sourced, `SIGNALOPS_INTEGRATION=1 uv run pytest` 372 passed. Negative checks: treating every delivery callback as success failed the unknown-topic and unreachable-broker integration tests and two producer unit tests; keying raw signals by `event_id` failed the pinned-key and key-stability tests; both restored and re-run green. `docker compose config --quiet` ok. Frontend unchanged, not re-run.
+- Evidence or artifact references: none retained.
+- Deviations and reasons: see task notes (no headers; key separator and omission rule chosen here).
+- Remaining issues: none for this task.
+- Next task: P03-T02
 
 ## Work log template
 

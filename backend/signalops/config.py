@@ -23,6 +23,9 @@ class Settings(BaseSettings):
     database_url: SecretStr
     redis_url: RedisDsn = RedisDsn("redis://localhost:56379/0")
     kafka_bootstrap_servers: str = "localhost:19094"
+    # Upper bound on one message's send, including librdkafka's internal retries.
+    # A message not acknowledged by then is reported to the caller as failed.
+    kafka_delivery_timeout_ms: int = Field(default=30_000, ge=1_000, le=300_000)
 
     api_host: str = "0.0.0.0"  # noqa: S104 - container listener; Compose publishes on loopback.
     api_port: int = Field(default=8000, ge=1, le=65535)

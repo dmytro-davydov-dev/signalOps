@@ -146,6 +146,7 @@ Backend processes read `SIGNALOPS_`-prefixed variables (`backend/signalops/confi
 | `SIGNALOPS_DATABASE_URL` | none (required) | `postgresql+psycopg://…`; contains a credential, never logged |
 | `SIGNALOPS_REDIS_URL` | `redis://localhost:56379/0` | |
 | `SIGNALOPS_KAFKA_BOOTSTRAP_SERVERS` | `localhost:19094` | `kafka:9092` inside Compose |
+| `SIGNALOPS_KAFKA_DELIVERY_TIMEOUT_MS` | `30000` | librdkafka `message.timeout.ms`: one message's send including internal retries; after it the caller gets a `timeout` result |
 | `SIGNALOPS_LOG_LEVEL` | `INFO` | JSON logs on stdout |
 | `SIGNALOPS_ENVIRONMENT` | `development` | `development`, `test`, `production` |
 | `SIGNALOPS_API_HOST` / `SIGNALOPS_API_PORT` | `0.0.0.0` / `8000` | |

@@ -1,7 +1,9 @@
-"""Kafka topic catalogue and idempotent provisioning.
+"""Kafka topic catalogue, message routing, and idempotent provisioning.
 
 Partition counts and retention follow SignalOps_Implementation_Plan.md section 4
 and section 5 (initial local retention targets). Topics are never auto-created.
+Message keys are documented in docs/events.md; changing one changes which
+partition, and so which ordering, an aggregate's events share.
 """
 
 import logging
@@ -10,6 +12,18 @@ from dataclasses import dataclass
 from confluent_kafka import KafkaError, KafkaException
 from confluent_kafka.admin import AdminClient
 from confluent_kafka.cimpl import NewTopic
+
+from signalops.contracts.events import (
+    EventEnvelope,
+    EventPayload,
+    EventType,
+    IncidentChangedPayload,
+    InvestigationCompletedPayload,
+    InvestigationRequestedPayload,
+    NormalizedSignalPayload,
+    ProcessingFailedPayload,
+    RawSignalPayload,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -34,6 +48,53 @@ TOPICS: tuple[TopicSpec, ...] = (
     TopicSpec("investigations.completed.v1", partitions=1, retention_ms=7 * DAY_MS),
     TopicSpec("processing.failed.v1", partitions=1, retention_ms=7 * DAY_MS),
 )
+
+
+TOPIC_BY_EVENT_TYPE: dict[EventType, str] = {
+    EventType.SIGNAL_RAW: "signals.raw.v1",
+    EventType.SIGNAL_NORMALIZED: "signals.normalized.v1",
+    EventType.INCIDENT_CHANGED: "incidents.changed.v1",
+    EventType.INVESTIGATION_REQUESTED: "investigations.requested.v1",
+    EventType.INVESTIGATION_COMPLETED: "investigations.completed.v1",
+    EventType.PROCESSING_FAILED: "processing.failed.v1",
+}
+
+
+def message_key(envelope: EventEnvelope[EventPayload]) -> str:
+    """The partition key for an envelope, derived only from stable identifiers.
+
+    Optional parts are omitted rather than replaced with a placeholder, so a
+    signal without a service hint or resolved service shares a partition with
+    the rest of its source or workspace.
+    """
+    payload = envelope.payload
+    match payload:
+        case RawSignalPayload():
+            parts = [str(envelope.source_id), payload.service_hint]
+        case NormalizedSignalPayload():
+            parts = [str(envelope.workspace_id), _optional(payload.service_id)]
+        case IncidentChangedPayload():
+            parts = [str(payload.incident_id)]
+        case InvestigationRequestedPayload() | InvestigationCompletedPayload():
+            parts = [str(payload.investigation_id)]
+        case ProcessingFailedPayload():
+            if payload.original_event_id is not None:
+                parts = [str(payload.original_event_id)]
+            else:
+                # Unparseable original: its position identifies it across redeliveries.
+                position = (payload.original_topic, payload.original_partition)
+                parts = [*map(str, position), str(payload.original_offset)]
+        case _:
+            raise TypeError(f"no message key rule for {type(payload).__name__}")
+    return ":".join(part for part in parts if part)
+
+
+def _optional(value: object | None) -> str | None:
+    return None if value is None else str(value)
+
+
+def topic_for(envelope: EventEnvelope[EventPayload]) -> str:
+    return TOPIC_BY_EVENT_TYPE[envelope.event_type]
 
 
 class TopicMismatchError(RuntimeError):
