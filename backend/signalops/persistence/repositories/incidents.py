@@ -1,9 +1,11 @@
-"""Incident rows the detector writes: correlation lookup, services, evidence, and versions.
+"""Incident rows: the detector's writes, operator reads, and versioned changes.
 
-Writers hold `lock_scope`, so one correlation decision is made at a time, and
-`locked`/`find_correlated` take the row, so an operator's versioned update waits
-or fails cleanly. `apply` carries the version predicate data-model.md requires
-of Core updates.
+Detector writers hold `lock_scope`, so one correlation decision is made at a
+time, and `locked`/`find_correlated` take the row, so an operator's versioned
+update waits or fails cleanly. `apply` carries the version predicate
+data-model.md requires of Core updates.
+
+Reads take an `EvidenceScope`, and each is bounded by a limit the caller gives.
 """
 
 import uuid
@@ -12,7 +14,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Any
 
-from sqlalchemy import exists, func, literal, or_, select, update
+from sqlalchemy import exists, func, literal, or_, select, tuple_, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm.exc import StaleDataError
@@ -21,10 +23,12 @@ from signalops.contracts.workflow import IncidentServiceRole, IncidentSeverity, 
 from signalops.detection.rules import Window
 from signalops.persistence.models import (
     DetectionSample,
+    DetectionTrigger,
     Incident,
     IncidentService,
     IncidentSignal,
     Service,
+    Signal,
 )
 from signalops.persistence.repositories.detection import SeriesKey
 from signalops.persistence.repositories.scope import EvidenceScope
@@ -40,9 +44,97 @@ class NewIncident:
     detected_at: datetime
 
 
+@dataclass(frozen=True)
+class IncidentFilter:
+    """Incidents matching every given field."""
+
+    service_id: uuid.UUID | None = None
+    severity: IncidentSeverity | None = None
+    status: IncidentStatus | None = None
+
+
+@dataclass(frozen=True)
+class Position:
+    """Keyset position: the last row of the previous page, by time and then ID."""
+
+    at: datetime
+    id: uuid.UUID
+
+
 class IncidentRepository:
     def __init__(self, session: AsyncSession) -> None:
         self._session = session
+
+    async def list_incidents(
+        self, scope: EvidenceScope, criteria: IncidentFilter, *, after: Position | None, limit: int
+    ) -> Sequence[Incident]:
+        """Newest detection first, ties by ID descending."""
+        query = select(Incident).where(scope.clause(Incident))
+        if criteria.severity is not None:
+            query = query.where(Incident.severity == criteria.severity)
+        if criteria.status is not None:
+            query = query.where(Incident.status == criteria.status)
+        if criteria.service_id is not None:
+            query = query.where(
+                exists().where(
+                    IncidentService.incident_id == Incident.id,
+                    IncidentService.service_id == criteria.service_id,
+                )
+            )
+        if after is not None:
+            query = query.where(tuple_(Incident.detected_at, Incident.id) < (after.at, after.id))
+        rows = await self._session.scalars(
+            query.order_by(Incident.detected_at.desc(), Incident.id.desc()).limit(limit)
+        )
+        return rows.all()
+
+    async def get(self, scope: EvidenceScope, incident_id: uuid.UUID) -> Incident | None:
+        return await self._session.scalar(
+            select(Incident).where(scope.clause(Incident), Incident.id == incident_id)
+        )
+
+    async def services_of(self, incident_id: uuid.UUID) -> Sequence[tuple[Service, str]]:
+        """The incident's services and roles, by name; the caller has scoped the incident."""
+        rows = await self._session.execute(
+            select(Service, IncidentService.role)
+            .join(IncidentService, IncidentService.service_id == Service.id)
+            .where(IncidentService.incident_id == incident_id)
+            .order_by(Service.name, Service.id)
+        )
+        return [(service, role) for service, role in rows]
+
+    async def evidence_of(
+        self,
+        scope: EvidenceScope,
+        incident_id: uuid.UUID,
+        *,
+        after: Position | None,
+        limit: int,
+    ) -> Sequence[tuple[Signal, float]]:
+        """The incident's cited signals with their relevance, oldest first."""
+        query = (
+            select(Signal, IncidentSignal.relevance)
+            .join(IncidentSignal, IncidentSignal.signal_id == Signal.id)
+            .where(scope.clause(Signal), IncidentSignal.incident_id == incident_id)
+        )
+        if after is not None:
+            query = query.where(tuple_(Signal.occurred_at, Signal.id) > (after.at, after.id))
+        rows = await self._session.execute(
+            query.order_by(Signal.occurred_at, Signal.id).limit(limit)
+        )
+        return [(signal, relevance) for signal, relevance in rows]
+
+    async def triggers_of(
+        self, incident_id: uuid.UUID, *, limit: int
+    ) -> Sequence[DetectionTrigger]:
+        """The incident's rule firings, oldest window first."""
+        rows = await self._session.scalars(
+            select(DetectionTrigger)
+            .where(DetectionTrigger.incident_id == incident_id)
+            .order_by(DetectionTrigger.window_start, DetectionTrigger.id)
+            .limit(limit)
+        )
+        return rows.all()
 
     async def lock_scope(self, replay_scope: str) -> None:
         """Serialize incident writes in a replay scope until the transaction ends.

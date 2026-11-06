@@ -97,11 +97,15 @@ def resolve_window(
     return TimeWindow(since=since, until=until)
 
 
-def check_limit(limit: int | None, settings: Settings) -> int:
+def check_limit(limit: int | None, settings: Settings, *, ceiling: int | None = None) -> int:
+    """The page size; `ceiling` is a route's contract limit when below the configured one."""
+    maximum = (
+        settings.query_max_limit if ceiling is None else min(settings.query_max_limit, ceiling)
+    )
     if limit is None:
-        return settings.query_default_limit
-    if limit > settings.query_max_limit:
-        raise InvalidQueryError(f"limit exceeds {settings.query_max_limit}")
+        return min(settings.query_default_limit, maximum)
+    if limit > maximum:
+        raise InvalidQueryError(f"limit exceeds {maximum}")
     return limit
 
 
@@ -127,8 +131,8 @@ class SignalCursor:
         # Integer microseconds and hex IDs keep the cursor within the 256-character `Key`.
         document = {
             "v": CURSOR_VERSION,
-            "w": [_to_micros(self.window.since), _to_micros(self.window.until)],
-            "p": [_to_micros(self.position.occurred_at), self.position.id.hex],
+            "w": [to_micros(self.window.since), to_micros(self.window.until)],
+            "p": [to_micros(self.position.occurred_at), self.position.id.hex],
             "q": self.query_digest,
         }
         raw = json.dumps(document, separators=(",", ":")).encode()
@@ -148,8 +152,8 @@ class SignalCursor:
             if not isinstance(query_digest, str) or not isinstance(signal_id, str):
                 raise InvalidCursorError("invalid cursor")
             return cls(
-                window=TimeWindow(since=_from_micros(since), until=_from_micros(until)),
-                position=SignalPosition(_from_micros(occurred_at), uuid.UUID(hex=signal_id)),
+                window=TimeWindow(since=from_micros(since), until=from_micros(until)),
+                position=SignalPosition(from_micros(occurred_at), uuid.UUID(hex=signal_id)),
                 query_digest=query_digest,
             )
         except (
@@ -168,11 +172,11 @@ class SignalCursor:
 EPOCH = datetime(1970, 1, 1, tzinfo=UTC)
 
 
-def _to_micros(value: datetime) -> int:
+def to_micros(value: datetime) -> int:
     return (value - EPOCH) // timedelta(microseconds=1)
 
 
-def _from_micros(value: object) -> datetime:
+def from_micros(value: object) -> datetime:
     if not isinstance(value, int) or isinstance(value, bool):
         raise InvalidCursorError("invalid cursor")
     return EPOCH + timedelta(microseconds=value)
@@ -212,11 +216,11 @@ class OutputRedaction:
         )
 
 
-def _invalid(error: InvalidQueryError) -> HTTPException:
+def invalid_query(error: InvalidQueryError) -> HTTPException:
     return HTTPException(error.status_code, str(error))
 
 
-def _database(request: Request) -> Database:
+def read_database(request: Request) -> Database:
     resources: Resources = request.app.state.resources
     if resources.database is None:
         raise HTTPException(
@@ -227,7 +231,7 @@ def _database(request: Request) -> Database:
     return resources.database
 
 
-class _ReadFailed(HTTPException):
+class ReadFailed(HTTPException):
     def __init__(self, route: str, error: Exception) -> None:
         if isinstance(error, SourceConfigError):
             logger.error("evidence query source misconfigured", extra={"error": str(error)})
@@ -245,7 +249,7 @@ class _ReadFailed(HTTPException):
         )
 
 
-async def _redaction(
+async def output_redaction(
     session: AsyncSession, settings: Settings, workspace_id: uuid.UUID
 ) -> OutputRedaction:
     sources = await CatalogRepository(session).list_sources(workspace_id)
@@ -299,11 +303,11 @@ async def list_signals(
         if decoded is not None and decoded.query_digest != query.digest():
             raise InvalidCursorError("cursor belongs to a different query")
     except InvalidQueryError as error:
-        raise _invalid(error) from None
+        raise invalid_query(error) from None
 
     try:
-        async with _database(request).transaction() as session:
-            redaction = await _redaction(session, settings, workspace_id)
+        async with read_database(request).transaction() as session:
+            redaction = await output_redaction(session, settings, workspace_id)
             rows = await EvidenceRepository(session).list_signals(
                 query.scope,
                 query.criteria,
@@ -311,7 +315,7 @@ async def list_signals(
                 limit=page_size + 1,
             )
     except (SQLAlchemyError, SourceConfigError) as error:
-        raise _ReadFailed("signals", error) from None
+        raise ReadFailed("signals", error) from None
 
     items = [redaction.signal(row) for row in rows[:page_size]]
     next_cursor = None
@@ -340,16 +344,16 @@ async def get_trace(
     try:
         page_size = check_limit(limit, settings)
     except InvalidQueryError as error:
-        raise _invalid(error) from None
+        raise invalid_query(error) from None
     scope = EvidenceScope(workspace_id, replay_scope)
     try:
-        async with _database(request).transaction() as session:
-            redaction = await _redaction(session, settings, workspace_id)
+        async with read_database(request).transaction() as session:
+            redaction = await output_redaction(session, settings, workspace_id)
             rows = await EvidenceRepository(session).trace_signals(
                 scope, trace_id, limit=page_size + 1
             )
     except (SQLAlchemyError, SourceConfigError) as error:
-        raise _ReadFailed("traces", error) from None
+        raise ReadFailed("traces", error) from None
     if not rows:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "trace not found")
     return TraceEvidence(
@@ -399,16 +403,16 @@ async def source_quality(
             maximum=timedelta(seconds=settings.query_max_window_seconds),
         )
     except InvalidQueryError as error:
-        raise _invalid(error) from None
+        raise invalid_query(error) from None
     scope = EvidenceScope(workspace_id, replay_scope)
     try:
-        async with _database(request).transaction() as session:
+        async with read_database(request).transaction() as session:
             sources = await CatalogRepository(session).list_sources(workspace_id)
             counts = await EvidenceRepository(session).quality_counts(
                 scope, [source.id for source in sources], since=window.since, until=window.until
             )
     except SQLAlchemyError as error:
-        raise _ReadFailed("sources/quality", error) from None
+        raise ReadFailed("sources/quality", error) from None
     return QualitySummary(
         replay_scope=replay_scope,
         window=window,

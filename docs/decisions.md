@@ -187,6 +187,18 @@ Reads take the evidence cutoff as `as_of`. `GraphRepository.dependencies` walks 
 
 **Revisit when:** Traces name uncatalogued dependencies often enough to matter, edge write load shows up in profiling, or the graph must be rebuilt from PostgreSQL evidence past Kafka retention.
 
+## ADR-019: Operators change incident status at a version, and evidence still wins
+
+**Decision:** `PATCH /v1/incidents/{id}` takes a status and the version the operator read. `detection.incidents.change_status` locks the incident row, compares versions, and writes the change with an `incident.changed` outbox row in one transaction; `resolved_at` is the wall clock. A stale version is `409`. The same status at the current version changes nothing. Only the live scope can change. The route takes the row lock alone, not `lock_scope`.
+
+The UI asks for the operator token and keeps it in `sessionStorage`. A `401` discards it, and changing it clears cached queries.
+
+**Reason:** A request body version gives the operator a check against the detector and other operators without a held lock. The scope lock is shared by detector batches, so taking it would queue a request behind them; one row and one outbox insert cannot deadlock with them. Replay incidents are evaluation data, and an operator write would change a run's result. A token built into the bundle would be readable by anyone who can load the page, and nginx injecting one would authenticate every visitor.
+
+**Trade-off:** Evidence overrides an operator in both directions: a breach after `resolved_at` within the gap reopens the incident, and an incident reopened after its services recovered resolves again on the next healthy window. No hold exists to keep it open. Operator tokens carry no identity, so a change records no actor. Live `resolved_at` is wall clock while recovery uses event time, so a breach in a window ending before the click extends the incident without reopening it. A page script can read `sessionStorage`; the UI has no third-party scripts and React escapes evidence text.
+
+**Revisit when:** P11-T02 gives operators identities, or operators need an incident to stay open against recovery.
+
 ## Open questions
 
 | # | Question | Decide by |

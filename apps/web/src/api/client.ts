@@ -1,3 +1,5 @@
+import { clearOperatorToken, getOperatorToken } from "./operatorToken";
+
 export type ApiErrorKind = "network" | "http" | "invalid_response";
 
 export class ApiError extends Error {
@@ -21,18 +23,54 @@ export interface RequestOptions {
   /** Non-2xx statuses whose JSON body is a valid result (for example readiness 503). */
   acceptStatuses?: readonly number[];
   signal?: AbortSignal;
+  /** Send the operator token; a 401 then discards it, so the UI asks again. */
+  operator?: boolean;
 }
 
-export async function getJson<T>(
+interface RequestBody {
+  method: "PATCH";
+  json: unknown;
+}
+
+export function getJson<T>(
   path: string,
   parse: (value: unknown) => T | undefined,
-  { acceptStatuses = [], signal }: RequestOptions = {},
+  options: RequestOptions = {},
 ): Promise<T> {
+  return request(path, parse, undefined, options);
+}
+
+export function patchJson<T>(
+  path: string,
+  json: unknown,
+  parse: (value: unknown) => T | undefined,
+  options: RequestOptions = {},
+): Promise<T> {
+  return request(path, parse, { method: "PATCH", json }, options);
+}
+
+async function request<T>(
+  path: string,
+  parse: (value: unknown) => T | undefined,
+  body: RequestBody | undefined,
+  { acceptStatuses = [], signal, operator = false }: RequestOptions,
+): Promise<T> {
+  const headers: Record<string, string> = { Accept: "application/json" };
+  const token = operator ? getOperatorToken() : null;
+  if (token !== null) {
+    headers.Authorization = `Bearer ${token}`;
+  }
+  if (body) {
+    headers["Content-Type"] = "application/json";
+  }
+
   let response: Response;
   try {
     const timeout = AbortSignal.timeout(REQUEST_TIMEOUT_MS);
     response = await fetch(`${baseUrl}${path}`, {
-      headers: { Accept: "application/json" },
+      method: body?.method ?? "GET",
+      headers,
+      body: body ? JSON.stringify(body.json) : undefined,
       signal: signal ? AbortSignal.any([signal, timeout]) : timeout,
     });
   } catch (cause) {
@@ -46,17 +84,20 @@ export async function getJson<T>(
     throw new ApiError("network", "The SignalOps API could not be reached.");
   }
 
+  if (operator && response.status === 401) {
+    clearOperatorToken({ rejected: true });
+  }
   if (!response.ok && !acceptStatuses.includes(response.status)) {
     throw new ApiError("http", `The API responded with HTTP ${String(response.status)}.`, response.status);
   }
 
-  let body: unknown;
+  let payload: unknown;
   try {
-    body = await response.json();
+    payload = await response.json();
   } catch {
     throw new ApiError("invalid_response", "The API returned a response that is not JSON.", response.status);
   }
-  const parsed = parse(body);
+  const parsed = parse(payload);
   if (parsed === undefined) {
     throw new ApiError(
       "invalid_response",

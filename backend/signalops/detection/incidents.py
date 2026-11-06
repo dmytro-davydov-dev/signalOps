@@ -1,4 +1,4 @@
-"""Rule breaches in, incidents and recovery out, in the caller's transaction.
+"""Breaches and operator changes in, incidents and recovery out, in the caller's transaction.
 
 An incident writes with its trigger and its `incident.changed` outbox event, so
 a crash leaves all of them or none, and a replayed event finds the trigger and
@@ -26,6 +26,12 @@ window older than the resolution extends it without reopening.
 
 Roles and severity depend only on which rules fired, so they do not depend on
 arrival order; the title describes the first breach processed.
+
+**Operators.** `change_status` resolves or reopens a live incident at the version
+the operator read (ADR-019). It takes only the row: `lock_scope` would queue a
+request behind detector batches. Evidence still wins: a later breach reopens an
+incident an operator resolved, and the next healthy window resolves one an
+operator reopened if its services already recovered.
 """
 
 import uuid
@@ -90,6 +96,10 @@ class Breach:
     trigger_id: uuid.UUID | None
     # The window's closure deadline: the event-time moment it could first be known.
     deadline: datetime
+
+
+class IncidentVersionError(Exception):
+    """The operator's version is not the incident's current one (409)."""
 
 
 def fingerprint_for(environment: str) -> str:
@@ -262,3 +272,42 @@ async def record_healthy(
             severity=IncidentSeverity(incident.severity),
             at=window.end,
         )
+
+
+async def change_status(
+    session: AsyncSession,
+    scope: EvidenceScope,
+    incident_id: uuid.UUID,
+    status: IncidentStatus,
+    *,
+    version: int,
+    now: datetime,
+) -> Incident | None:
+    """Apply an operator's status at `version`; None when the scope has no such incident.
+
+    Asking for the status it already has at the current version changes nothing,
+    so a retry after a lost response is harmless.
+    """
+    incidents = IncidentRepository(session)
+    incident = await incidents.locked(scope, incident_id)
+    if incident is None:
+        return None
+    if incident.version != version:
+        raise IncidentVersionError(f"incident is at version {incident.version}")
+    if incident.status == status:
+        return incident
+    resolving = status is IncidentStatus.RESOLVED
+    severity = IncidentSeverity(incident.severity)
+    await _publish(
+        session,
+        scope,
+        incident_id,
+        await incidents.apply(
+            incident, {"status": status, "resolved_at": now if resolving else None}
+        ),
+        IncidentChange.RESOLVED if resolving else IncidentChange.REOPENED,
+        status=status,
+        severity=severity,
+        at=now,
+    )
+    return await incidents.locked(scope, incident_id)

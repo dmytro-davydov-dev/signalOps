@@ -1,6 +1,6 @@
 # HTTP API
 
-> Status: planned design. The source is [SignalOps_Implementation_Plan.md](SignalOps_Implementation_Plan.md) §9. The generated OpenAPI document, [`openapi.v1.json`](../backend/signalops/contracts/schemas/openapi.v1.json), is authoritative for implemented routes (health, ingestion, and evidence queries); body schemas for planned routes are exported alongside it (for example `investigations/investigation.v1.json`). Compatibility rules are in [events.md](events.md#versioning-rules).
+> Status: planned design. The source is [SignalOps_Implementation_Plan.md](SignalOps_Implementation_Plan.md) §9. The generated OpenAPI document, [`openapi.v1.json`](../backend/signalops/contracts/schemas/openapi.v1.json), is authoritative for implemented routes (health, ingestion, evidence queries, incidents, and service graphs); body schemas for planned routes are exported alongside it (for example `investigations/investigation.v1.json`). Compatibility rules are in [events.md](events.md#versioning-rules).
 
 All endpoints are versioned under `/v1`. Request and response bodies are Pydantic models. Timestamps are UTC (RFC 3339) and IDs are UUIDs.
 
@@ -13,7 +13,9 @@ All endpoints are versioned under `/v1`. Request and response bodies are Pydanti
 | `GET /v1/traces/{trace_id}` | Signals carrying one trace ID | P04-T05 |
 | `GET /v1/sources/quality` | Per-source counts by quality status and flag | P04-T05 |
 | `GET /v1/incidents` | Cursor pagination, filters for service, severity, status | P05-T05 |
-| `GET /v1/incidents/{id}` | Timeline, affected services, evidence references | P05-T05 |
+| `GET /v1/incidents/{id}` | Rule firings, affected services, evidence references | P05-T05 |
+| `PATCH /v1/incidents/{id}` | Resolve or reopen a live incident at a version | P05-T05 |
+| `GET /v1/incidents/{id}/evidence` | Evidence timeline: cited signals oldest first, cursor pagination | P05-T05 |
 | `POST /v1/incidents/{id}/investigations` | Requires `Idempotency-Key`. Returns **202** with the investigation ID | P06-T01 |
 | `GET /v1/investigations/{id}` | State, finding, evidence, usage, limitations | P06/P07 |
 | `POST /v1/investigations/{id}/cancel` | Persists a cancellation request | P06-T04 |
@@ -85,6 +87,26 @@ Authorization: Bearer <operator token>
 | `GET /v1/sources/quality` | `QualitySummary`: every source of the workspace with `total`, `by_status` (all three statuses), and `by_flag` (flags present) for signals with `since <= ingested_at < until` |
 
 **Cursors.** Opaque, versioned, and bound to the query: workspace, replay scope, filters, and the resolved window. Pass the cursor with the same filters; `since`/`until` may be left out (the cursor's window is used) or must be equal. A cursor from another query → `400 cursor belongs to a different query`; an unreadable one → `400 invalid cursor`. Pages use keyset position `(occurred_at, id)`, so rows inserted later inside the window and older than the position appear on later pages, and none repeat.
+
+## Incidents and service graphs
+
+Implemented in P05-T05 (`api/incidents.py`; reads in `persistence/repositories/incidents.py` and `graph.py`; status changes in `detection/incidents.py`; bodies in `contracts/incidents.py` and `contracts/queries.py`).
+
+Credential, `replay_scope`, RFC 3339 rules, `503`, and redaction are those of [evidence queries](#evidence-queries). Absent from the workspace or scope → `404`.
+
+| Route | Returns |
+| --- | --- |
+| `GET /v1/incidents` | `IncidentPage`: newest `detected_at` first (ties by ID descending), optional `service_id`, `severity`, `status`. `limit` is at most 100, the contract's page size, even when `SIGNALOPS_QUERY_MAX_LIMIT` is higher. A cursor from another query → `400` |
+| `GET /v1/incidents/{id}` | `IncidentDetail`: services with roles, up to 200 evidence references, and rule firings oldest first (up to 200; `triggers_truncated` when more exist) |
+| `GET /v1/incidents/{id}/evidence` | `IncidentEvidencePage`: cited signals with `relevance`, oldest first. A cursor from another incident → `400` |
+| `GET /v1/services/{id}/graph` | `ServiceGraph`: `downstream` and `upstream` `DEPENDS_ON` edges, up to `hops` (1–3, default 3), the services they name, and what each ran at `as_of`. `as_of` defaults to now; pass the incident's time for the neighborhood it had. `truncated` means a walk reached its bound. A service never observed has empty edge lists. A path never re-enters its start, so in a cycle the edge back to the service shows only under `upstream` |
+
+**Status changes.** `PATCH /v1/incidents/{id}` with `{"status": "resolved" | "open", "version": N}` ([ADR-019](decisions.md#adr-019-operators-change-incident-status-at-a-version-and-evidence-still-wins)):
+
+- `N` must be the current version, or the response is `409` and nothing changes. Read again and decide again.
+- The status the incident already has at version `N` is a `200` with no change and no event, so retrying after a lost response is safe.
+- A change bumps the version and writes `incident.changed` in one transaction. The response is the new `IncidentDetail`.
+- Live incidents only; there is no `replay_scope` parameter, and a replay incident is `404`.
 
 ## Investigation requests and idempotency
 

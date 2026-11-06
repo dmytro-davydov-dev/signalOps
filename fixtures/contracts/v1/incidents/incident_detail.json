@@ -42,5 +42,20 @@
       "quality_status": "accepted",
       "relevance": 0.8
     }
-  ]
+  ],
+  "triggers": [
+    {
+      "trigger_id": "9f0e1d2c-3b4a-4596-8778-695a4b3c2d1e",
+      "service_id": "dc2bf08d-6c3c-44ea-855a-d7d42eeefb36",
+      "rule_id": "trace_error_rate",
+      "metric_name": "trace.60s",
+      "window_start": "2026-10-16T10:39:00Z",
+      "window_end": "2026-10-16T10:40:00Z",
+      "observed": 0.47,
+      "threshold": 0.2,
+      "sample_count": 19,
+      "error_count": 9
+    }
+  ],
+  "triggers_truncated": false
 }

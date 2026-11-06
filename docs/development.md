@@ -108,7 +108,7 @@ docker compose down                  # stop; named volumes are kept
 
 Useful URLs once the stack is up:
 
-- UI: `http://127.0.0.1:8090/` (system health at `/status`)
+- UI: `http://127.0.0.1:8090/` (incidents at `/incidents`, which asks for a token from `SIGNALOPS_OPERATOR_TOKENS`; system health at `/status`). Add `?replay_scope=replay:<run>` to `/incidents` to read a replay
 - Liveness: `http://127.0.0.1:8010/health/live` (process is up; no dependency checks)
 - Readiness: `http://127.0.0.1:8010/health/ready` (200 when PostgreSQL, Redis, and Kafka all answer within the timeout; 503 with per-dependency error categories otherwise)
 - OpenAPI: `http://127.0.0.1:8010/docs`
@@ -167,7 +167,7 @@ Backend processes read `SIGNALOPS_`-prefixed variables (`backend/signalops/confi
 | `SIGNALOPS_CORS_ORIGINS` | empty | JSON list; only needed when the UI is served from another origin |
 | `SIGNALOPS_READINESS_TIMEOUT_SECONDS` | `2.0` | per-dependency probe limit |
 | `SIGNALOPS_INGEST_TOKENS` | `{}` | JSON object of source ID to bearer token for `POST /v1/ingest/{source_id}`; a source without a token cannot ingest. Contains credentials, never logged. See `.env.example` |
-| `SIGNALOPS_OPERATOR_TOKENS` | `{}` | JSON object of workspace ID to bearer token for the evidence query routes; the token's workspace bounds every query. Empty means every operator request is `401`. Must not share a value with `SIGNALOPS_INGEST_TOKENS` (startup fails). Credentials, never logged. Interim mechanism ([ADR-014](decisions.md#adr-014-interim-operator-tokens-scoped-to-one-workspace)) |
+| `SIGNALOPS_OPERATOR_TOKENS` | `{}` | JSON object of workspace ID to bearer token for the evidence, incident, and graph routes; the token's workspace bounds every query. Empty means every operator request is `401`. Must not share a value with `SIGNALOPS_INGEST_TOKENS` (startup fails). Credentials, never logged. Interim mechanism ([ADR-014](decisions.md#adr-014-interim-operator-tokens-scoped-to-one-workspace)) |
 | `SIGNALOPS_QUERY_DEFAULT_LIMIT` / `SIGNALOPS_QUERY_MAX_LIMIT` | `50` / `200` | Evidence query page size; a larger `limit` is `422` |
 | `SIGNALOPS_QUERY_DEFAULT_WINDOW_SECONDS` / `SIGNALOPS_QUERY_MAX_WINDOW_SECONDS` | `3600` / `604800` | Evidence query time window when none is given, and its maximum span (`422` above it) |
 | `SIGNALOPS_INGEST_MAX_RECORDS` | `500` | Records per ingestion request (`413` above it) |

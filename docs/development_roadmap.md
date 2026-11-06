@@ -25,13 +25,13 @@ PostgreSQL owns evidence, workflow progress, budgets, and the initial knowledge 
 
 | Field | Current value |
 | --- | --- |
-| Active phase | Phase 5 Detection and knowledge graph; Phase 4 gate passed |
+| Active phase | Phase 6 Durable jobs and workflow runtime; Phase 5 gate passed |
 | Active task | None |
-| Last completed task | P05-T04 |
-| Latest verified commit | `4077875` (P05-T03); P05-T04 pending commit, validated against the working tree |
-| Validation evidence | P05-T04: `SIGNALOPS_INTEGRATION=1 uv run pytest` 775 passed; `alembic check` clean on the dev database at `0012_graph_projection`. Compose run: `graph-projector-v1` consumed all 1619 retained `signals.normalized.v1` events with lag 0 and no warnings or errors; 4 `DEPENDS_ON` edges and 3 deployment edges match a separate SQL derivation from `signals` over the same range; a restart left the observation total at 1324. As-of 16:00 on 2026-11-06 returns nothing and 17:02 returns the call path. The 1036 signals past the topic's 7-day retention were not projected. Earlier evidence is in the work log |
+| Last completed task | P05-T05 |
+| Latest verified commit | `651ece8` (P05-T04); P05-T05 pending commit, validated against the working tree |
+| Validation evidence | P05-T05: `SIGNALOPS_INTEGRATION=1 uv run pytest` 815 passed; web 35 passed; `alembic check` clean at `0012_graph_projection`. Chrome against the host API on Compose infrastructure: located incident `5a5b37da`, read its 4 rule firings and evidence, and saw `payment` to `bank-gateway` at 2 hops as of 17:03; as-of 16:00 gave no edges; a stale `PATCH` gave 409 at version 6. Status buttons ran only against stubs, and the Compose images were not rebuilt. Earlier evidence is in the work log |
 | Blockers | None recorded |
-| Next task | P05-T05 |
+| Next task | P06-T01 |
 
 ### Scope and release boundaries
 
@@ -523,11 +523,20 @@ Start the React shell in Phase 1 and add API-backed incident views in Phase 5; P
 
 ### P05-T05 Expose incident and graph APIs
 
-- [ ] Complete this task.
+- [x] Complete this task.
 
 **Implementation:** Implement incident list/detail, evidence timeline, graph neighborhood, cursor pagination, and optimistic status updates. Add API-backed incident views to the React shell.
 
 **Acceptance:** A developer can locate the injected incident, inspect its evidence, and see the affected dependency neighborhood.
+
+**Notes (2026-11-06):**
+- **Decision (ADR-019):** `PATCH /v1/incidents/{id}` takes a status and version, locks only the incident row, and writes `incident.changed` with the change. Live scope only, so a replay incident is 404. The UI asks for the operator token and holds it in `sessionStorage`.
+- **Additions the task did not name:** `GET /v1/incidents/{id}/evidence` gives the timeline full redacted signals, since `EvidenceRef` has no message. `IncidentDetail` gains `triggers` and `triggers_truncated`, both defaulted, so the v1 change is additive.
+- **Found while building:** `IncidentPage` allows 100 items and `SIGNALOPS_QUERY_MAX_LIMIT` is 200, so a valid request of 101 would have failed response validation. `check_limit` now takes a `ceiling`. CORS allowed only GET and POST, so PATCH was added.
+- **Neighborhood view:** plain SVG with a data table, no graph library. `as_of` is `last_seen_at`. In a cycle, the edge back to the center shows only under `upstream`, from the existing walk.
+- **Test shim:** `src/test/setup.ts` drops the signal from `Request`, because Node's `Request` refuses jsdom's `AbortSignal` on a router navigation. The same navigation was exercised in Chrome.
+- Left: a reopened incident whose services already recovered resolves on the next healthy window; status changes record no actor (P11-T02); `bank-gateway` is in the neighborhood but not marked as belonging to the incident, the P05-T03 gap; the list filters by service only through links, because no service list route exists. `.env` has no operator or demo ingestion tokens.
+- **Not exercised end to end:** the status buttons ran only against stubbed responses in Vitest, because pressing them would have changed the dev incident. `PATCH` ran against real PostgreSQL in integration tests and, for the stale case, against the dev database; its outbox row was not followed through Kafka. The Compose `api` and `frontend` images were not rebuilt, so they still run the previous code.
 
 **Phase gate:** All tasks above are checked, acceptance evidence is recorded in the ledger, and the phase outcome is demonstrated against real infrastructure where relevant.
 
@@ -1154,13 +1163,23 @@ Keep these outside the release critical path unless measurements justify promoti
 
 ### 2026-11-06 — P05-T04
 - Status: completed
-- Commit: pending commit; validated against the current working tree.
+- Commit: `651ece8`
 - Implemented: `detection/graph.py` (`GraphProjector`, `GraphPolicy`); `persistence/repositories/graph.py` (node upserts, interval merge, deployment intervals, bounded as-of reads); `signalops graph-projector` and Compose `graph-projector`; migration `0012_graph_projection`; setting `SIGNALOPS_GRAPH_DEPENDENCY_TTL_SECONDS`; ADR-018; docs (architecture, data-model, decisions, development, events, reliability). Test helper `_store` gains `downstream`.
 - Validation commands and results: `uv run ruff check .`, `uv run ruff format --check .`, `uv run mypy` (117 files), `uv run signalops export-schemas --check` pass; `uv run pytest` 474 passed, 301 skipped; `SIGNALOPS_INTEGRATION=1 uv run pytest` 775 passed, including the downgrade/upgrade schema test; concurrency and node-ordering tests repeated 5 times, 2 passed each; `docker compose config --quiet` passes; `alembic check` reports no new operations. Eight deliberate mutations each failed the tests: no cycle guard, no hop limit, no as-of filter, no path bound, no relationship lock, no merge across touching edges, no end on a deployment, and both quality guards removed. The path-bound and quality mutations survived at first: the first exposed a real test gap, now closed; the second was one guard covering for the other. Frontend checks not run: no frontend change.
 - Evidence or artifact references: `tests/integration/test_graph.py`, `tests/unit/test_graph_projection.py`, `tests/integration/test_graph_reliability_schema.py`. Compose on 2026-11-06: 1619 receipts, lag 0, 0 warnings or errors; `checkout` to `inventory`, `orders-db`, and `payment`, and `payment` to `bank-gateway`, 331 observations each, matching `signals` for the retained range; `dependencies` as of 17:02 returned the four edges with `bank-gateway` at 2 hops, and as of 16:00 none.
 - Deviations and reasons: the plan's open-ended `valid_to` applies only to deployments; observed dependencies always end, so stale ones expire (ADR-018). `btree_gist` is a new extension, needed for the exclusion constraint.
 - Remaining issues: see task notes, chiefly the rebuild limit of Kafka retention.
 - Next task: P05-T05.
+
+### 2026-11-06 — P05-T05
+- Status: completed
+- Commit: pending commit; validated against the current working tree.
+- Implemented: `api/incidents.py` (list, detail, status change, evidence timeline, service graph); `change_status` in `detection/incidents.py`; incident reads in `persistence/repositories/incidents.py`; `CatalogRepository.get_services`; contracts `IncidentTrigger`, `IncidentStatusUpdate`, `IncidentEvidencePage`, `ServiceGraph`, and schemas; PATCH in CORS; ADR-019; docs (api, decisions, development, events). Web: `/incidents` and `/incidents/:incidentId`, `OperatorGate`, `DependencyGraph`, `StaleNotice`, `api/incidents.ts`, `api/operatorToken.ts`, and no retry on 4xx.
+- Validation commands and results: `uv run ruff check .`, `uv run ruff format --check .`, `uv run mypy` (120 files), `uv run signalops export-schemas --check` pass; `uv run pytest` 488 passed, 327 skipped; `SIGNALOPS_INTEGRATION=1 uv run pytest` 815 passed; the concurrency test repeated 5 times, 1 passed each; `docker compose config --quiet` passes; `alembic check` reports no new operations; `pnpm lint`, `pnpm typecheck`, `pnpm build` pass; `pnpm test` 35 passed. Twelve deliberate mutations each failed the tests: no version check, no row lock, no event, detail and list without scope, PATCH on any scope, no contract ceiling, unbound cursor, keyset repeating a row, unredacted evidence, ignored `as_of`, and services from any workspace.
+- Evidence or artifact references: `tests/integration/test_incident_api.py`, `tests/unit/test_incident_api.py`, `apps/web/src/pages/Incident*.test.tsx`. Host API on 8011 against Compose infrastructure with a throwaway operator token, Vite in front, Chrome: signed in, opened incident `5a5b37da-6ac4-49f6-a8d5-cd75426975d5` from the list by a client-side navigation, saw checkout and payment, 4 rule firings, evidence including the `bank-gateway` timeout log, and `payment` to `bank-gateway` at 2 hops as of 17:03; no console errors. As-of 16:00 gave no edges. A stale `PATCH` gave 409 and left version 6.
+- Deviations and reasons: `GET /v1/incidents/{id}/evidence` and `PATCH` are new routes; the plan's detail route holds rule firings and references, with the timeline paged separately, because 200 full signals do not belong in every detail poll.
+- Remaining issues: see task notes.
+- Next task: P06-T01.
 
 ## Work log template
 

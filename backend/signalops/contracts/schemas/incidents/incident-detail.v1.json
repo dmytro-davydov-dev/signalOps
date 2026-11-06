@@ -101,6 +101,78 @@
       "title": "IncidentStatus",
       "type": "string"
     },
+    "IncidentTrigger": {
+      "additionalProperties": false,
+      "description": "A rule firing cited by the incident, in event time.",
+      "properties": {
+        "error_count": {
+          "minimum": 0,
+          "title": "Error Count",
+          "type": "integer"
+        },
+        "metric_name": {
+          "maxLength": 256,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]*$",
+          "title": "Metric Name",
+          "type": "string"
+        },
+        "observed": {
+          "title": "Observed",
+          "type": "number"
+        },
+        "rule_id": {
+          "maxLength": 256,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]*$",
+          "title": "Rule Id",
+          "type": "string"
+        },
+        "sample_count": {
+          "minimum": 0,
+          "title": "Sample Count",
+          "type": "integer"
+        },
+        "service_id": {
+          "format": "uuid",
+          "title": "Service Id",
+          "type": "string"
+        },
+        "threshold": {
+          "title": "Threshold",
+          "type": "number"
+        },
+        "trigger_id": {
+          "format": "uuid",
+          "title": "Trigger Id",
+          "type": "string"
+        },
+        "window_end": {
+          "format": "date-time",
+          "title": "Window End",
+          "type": "string"
+        },
+        "window_start": {
+          "format": "date-time",
+          "title": "Window Start",
+          "type": "string"
+        }
+      },
+      "required": [
+        "trigger_id",
+        "service_id",
+        "rule_id",
+        "metric_name",
+        "window_start",
+        "window_end",
+        "observed",
+        "threshold",
+        "sample_count",
+        "error_count"
+      ],
+      "title": "IncidentTrigger",
+      "type": "object"
+    },
     "QualityStatus": {
       "enum": [
         "accepted",
@@ -213,6 +285,20 @@
       "minLength": 1,
       "title": "Title",
       "type": "string"
+    },
+    "triggers": {
+      "default": [],
+      "items": {
+        "$ref": "#/$defs/IncidentTrigger"
+      },
+      "maxItems": 200,
+      "title": "Triggers",
+      "type": "array"
+    },
+    "triggers_truncated": {
+      "default": false,
+      "title": "Triggers Truncated",
+      "type": "boolean"
     },
     "version": {
       "minimum": 1,

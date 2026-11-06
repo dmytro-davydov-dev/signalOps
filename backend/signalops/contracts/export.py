@@ -20,13 +20,19 @@ from signalops.contracts.compatibility import breaking_changes
 from signalops.contracts.diagnosis import Diagnosis, DiagnosisStatus
 from signalops.contracts.events import EVENT_PAYLOADS, EventEnvelope
 from signalops.contracts.evidence import NormalizedSignal
-from signalops.contracts.incidents import IncidentDetail, IncidentPage, IncidentSummary
+from signalops.contracts.incidents import (
+    IncidentDetail,
+    IncidentEvidencePage,
+    IncidentPage,
+    IncidentStatusUpdate,
+    IncidentSummary,
+)
 from signalops.contracts.ingestion import IngestRequest, IngestResponse
 from signalops.contracts.investigations import (
     DIAGNOSIS_STATUS_BY_INVESTIGATION_STATUS,
     InvestigationView,
 )
-from signalops.contracts.queries import QualitySummary, SignalPage, TraceEvidence
+from signalops.contracts.queries import QualitySummary, ServiceGraph, SignalPage, TraceEvidence
 from signalops.contracts.tools import TOOL_RESULT_ADAPTER, ToolFailure
 from signalops.contracts.workflow import TERMINAL_INVESTIGATION_STATUSES, InvestigationStatus
 
@@ -145,6 +151,15 @@ def artifacts() -> list[Artifact]:
         Artifact(SCHEMA_DIR / "incidents" / "incident-summary.v1.json", _schema(IncidentSummary)),
         Artifact(SCHEMA_DIR / "incidents" / "incident-detail.v1.json", _schema(IncidentDetail)),
         Artifact(SCHEMA_DIR / "incidents" / "incident-page.v1.json", _schema(IncidentPage)),
+        Artifact(
+            SCHEMA_DIR / "incidents" / "incident-evidence-page.v1.json",
+            _schema(IncidentEvidencePage),
+        ),
+        Artifact(
+            SCHEMA_DIR / "incidents" / "incident-status-update.v1.json",
+            _schema(IncidentStatusUpdate),
+        ),
+        Artifact(SCHEMA_DIR / "evidence" / "service-graph.v1.json", _schema(ServiceGraph)),
         Artifact(
             SCHEMA_DIR / "investigations" / "investigation.v1.json", _schema(InvestigationView)
         ),

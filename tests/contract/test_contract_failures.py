@@ -377,7 +377,14 @@ def test_unknown_tool_is_rejected() -> None:
 
 def test_resolved_incident_needs_resolved_at() -> None:
     document = fixture("incidents/incident_detail.json") | {"status": "resolved"}
-    for key in ("fingerprint", "correlation_window_start", "services", "evidence"):
+    for key in (
+        "fingerprint",
+        "correlation_window_start",
+        "services",
+        "evidence",
+        "triggers",
+        "triggers_truncated",
+    ):
         del document[key]
     with pytest.raises(ValidationError, match="resolved_at"):
         IncidentSummary.model_validate(document)

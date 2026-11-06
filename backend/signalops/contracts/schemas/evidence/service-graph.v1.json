@@ -1,0 +1,243 @@
+{
+  "$defs": {
+    "DependencyEntry": {
+      "additionalProperties": false,
+      "properties": {
+        "confidence": {
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "title": "Confidence",
+          "type": "number"
+        },
+        "from_service_id": {
+          "format": "uuid",
+          "title": "From Service Id",
+          "type": "string"
+        },
+        "hops": {
+          "maximum": 3,
+          "minimum": 1,
+          "title": "Hops",
+          "type": "integer"
+        },
+        "provenance_signal_id": {
+          "anyOf": [
+            {
+              "format": "uuid",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Provenance Signal Id"
+        },
+        "relation": {
+          "$ref": "#/$defs/GraphRelation"
+        },
+        "to_service_id": {
+          "format": "uuid",
+          "title": "To Service Id",
+          "type": "string"
+        },
+        "valid_from": {
+          "format": "date-time",
+          "title": "Valid From",
+          "type": "string"
+        },
+        "valid_to": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Valid To"
+        }
+      },
+      "required": [
+        "from_service_id",
+        "to_service_id",
+        "relation",
+        "valid_from",
+        "confidence",
+        "hops"
+      ],
+      "title": "DependencyEntry",
+      "type": "object"
+    },
+    "DeploymentEntry": {
+      "additionalProperties": false,
+      "properties": {
+        "deployed_at": {
+          "format": "date-time",
+          "title": "Deployed At",
+          "type": "string"
+        },
+        "deployment_id": {
+          "format": "uuid",
+          "title": "Deployment Id",
+          "type": "string"
+        },
+        "previous_revision": {
+          "anyOf": [
+            {
+              "maxLength": 64,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]*$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Previous Revision"
+        },
+        "revision": {
+          "maxLength": 64,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]*$",
+          "title": "Revision",
+          "type": "string"
+        },
+        "service_id": {
+          "format": "uuid",
+          "title": "Service Id",
+          "type": "string"
+        },
+        "signal_id": {
+          "format": "uuid",
+          "title": "Signal Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "deployment_id",
+        "signal_id",
+        "service_id",
+        "revision",
+        "deployed_at"
+      ],
+      "title": "DeploymentEntry",
+      "type": "object"
+    },
+    "GraphRelation": {
+      "enum": [
+        "DEPENDS_ON",
+        "DEPLOYED_TO",
+        "AFFECTS",
+        "DOCUMENTED_BY"
+      ],
+      "title": "GraphRelation",
+      "type": "string"
+    },
+    "GraphService": {
+      "additionalProperties": false,
+      "properties": {
+        "deployments": {
+          "items": {
+            "$ref": "#/$defs/DeploymentEntry"
+          },
+          "maxItems": 200,
+          "title": "Deployments",
+          "type": "array"
+        },
+        "environment": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]*$",
+          "title": "Environment",
+          "type": "string"
+        },
+        "name": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]*$",
+          "title": "Name",
+          "type": "string"
+        },
+        "service_id": {
+          "format": "uuid",
+          "title": "Service Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "service_id",
+        "name",
+        "environment",
+        "deployments"
+      ],
+      "title": "GraphService",
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "A service's dependency neighborhood as of an instant, nearest edges first.\n\nEdges report no `valid_to`: it would disclose what happened after `as_of`.",
+  "properties": {
+    "as_of": {
+      "format": "date-time",
+      "title": "As Of",
+      "type": "string"
+    },
+    "downstream": {
+      "items": {
+        "$ref": "#/$defs/DependencyEntry"
+      },
+      "maxItems": 200,
+      "title": "Downstream",
+      "type": "array"
+    },
+    "replay_scope": {
+      "maxLength": 128,
+      "minLength": 1,
+      "pattern": "^[a-z0-9][a-z0-9._:-]*$",
+      "title": "Replay Scope",
+      "type": "string"
+    },
+    "service_id": {
+      "format": "uuid",
+      "title": "Service Id",
+      "type": "string"
+    },
+    "services": {
+      "items": {
+        "$ref": "#/$defs/GraphService"
+      },
+      "maxItems": 1000,
+      "minItems": 1,
+      "title": "Services",
+      "type": "array"
+    },
+    "truncated": {
+      "title": "Truncated",
+      "type": "boolean"
+    },
+    "upstream": {
+      "items": {
+        "$ref": "#/$defs/DependencyEntry"
+      },
+      "maxItems": 200,
+      "title": "Upstream",
+      "type": "array"
+    }
+  },
+  "required": [
+    "service_id",
+    "replay_scope",
+    "as_of",
+    "services",
+    "downstream",
+    "upstream",
+    "truncated"
+  ],
+  "title": "ServiceGraph",
+  "type": "object"
+}

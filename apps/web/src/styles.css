@@ -76,3 +76,34 @@ button {
   color: var(--surface);
   cursor: pointer;
 }
+
+button:disabled { opacity: 0.6; cursor: default; }
+button.link { padding: 0; border: 0; background: none; color: var(--accent); text-decoration: underline; }
+
+input, select { font: inherit; padding: 0.3rem 0.5rem; border: 1px solid var(--border); border-radius: 6px; background: var(--surface); color: var(--text); }
+
+.scroll-x { overflow-x: auto; margin-bottom: 1rem; }
+
+.filters { display: flex; flex-wrap: wrap; align-items: end; gap: 1rem; margin-bottom: 1rem; }
+.filters label { display: flex; flex-direction: column; gap: 0.25rem; color: var(--muted); }
+label.filters { flex-direction: column; align-items: flex-start; gap: 0.25rem; color: var(--muted); }
+
+.badge-warn { color: var(--warn); }
+.badges { display: flex; gap: 0.5rem; }
+
+.facts { display: grid; grid-template-columns: max-content 1fr; gap: 0.25rem 1rem; }
+.facts dt { color: var(--muted); }
+.facts dd { margin: 0; }
+
+.timeline { list-style: none; margin: 0; padding: 0; border-left: 2px solid var(--border); }
+.timeline li { padding: 0.25rem 0 0.75rem 1rem; }
+.timeline p { margin: 0.25rem 0; overflow-wrap: anywhere; }
+.timeline-head { display: flex; flex-wrap: wrap; gap: 0.75rem; color: var(--muted); }
+.timeline pre { overflow-x: auto; padding: 0.5rem; background: var(--surface); border: 1px solid var(--border); border-radius: 6px; }
+
+.graph { display: block; }
+.graph-edge { stroke: var(--muted); stroke-width: 1.5; }
+.graph-arrow { fill: var(--muted); }
+.graph-node { fill: var(--surface); stroke: var(--border); }
+.graph-node-affected { stroke: var(--error); stroke-width: 2; }
+.graph-label { fill: var(--text); font-size: 0.85rem; }

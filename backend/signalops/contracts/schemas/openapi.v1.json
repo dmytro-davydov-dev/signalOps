@@ -1,6 +1,75 @@
 {
   "components": {
     "schemas": {
+      "DependencyEntry": {
+        "additionalProperties": false,
+        "properties": {
+          "confidence": {
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Confidence",
+            "type": "number"
+          },
+          "from_service_id": {
+            "format": "uuid",
+            "title": "From Service Id",
+            "type": "string"
+          },
+          "hops": {
+            "maximum": 3.0,
+            "minimum": 1.0,
+            "title": "Hops",
+            "type": "integer"
+          },
+          "provenance_signal_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Provenance Signal Id"
+          },
+          "relation": {
+            "$ref": "#/components/schemas/GraphRelation"
+          },
+          "to_service_id": {
+            "format": "uuid",
+            "title": "To Service Id",
+            "type": "string"
+          },
+          "valid_from": {
+            "format": "date-time",
+            "title": "Valid From",
+            "type": "string"
+          },
+          "valid_to": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Valid To"
+          }
+        },
+        "required": [
+          "from_service_id",
+          "to_service_id",
+          "relation",
+          "valid_from",
+          "confidence",
+          "hops"
+        ],
+        "title": "DependencyEntry",
+        "type": "object"
+      },
       "DependencyStatus": {
         "properties": {
           "error": {
@@ -34,6 +103,151 @@
         "title": "DependencyStatus",
         "type": "object"
       },
+      "DeploymentEntry": {
+        "additionalProperties": false,
+        "properties": {
+          "deployed_at": {
+            "format": "date-time",
+            "title": "Deployed At",
+            "type": "string"
+          },
+          "deployment_id": {
+            "format": "uuid",
+            "title": "Deployment Id",
+            "type": "string"
+          },
+          "previous_revision": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "minLength": 1,
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Previous Revision"
+          },
+          "revision": {
+            "maxLength": 64,
+            "minLength": 1,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]*$",
+            "title": "Revision",
+            "type": "string"
+          },
+          "service_id": {
+            "format": "uuid",
+            "title": "Service Id",
+            "type": "string"
+          },
+          "signal_id": {
+            "format": "uuid",
+            "title": "Signal Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "deployment_id",
+          "signal_id",
+          "service_id",
+          "revision",
+          "deployed_at"
+        ],
+        "title": "DeploymentEntry",
+        "type": "object"
+      },
+      "EvidenceRef": {
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "$ref": "#/components/schemas/SignalKind"
+          },
+          "occurred_at": {
+            "format": "date-time",
+            "title": "Occurred At",
+            "type": "string"
+          },
+          "quality_status": {
+            "$ref": "#/components/schemas/QualityStatus"
+          },
+          "relevance": {
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Relevance",
+            "type": "number"
+          },
+          "severity": {
+            "$ref": "#/components/schemas/Severity"
+          },
+          "signal_id": {
+            "format": "uuid",
+            "title": "Signal Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "signal_id",
+          "kind",
+          "occurred_at",
+          "severity",
+          "quality_status",
+          "relevance"
+        ],
+        "title": "EvidenceRef",
+        "type": "object"
+      },
+      "GraphRelation": {
+        "enum": [
+          "DEPENDS_ON",
+          "DEPLOYED_TO",
+          "AFFECTS",
+          "DOCUMENTED_BY"
+        ],
+        "title": "GraphRelation",
+        "type": "string"
+      },
+      "GraphService": {
+        "additionalProperties": false,
+        "properties": {
+          "deployments": {
+            "items": {
+              "$ref": "#/components/schemas/DeploymentEntry"
+            },
+            "maxItems": 200,
+            "title": "Deployments",
+            "type": "array"
+          },
+          "environment": {
+            "maxLength": 128,
+            "minLength": 1,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]*$",
+            "title": "Environment",
+            "type": "string"
+          },
+          "name": {
+            "maxLength": 128,
+            "minLength": 1,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]*$",
+            "title": "Name",
+            "type": "string"
+          },
+          "service_id": {
+            "format": "uuid",
+            "title": "Service Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "service_id",
+          "name",
+          "environment",
+          "deployments"
+        ],
+        "title": "GraphService",
+        "type": "object"
+      },
       "HTTPValidationError": {
         "properties": {
           "detail": {
@@ -45,6 +259,452 @@
           }
         },
         "title": "HTTPValidationError",
+        "type": "object"
+      },
+      "IncidentDetail": {
+        "additionalProperties": false,
+        "properties": {
+          "correlation_window_start": {
+            "format": "date-time",
+            "title": "Correlation Window Start",
+            "type": "string"
+          },
+          "detected_at": {
+            "format": "date-time",
+            "title": "Detected At",
+            "type": "string"
+          },
+          "evidence": {
+            "items": {
+              "$ref": "#/components/schemas/EvidenceRef"
+            },
+            "maxItems": 200,
+            "title": "Evidence",
+            "type": "array"
+          },
+          "fingerprint": {
+            "maxLength": 256,
+            "minLength": 1,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]*$",
+            "title": "Fingerprint",
+            "type": "string"
+          },
+          "first_seen_at": {
+            "format": "date-time",
+            "title": "First Seen At",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "last_seen_at": {
+            "format": "date-time",
+            "title": "Last Seen At",
+            "type": "string"
+          },
+          "replay_scope": {
+            "maxLength": 128,
+            "minLength": 1,
+            "pattern": "^[a-z0-9][a-z0-9._:-]*$",
+            "title": "Replay Scope",
+            "type": "string"
+          },
+          "resolved_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resolved At"
+          },
+          "services": {
+            "items": {
+              "$ref": "#/components/schemas/IncidentServiceRef"
+            },
+            "maxItems": 100,
+            "title": "Services",
+            "type": "array"
+          },
+          "severity": {
+            "$ref": "#/components/schemas/IncidentSeverity"
+          },
+          "status": {
+            "$ref": "#/components/schemas/IncidentStatus"
+          },
+          "title": {
+            "maxLength": 500,
+            "minLength": 1,
+            "title": "Title",
+            "type": "string"
+          },
+          "triggers": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/IncidentTrigger"
+            },
+            "maxItems": 200,
+            "title": "Triggers",
+            "type": "array"
+          },
+          "triggers_truncated": {
+            "default": false,
+            "title": "Triggers Truncated",
+            "type": "boolean"
+          },
+          "version": {
+            "minimum": 1.0,
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "replay_scope",
+          "title",
+          "severity",
+          "status",
+          "detected_at",
+          "first_seen_at",
+          "last_seen_at",
+          "version",
+          "fingerprint",
+          "correlation_window_start",
+          "services",
+          "evidence"
+        ],
+        "title": "IncidentDetail",
+        "type": "object"
+      },
+      "IncidentEvidence": {
+        "additionalProperties": false,
+        "properties": {
+          "relevance": {
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Relevance",
+            "type": "number"
+          },
+          "signal": {
+            "$ref": "#/components/schemas/NormalizedSignal"
+          }
+        },
+        "required": [
+          "signal",
+          "relevance"
+        ],
+        "title": "IncidentEvidence",
+        "type": "object"
+      },
+      "IncidentEvidencePage": {
+        "additionalProperties": false,
+        "description": "An incident's cited signals by `occurred_at` ascending, then ID ascending.",
+        "properties": {
+          "incident_id": {
+            "format": "uuid",
+            "title": "Incident Id",
+            "type": "string"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/IncidentEvidence"
+            },
+            "maxItems": 1000,
+            "title": "Items",
+            "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "maxLength": 256,
+                "minLength": 1,
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          },
+          "replay_scope": {
+            "maxLength": 128,
+            "minLength": 1,
+            "pattern": "^[a-z0-9][a-z0-9._:-]*$",
+            "title": "Replay Scope",
+            "type": "string"
+          }
+        },
+        "required": [
+          "incident_id",
+          "replay_scope",
+          "items"
+        ],
+        "title": "IncidentEvidencePage",
+        "type": "object"
+      },
+      "IncidentPage": {
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/IncidentSummary"
+            },
+            "maxItems": 100,
+            "title": "Items",
+            "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "maxLength": 256,
+                "minLength": 1,
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "IncidentPage",
+        "type": "object"
+      },
+      "IncidentServiceRef": {
+        "additionalProperties": false,
+        "properties": {
+          "environment": {
+            "maxLength": 128,
+            "minLength": 1,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]*$",
+            "title": "Environment",
+            "type": "string"
+          },
+          "name": {
+            "maxLength": 128,
+            "minLength": 1,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]*$",
+            "title": "Name",
+            "type": "string"
+          },
+          "role": {
+            "$ref": "#/components/schemas/IncidentServiceRole"
+          },
+          "service_id": {
+            "format": "uuid",
+            "title": "Service Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "service_id",
+          "name",
+          "environment",
+          "role"
+        ],
+        "title": "IncidentServiceRef",
+        "type": "object"
+      },
+      "IncidentServiceRole": {
+        "enum": [
+          "primary",
+          "affected"
+        ],
+        "title": "IncidentServiceRole",
+        "type": "string"
+      },
+      "IncidentSeverity": {
+        "enum": [
+          "low",
+          "medium",
+          "high",
+          "critical"
+        ],
+        "title": "IncidentSeverity",
+        "type": "string"
+      },
+      "IncidentStatus": {
+        "enum": [
+          "open",
+          "resolved"
+        ],
+        "title": "IncidentStatus",
+        "type": "string"
+      },
+      "IncidentStatusUpdate": {
+        "additionalProperties": false,
+        "description": "An operator's status change, based on the version they last read.",
+        "properties": {
+          "status": {
+            "$ref": "#/components/schemas/IncidentStatus"
+          },
+          "version": {
+            "minimum": 1.0,
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "status",
+          "version"
+        ],
+        "title": "IncidentStatusUpdate",
+        "type": "object"
+      },
+      "IncidentSummary": {
+        "additionalProperties": false,
+        "properties": {
+          "detected_at": {
+            "format": "date-time",
+            "title": "Detected At",
+            "type": "string"
+          },
+          "first_seen_at": {
+            "format": "date-time",
+            "title": "First Seen At",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "last_seen_at": {
+            "format": "date-time",
+            "title": "Last Seen At",
+            "type": "string"
+          },
+          "replay_scope": {
+            "maxLength": 128,
+            "minLength": 1,
+            "pattern": "^[a-z0-9][a-z0-9._:-]*$",
+            "title": "Replay Scope",
+            "type": "string"
+          },
+          "resolved_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resolved At"
+          },
+          "severity": {
+            "$ref": "#/components/schemas/IncidentSeverity"
+          },
+          "status": {
+            "$ref": "#/components/schemas/IncidentStatus"
+          },
+          "title": {
+            "maxLength": 500,
+            "minLength": 1,
+            "title": "Title",
+            "type": "string"
+          },
+          "version": {
+            "minimum": 1.0,
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "replay_scope",
+          "title",
+          "severity",
+          "status",
+          "detected_at",
+          "first_seen_at",
+          "last_seen_at",
+          "version"
+        ],
+        "title": "IncidentSummary",
+        "type": "object"
+      },
+      "IncidentTrigger": {
+        "additionalProperties": false,
+        "description": "A rule firing cited by the incident, in event time.",
+        "properties": {
+          "error_count": {
+            "minimum": 0.0,
+            "title": "Error Count",
+            "type": "integer"
+          },
+          "metric_name": {
+            "maxLength": 256,
+            "minLength": 1,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]*$",
+            "title": "Metric Name",
+            "type": "string"
+          },
+          "observed": {
+            "title": "Observed",
+            "type": "number"
+          },
+          "rule_id": {
+            "maxLength": 256,
+            "minLength": 1,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]*$",
+            "title": "Rule Id",
+            "type": "string"
+          },
+          "sample_count": {
+            "minimum": 0.0,
+            "title": "Sample Count",
+            "type": "integer"
+          },
+          "service_id": {
+            "format": "uuid",
+            "title": "Service Id",
+            "type": "string"
+          },
+          "threshold": {
+            "title": "Threshold",
+            "type": "number"
+          },
+          "trigger_id": {
+            "format": "uuid",
+            "title": "Trigger Id",
+            "type": "string"
+          },
+          "window_end": {
+            "format": "date-time",
+            "title": "Window End",
+            "type": "string"
+          },
+          "window_start": {
+            "format": "date-time",
+            "title": "Window Start",
+            "type": "string"
+          }
+        },
+        "required": [
+          "trigger_id",
+          "service_id",
+          "rule_id",
+          "metric_name",
+          "window_start",
+          "window_end",
+          "observed",
+          "threshold",
+          "sample_count",
+          "error_count"
+        ],
+        "title": "IncidentTrigger",
         "type": "object"
       },
       "IngestFailureReason": {
@@ -395,6 +1055,69 @@
         "title": "ReadinessResponse",
         "type": "object"
       },
+      "ServiceGraph": {
+        "additionalProperties": false,
+        "description": "A service's dependency neighborhood as of an instant, nearest edges first.\n\nEdges report no `valid_to`: it would disclose what happened after `as_of`.",
+        "properties": {
+          "as_of": {
+            "format": "date-time",
+            "title": "As Of",
+            "type": "string"
+          },
+          "downstream": {
+            "items": {
+              "$ref": "#/components/schemas/DependencyEntry"
+            },
+            "maxItems": 200,
+            "title": "Downstream",
+            "type": "array"
+          },
+          "replay_scope": {
+            "maxLength": 128,
+            "minLength": 1,
+            "pattern": "^[a-z0-9][a-z0-9._:-]*$",
+            "title": "Replay Scope",
+            "type": "string"
+          },
+          "service_id": {
+            "format": "uuid",
+            "title": "Service Id",
+            "type": "string"
+          },
+          "services": {
+            "items": {
+              "$ref": "#/components/schemas/GraphService"
+            },
+            "maxItems": 1000,
+            "minItems": 1,
+            "title": "Services",
+            "type": "array"
+          },
+          "truncated": {
+            "title": "Truncated",
+            "type": "boolean"
+          },
+          "upstream": {
+            "items": {
+              "$ref": "#/components/schemas/DependencyEntry"
+            },
+            "maxItems": 200,
+            "title": "Upstream",
+            "type": "array"
+          }
+        },
+        "required": [
+          "service_id",
+          "replay_scope",
+          "as_of",
+          "services",
+          "downstream",
+          "upstream",
+          "truncated"
+        ],
+        "title": "ServiceGraph",
+        "type": "object"
+      },
       "Severity": {
         "enum": [
           "debug",
@@ -706,6 +1429,384 @@
         ]
       }
     },
+    "/v1/incidents": {
+      "get": {
+        "description": "Incidents by `detected_at` (newest first) with keyset pagination.\n\nPass a cursor with the same filters; a cursor from another query is 400.",
+        "operationId": "list_incidents_v1_incidents_get",
+        "parameters": [
+          {
+            "description": "Replay dataset; `live` by default",
+            "in": "query",
+            "name": "replay_scope",
+            "required": false,
+            "schema": {
+              "default": "live",
+              "description": "Replay dataset; `live` by default",
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^[a-z0-9][a-z0-9._:-]*$",
+              "title": "Replay Scope",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "service_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Service Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "severity",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/IncidentSeverity"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Severity"
+            }
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/IncidentStatus"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status"
+            }
+          },
+          {
+            "description": "At most SIGNALOPS_QUERY_MAX_LIMIT",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "At most SIGNALOPS_QUERY_MAX_LIMIT",
+              "title": "Limit"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 512,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IncidentPage"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "description": "Invalid or mismatched cursor"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "OperatorBearer": []
+          }
+        ],
+        "summary": "List Incidents",
+        "tags": [
+          "incidents"
+        ]
+      }
+    },
+    "/v1/incidents/{incident_id}": {
+      "get": {
+        "description": "The incident with its services, evidence references, and rule firings.",
+        "operationId": "get_incident_v1_incidents__incident_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "incident_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Incident Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Replay dataset; `live` by default",
+            "in": "query",
+            "name": "replay_scope",
+            "required": false,
+            "schema": {
+              "default": "live",
+              "description": "Replay dataset; `live` by default",
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^[a-z0-9][a-z0-9._:-]*$",
+              "title": "Replay Scope",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IncidentDetail"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "description": "Not found in this workspace and replay scope"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "OperatorBearer": []
+          }
+        ],
+        "summary": "Get Incident",
+        "tags": [
+          "incidents"
+        ]
+      },
+      "patch": {
+        "description": "Resolve or reopen a live incident, at the version the operator last read.\n\nAnother writer's change is 409: read again and decide again. The change and\nits `incident.changed` event commit together.",
+        "operationId": "update_incident_v1_incidents__incident_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "incident_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Incident Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/IncidentStatusUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IncidentDetail"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "description": "Not found in this workspace and replay scope"
+          },
+          "409": {
+            "description": "`version` is not the current version"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "OperatorBearer": []
+          }
+        ],
+        "summary": "Update Incident",
+        "tags": [
+          "incidents"
+        ]
+      }
+    },
+    "/v1/incidents/{incident_id}/evidence": {
+      "get": {
+        "description": "The incident's cited signals, oldest first, redacted as `/v1/signals` is.",
+        "operationId": "incident_evidence_v1_incidents__incident_id__evidence_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "incident_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Incident Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Replay dataset; `live` by default",
+            "in": "query",
+            "name": "replay_scope",
+            "required": false,
+            "schema": {
+              "default": "live",
+              "description": "Replay dataset; `live` by default",
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^[a-z0-9][a-z0-9._:-]*$",
+              "title": "Replay Scope",
+              "type": "string"
+            }
+          },
+          {
+            "description": "At most SIGNALOPS_QUERY_MAX_LIMIT",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "At most SIGNALOPS_QUERY_MAX_LIMIT",
+              "title": "Limit"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 512,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IncidentEvidencePage"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "description": "Invalid or mismatched cursor"
+          },
+          "404": {
+            "description": "Not found in this workspace and replay scope"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "OperatorBearer": []
+          }
+        ],
+        "summary": "Incident Evidence",
+        "tags": [
+          "incidents"
+        ]
+      }
+    },
     "/v1/ingest/{source_id}": {
       "post": {
         "description": "Publish a batch of source records; each is accepted only after Kafka acknowledges it.",
@@ -819,6 +1920,104 @@
         "summary": "Ingest",
         "tags": [
           "ingestion"
+        ]
+      }
+    },
+    "/v1/services/{service_id}/graph": {
+      "get": {
+        "description": "Dependencies and dependents of the service as of a time, up to `hops` away.\n\nA service known to the catalog but not yet observed has an empty neighborhood.",
+        "operationId": "service_graph_v1_services__service_id__graph_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "service_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Service Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Replay dataset; `live` by default",
+            "in": "query",
+            "name": "replay_scope",
+            "required": false,
+            "schema": {
+              "default": "live",
+              "description": "Replay dataset; `live` by default",
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^[a-z0-9][a-z0-9._:-]*$",
+              "title": "Replay Scope",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Defaults to now",
+            "in": "query",
+            "name": "as_of",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Defaults to now",
+              "title": "As Of"
+            }
+          },
+          {
+            "in": "query",
+            "name": "hops",
+            "required": false,
+            "schema": {
+              "default": 3,
+              "maximum": 3,
+              "minimum": 1,
+              "title": "Hops",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ServiceGraph"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "description": "No such service in this workspace"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "OperatorBearer": []
+          }
+        ],
+        "summary": "Service Graph",
+        "tags": [
+          "incidents"
         ]
       }
     },

@@ -1,4 +1,4 @@
-"""Evidence query responses: signal pages, trace lookups, and source quality counts.
+"""Evidence query responses: signal pages, traces, source quality, and service graphs.
 
 Every response names the replay scope it was read from. The workspace comes
 from the caller's operator credential and is never a request parameter.
@@ -9,8 +9,9 @@ from typing import Self
 
 from pydantic import Field, NonNegativeInt, model_validator
 
-from signalops.contracts.common import ContractModel, Key, ReplayScope, TraceId, UtcDatetime
+from signalops.contracts.common import ContractModel, Key, Name, ReplayScope, TraceId, UtcDatetime
 from signalops.contracts.evidence import NormalizedSignal, QualityFlag, QualityStatus, SourceKind
+from signalops.contracts.tools import MAX_TOOL_ROWS, DependencyEntry, DeploymentEntry
 
 # Hard ceiling on items in one response; the configured limit is at most this.
 MAX_QUERY_ITEMS = 1_000
@@ -78,3 +79,30 @@ class QualitySummary(ContractModel):
     window: TimeWindow
     # Every source in the workspace, including those with no signals.
     sources: tuple[SourceQuality, ...] = Field(max_length=MAX_QUERY_ITEMS)
+
+
+class GraphService(ContractModel):
+    service_id: uuid.UUID
+    name: Name
+    environment: Name
+    # What the service was running at `as_of`; empty when no deployment is projected.
+    deployments: tuple[DeploymentEntry, ...] = Field(max_length=MAX_TOOL_ROWS)
+
+
+class ServiceGraph(ContractModel):
+    """A service's dependency neighborhood as of an instant, nearest edges first.
+
+    Edges report no `valid_to`: it would disclose what happened after `as_of`.
+    """
+
+    service_id: uuid.UUID
+    replay_scope: ReplayScope
+    as_of: UtcDatetime
+    # The service and every service an edge names.
+    services: tuple[GraphService, ...] = Field(min_length=1, max_length=MAX_QUERY_ITEMS)
+    # What the service calls, directly or not.
+    downstream: tuple[DependencyEntry, ...] = Field(max_length=MAX_TOOL_ROWS)
+    # What calls the service, directly or not.
+    upstream: tuple[DependencyEntry, ...] = Field(max_length=MAX_TOOL_ROWS)
+    # True when a walk stopped at its bound, so more edges may exist.
+    truncated: bool

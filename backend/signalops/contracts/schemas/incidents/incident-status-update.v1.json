@@ -1,0 +1,31 @@
+{
+  "$defs": {
+    "IncidentStatus": {
+      "enum": [
+        "open",
+        "resolved"
+      ],
+      "title": "IncidentStatus",
+      "type": "string"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "An operator's status change, based on the version they last read.",
+  "properties": {
+    "status": {
+      "$ref": "#/$defs/IncidentStatus"
+    },
+    "version": {
+      "minimum": 1,
+      "title": "Version",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "status",
+    "version"
+  ],
+  "title": "IncidentStatusUpdate",
+  "type": "object"
+}

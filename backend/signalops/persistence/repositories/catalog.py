@@ -1,6 +1,7 @@
 """Workspaces, sources, and services: the catalog that evidence refers to."""
 
 import uuid
+from collections.abc import Collection
 
 from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert
@@ -87,3 +88,13 @@ class CatalogRepository:
                 Service.environment == environment,
             )
         )
+
+    async def get_services(
+        self, workspace_id: uuid.UUID, service_ids: Collection[uuid.UUID]
+    ) -> list[Service]:
+        result = await self._session.scalars(
+            select(Service)
+            .where(Service.workspace_id == workspace_id, Service.id.in_(service_ids))
+            .order_by(Service.name, Service.id)
+        )
+        return list(result)
