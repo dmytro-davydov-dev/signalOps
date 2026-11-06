@@ -120,7 +120,7 @@ IDs are derived, so reprocessing yields the same rows: signal ID = UUIDv5(source
 
 ### Detector (`detector-v1`)
 
-`signalops detector` consumes `signals.normalized.v1` with `TransactionalProcessor` and `detection.detector.Detector` ([ADR-015](decisions.md#adr-015-detection-windows-count-accepted-samples-once-and-record-rule-triggers)). It counts a signal when the event and the stored row agree that it is a `log` or `trace`, `accepted`, with a resolved service; everything else is acknowledged without effect. In one transaction per event it writes the receipt, loads the signal by ID within the envelope's workspace and replay scope, inserts a `detection_samples` row, and adds the sample to its `signal_aggregates` window. Rules run when the window closes, inserting a `detection_triggers` row when one fires. It emits no events yet; incidents come from triggers in P05-T03.
+`signalops detector` consumes `signals.normalized.v1` with `TransactionalProcessor` and `detection.detector.Detector` ([ADR-015](decisions.md#adr-015-detection-windows-count-accepted-samples-once-and-record-rule-triggers)). It counts a signal when the event and the stored row agree that it is a `log` or `trace`, `accepted`, with a resolved service; everything else is acknowledged without effect. In one transaction per event it writes the receipt, loads the signal by ID within the envelope's workspace and replay scope, inserts a `detection_samples` row, and adds the sample to its `signal_aggregates` window. Rules run when the window closes, inserting a `detection_triggers` row when one fires. Every breach also creates or extends an incident in the same transaction, which emits `incident.changed` through the outbox; see [Incidents](#incidents).
 
 | Metric | Sample | Error | Value |
 | --- | --- | --- | --- |
@@ -131,9 +131,9 @@ Windows are epoch-aligned and `SIGNALOPS_DETECTION_WINDOW_SECONDS` (60) long; th
 
 | Rule | Fires when | `min_samples` | Cooldown |
 | --- | --- | --- | --- |
-| `trace_error_rate` v1 | trace error rate ≥ 0.2 | 15 | 300 s |
-| `trace_latency_p95` v1 | trace p95 > 1000 ms | 20 | 300 s |
-| `log_error_rate` v1 | log error rate ≥ 0.5 | 10 | 300 s |
+| `trace_error_rate` v2 | trace error rate ≥ 0.2 | 15 | 300 s |
+| `trace_latency_p95` v2 | trace p95 > 1000 ms | 20 | 300 s |
+| `log_error_rate` v2 | log error rate ≥ 0.5 | 10 | 300 s |
 
 #### Closure and lateness
 
@@ -152,6 +152,19 @@ Rules are evaluated at closure ([ADR-016](decisions.md#adr-016-rules-evaluate-at
 | Past the deadline | `detection_samples.late` set, `late_count` + 1; the counts do not change and no rule runs, so it cannot raise a historical trigger. The signal stays queryable evidence |
 
 The detector's `late` flag is separate from the normalizer's `late_arrival` quality flag, which has a 900-second threshold and does not affect the signal's status. A signal ID that names no signal in the envelope's workspace and scope, or a trace without `record.duration_ms`/`record.status`, is a `ContractError` and goes to `processing.failed.v1`.
+
+#### Incidents
+
+Incidents come from breaches, in the transaction that decides them ([ADR-017](decisions.md#adr-017-incidents-correlate-by-environment-within-a-session-and-recovery-needs-evidence), `detection/incidents.py`).
+
+| Event | Effect on the incident | `change` |
+| --- | --- | --- |
+| Breach with no incident within `SIGNALOPS_INCIDENT_CORRELATION_GAP_SECONDS` (600) | Created; `correlation_window_start` is the window's start | `created` |
+| Breach within the gap | Seen range, severity, and services extended; a trigger cites up to 20 breaching samples | `updated`, or nothing if it changes nothing |
+| Breach within the gap, in a window ending after `resolved_at` | As above, and reopened | `reopened` |
+| Every service has a healthy window ending at least `SIGNALOPS_INCIDENT_RECOVERY_SECONDS` (300) after `last_seen_at` | Resolved; `resolved_at` is that window's end | `resolved` |
+
+The fingerprint is `env:{environment}`. A healthy window had `min_samples` for one of its rules and breached none; a quiet service shows no recovery. Each change bumps `incidents.version`, and the event ID derives from the incident and version. `incidents.changed.v1` has no consumer until `notification-projector-v1`. Investigations are not requested automatically; that follows Phase 6.
 
 ## Decoding
 

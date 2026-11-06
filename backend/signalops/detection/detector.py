@@ -1,4 +1,4 @@
-"""The detector's consumer effect: normalized signal in, window aggregate and triggers out.
+"""The detector's consumer effect: normalized signal in, windows, triggers, and incidents out.
 
 `Detector` runs inside `TransactionalProcessor`'s transaction, after the
 consumer receipt. For a signal it can count, it loads the stored row (the
@@ -31,11 +31,14 @@ is not withdrawn.
 A rule fires when the window has at least `min_samples` samples and crosses
 its threshold, and the same rule has not fired for the service within
 `cooldown_seconds` of the window (event time, so replay gives the same result).
+Every breach, cooled down or not, also reaches `incidents`, in the same
+transaction as the trigger. A closed window that could have fired and did not
+counts toward recovery instead.
 """
 
 import logging
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import timedelta
 from typing import Final
 
@@ -50,6 +53,7 @@ from signalops.contracts.events import (
     NormalizedSignalPayload,
 )
 from signalops.contracts.evidence import QualityStatus, Severity, SignalKind
+from signalops.detection.incidents import Breach, IncidentPolicy, record_breach, record_healthy
 from signalops.detection.rules import (
     DetectionMetric,
     DetectionRule,
@@ -71,6 +75,7 @@ from signalops.persistence.repositories.detection import (
     TriggerRecord,
 )
 from signalops.persistence.repositories.evidence import EvidenceRepository
+from signalops.persistence.repositories.incidents import IncidentRepository
 from signalops.persistence.repositories.scope import EvidenceScope
 
 logger = logging.getLogger(__name__)
@@ -89,6 +94,7 @@ class DetectionPolicy:
     window_seconds: int
     rules: tuple[DetectionRule, ...]
     allowed_lateness_seconds: int
+    incidents: IncidentPolicy = field(default_factory=IncidentPolicy)
 
     @classmethod
     def from_settings(cls, settings: Settings) -> "DetectionPolicy":
@@ -96,6 +102,9 @@ class DetectionPolicy:
             settings.detection_window_seconds,
             settings.detection_rules,
             settings.detection_allowed_lateness_seconds,
+            IncidentPolicy(
+                settings.incident_correlation_gap_seconds, settings.incident_recovery_seconds
+            ),
         )
 
     @property
@@ -129,31 +138,42 @@ def sample_for(signal: Signal, metric: DetectionMetric) -> Sample:
 
 
 async def evaluate_window(
-    detection: DetectionRepository,
+    session: AsyncSession,
     policy: DetectionPolicy,
     series: SeriesKey,
     window: Window,
     counts: WindowCounts,
-) -> None:
-    """Run the series' rules against a closed window, recording what fires."""
+) -> bool:
+    """Run the series' rules against a closed window, recording what fires.
+
+    Returns whether the window shows the service healthy: a rule had enough
+    samples to fire and none breached.
+    """
+    detection = DetectionRepository(session)
     metric = metric_of_series(series.metric_name)
+    sufficient = breached = False
     for rule in policy.rules:
         if rule.metric is not metric:
             continue
         result = evaluate(rule, counts)
+        sufficient = sufficient or result.sufficient
         if not result.breached:
             continue
+        breached = True
         assert result.observed is not None  # noqa: S101 - a breach has a value
+        # Taken before the rule lock, so writers that hold both cannot deadlock.
+        await IncidentRepository(session).lock_scope(series.replay_scope)
         await detection.lock_rule(series, rule.id)
-        if await detection.triggered_near(
+        trigger_id = None
+        if not await detection.triggered_near(
             series, rule.id, window.start, timedelta(seconds=rule.cooldown_seconds)
         ):
-            continue
-        if await detection.add_trigger(
-            series,
-            window,
-            TriggerRecord(rule.id, rule.version, result.observed, rule.threshold, counts),
-        ):
+            trigger_id = await detection.add_trigger(
+                series,
+                window,
+                TriggerRecord(rule.id, rule.version, result.observed, rule.threshold, counts),
+            )
+        if trigger_id is not None:
             logger.info(
                 "detection rule fired",
                 extra={
@@ -167,22 +187,39 @@ async def evaluate_window(
                     "sample_count": counts.sample_count,
                 },
             )
+        await record_breach(
+            session,
+            policy.incidents,
+            Breach(series, window, rule, trigger_id, deadline=window.end + policy.lateness),
+        )
+    return sufficient and not breached
 
 
 async def close_windows(
-    detection: DetectionRepository,
+    session: AsyncSession,
     policy: DetectionPolicy,
     windows: Sequence[OpenWindow],
     closed_by: WindowClosure,
 ) -> None:
-    """Close locked windows and evaluate them, in the given order (oldest first for cooldowns)."""
+    """Close locked windows and evaluate them, in the given order (oldest first for cooldowns).
+
+    Recovery runs after every breach in the batch, so a healthy trace window
+    cannot resolve an incident that a log window of the same minute extends.
+    """
     if not windows:
         return
-    await detection.mark_closed([open_window.id for open_window in windows], closed_by)
-    for open_window in windows:
-        await evaluate_window(
-            detection, policy, open_window.series, open_window.window, open_window.counts
+    await DetectionRepository(session).mark_closed(
+        [open_window.id for open_window in windows], closed_by
+    )
+    healthy = [
+        open_window
+        for open_window in windows
+        if await evaluate_window(
+            session, policy, open_window.series, open_window.window, open_window.counts
         )
+    ]
+    for open_window in healthy:
+        await record_healthy(session, policy.incidents, open_window.series, open_window.window)
 
 
 class Detector:
@@ -247,8 +284,10 @@ class Detector:
             await detection.add_late_to_window(series, window)
         else:
             update = await detection.add_to_window(series, window, sample)
-            if update.closed:
-                await evaluate_window(detection, self._policy, series, window, update.counts)
+            if update.closed and await evaluate_window(
+                session, self._policy, series, window, update.counts
+            ):
+                await record_healthy(session, self._policy.incidents, series, window)
         if not live:
             due = await detection.due_service_windows(series, clock - self._policy.lateness)
-            await close_windows(detection, self._policy, due, WindowClosure.SIMULATED_CLOCK)
+            await close_windows(session, self._policy, due, WindowClosure.SIMULATED_CLOCK)

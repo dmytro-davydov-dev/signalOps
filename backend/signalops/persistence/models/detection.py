@@ -7,7 +7,8 @@ their signal's retention (`ON DELETE CASCADE`); aggregates outlive them.
 
 `detection_triggers` records each time a rule crossed its threshold for a
 service's window. One row per (service, scope, rule, window); the incident
-writer (P05-T03) groups them.
+writer (P05-T03) groups them into incidents; `incident_id` is null only for
+triggers that predate it.
 
 `detection_clocks` holds each service's simulated clock in a replay scope: the
 latest `occurred_at` counted. A service's signals share a partition, so its
@@ -28,6 +29,7 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
     false,
+    text,
 )
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -81,6 +83,10 @@ class DetectionTrigger(Base):
         ForeignKeyConstraint(
             ["workspace_id", "service_id"], ["services.workspace_id", "services.id"]
         ),
+        ForeignKeyConstraint(
+            ["workspace_id", "replay_scope", "incident_id"],
+            ["incidents.workspace_id", "incidents.replay_scope", "incidents.id"],
+        ),
         # Also serves the cooldown lookup: one rule's recent windows for a service.
         UniqueConstraint(
             "service_id",
@@ -97,12 +103,18 @@ class DetectionTrigger(Base):
         CheckConstraint(nonempty("metric_name"), name="metric_name_nonempty"),
         CheckConstraint("window_end > window_start", name="window_order"),
         CheckConstraint("0 <= error_count AND error_count <= sample_count", name="counts_range"),
+        Index(
+            "ix_detection_triggers_incident_id",
+            "incident_id",
+            postgresql_where=text("incident_id IS NOT NULL"),
+        ),
     )
 
     id: Mapped[uuid.UUID] = uuid_pk()
     workspace_id: Mapped[uuid.UUID]
     service_id: Mapped[uuid.UUID]
     replay_scope: Mapped[str] = replay_scope()
+    incident_id: Mapped[uuid.UUID | None]
     rule_id: Mapped[str] = mapped_column(Text)
     rule_version: Mapped[int]
     metric_name: Mapped[str] = mapped_column(Text)

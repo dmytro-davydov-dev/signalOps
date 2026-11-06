@@ -31,6 +31,7 @@ from pydantic import Field, model_validator
 
 from signalops.contracts.adapters import MAX_DURATION_MS
 from signalops.contracts.common import ContractModel, Identifier, bounded_text
+from signalops.contracts.workflow import IncidentSeverity
 
 
 class DetectionMetric(StrEnum):
@@ -101,6 +102,8 @@ class DetectionRule(ContractModel):
     # A rule that fired for a service does not fire again for windows starting
     # within this many seconds of that window, in event time.
     cooldown_seconds: int = Field(ge=0, le=7 * 24 * 60 * 60)
+    # An incident takes the highest severity among the rules that breached in it.
+    severity: IncidentSeverity = IncidentSeverity.MEDIUM
 
     @model_validator(mode="after")
     def _check_kind(self) -> Self:
@@ -124,16 +127,17 @@ class DetectionRule(ContractModel):
 DEFAULT_RULES: Final[tuple[DetectionRule, ...]] = (
     DetectionRule(
         id="trace_error_rate",
-        version=1,
+        version=2,
         metric=DetectionMetric.TRACE,
         kind=RuleKind.ERROR_RATE,
         threshold=0.2,
         min_samples=15,
         cooldown_seconds=300,
+        severity=IncidentSeverity.HIGH,
     ),
     DetectionRule(
         id="trace_latency_p95",
-        version=1,
+        version=2,
         metric=DetectionMetric.TRACE,
         kind=RuleKind.LATENCY_QUANTILE,
         threshold=1_000,
@@ -144,7 +148,7 @@ DEFAULT_RULES: Final[tuple[DetectionRule, ...]] = (
     ),
     DetectionRule(
         id="log_error_rate",
-        version=1,
+        version=2,
         metric=DetectionMetric.LOG,
         kind=RuleKind.ERROR_RATE,
         threshold=0.5,

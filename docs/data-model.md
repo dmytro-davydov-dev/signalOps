@@ -54,6 +54,8 @@ erDiagram
 
 **Detector state (P05-T01, revision `0009_detection_state`):** the plan lists only `signal_aggregates`. `detection_samples` is the business key of a contribution, so a signal counts once per series even under another event ID, and it lets a window be recomputed from its members (P05-T02). Samples are derived from their signal and the only cascade from evidence; the aggregate keeps the counts after a signal expires. `detection_triggers` records each rule firing for the incident writer (P05-T03). Aggregate `metric_name` is `{metric}.{window_seconds}s`, and `histogram` maps bucket upper bounds in milliseconds (string keys) to counts. Semantics in [events.md](events.md#detector-detector-v1).
 
+**Incident correlation (P05-T03, revision `0011_incident_correlation`):** `detection_triggers.incident_id` links a trigger to its incident through the composite scope key; triggers from before this revision stay null. `incident_services.healthy_through` is the recovery input. `ix_incidents_fingerprint_last_seen_at` serves the correlation lookup. Semantics in [events.md](events.md#incidents) and ADR-017.
+
 **Window closure (P05-T02, revision `0010_window_closure`):** resolves open question Q7 with columns on the window row rather than a separate table, because a window has one closure. `sample_count`, `error_count`, `value_sum`, and `histogram` hold on-time samples only; `late_count` holds the rest. `detection_clocks` is durable replay state, since a Redis or in-memory clock would lose its position on restart. See ADR-016.
 
 **Identity:**
@@ -68,7 +70,7 @@ erDiagram
 | Table | Key fields and constraints |
 | --- | --- |
 | `incidents` | `workspace_id`, `replay_scope` (1–128 chars), `fingerprint`, `correlation_window_start`, `title`, `severity` (`low`, `medium`, `high`, `critical`), `status` (`open`, `resolved`), `detected_at`, `first_seen_at` ≤ `last_seen_at`, `resolved_at` (set exactly when resolved), `version` ≥ 1. `UNIQUE(workspace_id, replay_scope, fingerprint, correlation_window_start)` named `uq_incidents_correlation` |
-| `incident_services` | PK `(incident_id, service_id)`, `workspace_id`, `role` (`primary`, `affected`) |
+| `incident_services` | PK `(incident_id, service_id)`, `workspace_id`, `role` (`primary`, `affected`), `healthy_through` (end of the latest window that showed the service healthy) |
 | `incident_signals` | PK `(incident_id, signal_id)`, `workspace_id`, `replay_scope`, `relevance` in [0, 1] |
 | `investigations` | `workspace_id`, `incident_id`, `replay_scope`, `request_key` UNIQUE (1–256 chars), `status`, `workflow_version`, `evidence_cutoff_at`, `budget_microusd`, `reserved_microusd`, `spent_microusd` (all ≥ 0), `max_steps` > 0, `created_at` < `deadline_at`, `completed_at` (set exactly in terminal states), `diagnosis` JSONB object whose `status` matches the investigation status (see below), `version` ≥ 1 |
 | `jobs` | `investigation_id` UNIQUE, `status`, `available_at`, `0 ≤ attempts ≤ max_attempts` (default 3), `lease_owner` and `lease_until` (set together, exactly while `running`), `lease_generation` ≥ 0, `last_error` JSONB object |

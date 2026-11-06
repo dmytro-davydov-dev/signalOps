@@ -56,9 +56,8 @@ class WindowCloser:
         """Close one batch of the oldest due live windows; returns how many closed."""
         before = self._clock() - self._policy.lateness
         async with self._database.transaction() as session:
-            detection = DetectionRepository(session)
-            due = await detection.due_live_windows(before, CLOSE_BATCH_SIZE)
-            await close_windows(detection, self._policy, due, WindowClosure.WALL_CLOCK)
+            due = await DetectionRepository(session).due_live_windows(before, CLOSE_BATCH_SIZE)
+            await close_windows(session, self._policy, due, WindowClosure.WALL_CLOCK)
         if due:
             logger.info("detection windows closed", extra={"windows": len(due)})
         return len(due)
@@ -69,9 +68,8 @@ async def flush_replay(database: Database, scope: EvidenceScope, policy: Detecti
     closed = 0
     while True:
         async with database.transaction() as session:
-            detection = DetectionRepository(session)
-            windows = await detection.open_scope_windows(scope, CLOSE_BATCH_SIZE)
-            await close_windows(detection, policy, windows, WindowClosure.FINAL_FLUSH)
+            windows = await DetectionRepository(session).open_scope_windows(scope, CLOSE_BATCH_SIZE)
+            await close_windows(session, policy, windows, WindowClosure.FINAL_FLUSH)
         closed += len(windows)
         if len(windows) < CLOSE_BATCH_SIZE:
             logger.info(

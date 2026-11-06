@@ -11,16 +11,15 @@ import asyncio
 import json
 import random
 import uuid
-from collections.abc import AsyncIterator, Sequence
+from collections.abc import Sequence
 from datetime import UTC, datetime, timedelta
 
 import pytest
-from sqlalchemy import Engine, func, select
+from sqlalchemy import func, select
 
 from signalops.adapters.ingestion import IngestPolicy, IngestSource, ingest_batch
 from signalops.adapters.normalizer import NORMALIZER_CONSUMER_GROUP, Normalizer, signal_id_for
 from signalops.adapters.quality import TimingPolicy
-from signalops.config import Settings
 from signalops.contracts.common import ContractError, replay_scope_for
 from signalops.contracts.events import (
     EventEnvelope,
@@ -58,7 +57,7 @@ from signalops.persistence.models import (
 from signalops.persistence.repositories.detection import DetectionRepository
 from signalops.persistence.repositories.evidence import EvidenceRepository
 from signalops.persistence.repositories.scope import EvidenceScope
-from signalops.persistence.seed import DEMO_SERVICES, DEMO_SOURCES, DEMO_WORKSPACE_ID, seed_demo
+from signalops.persistence.seed import DEMO_SERVICES, DEMO_SOURCES, DEMO_WORKSPACE_ID
 from signalops.streaming.consumer import ProcessOutcome, TransactionalProcessor
 from signalops.streaming.producer import DeliveryResult, OutgoingMessage
 
@@ -73,34 +72,6 @@ T0 = datetime(2026, 10, 1, 12, 0, tzinfo=UTC)
 WINDOW = timedelta(seconds=60)
 DEADLINE = WINDOW + timedelta(seconds=30)
 LIVE = "live"
-
-
-@pytest.fixture(scope="module")
-def seeded(migrated: tuple[Settings, Engine]) -> tuple[Settings, Engine]:
-    async def seed() -> None:
-        engine = db.create_engine(migrated[0])
-        try:
-            await seed_demo(db.Database.from_engine(engine))
-        finally:
-            await engine.dispose()
-
-    asyncio.run(seed())
-    return migrated
-
-
-@pytest.fixture
-async def database(seeded: tuple[Settings, Engine]) -> AsyncIterator[db.Database]:
-    engine = db.create_engine(seeded[0])
-    try:
-        yield db.Database.from_engine(engine)
-    finally:
-        await engine.dispose()
-
-
-@pytest.fixture
-def run_id() -> uuid.UUID:
-    """A replay run per test: its scope isolates the test's windows."""
-    return uuid.uuid4()
 
 
 def _detector() -> Detector:
@@ -314,7 +285,7 @@ async def test_rule_fires_once_per_window_and_respects_cooldown(
     assert (first.sample_count, first.error_count) == (25, 13)
     assert first.observed == pytest.approx(13 / 25)
     assert first.threshold == pytest.approx(0.2)
-    assert first.rule_version == 1
+    assert first.rule_version == 2
     assert first.metric_name == "trace.60s"
     assert first.window_end == T0 + timedelta(seconds=60)
     # Aggregates still count every sample, including those of suppressed windows.
@@ -457,14 +428,21 @@ async def test_concurrent_writers_count_every_sample_once(
 
 async def _window_of(
     database: db.Database,
-    run_id: uuid.UUID,
+    run_id: uuid.UUID | None,
     start: datetime,
     errors: int,
     count: int = 20,
+    service_id: uuid.UUID = PAYMENT,
 ) -> list[EventEnvelope[EventPayload]]:
     """Signals spread over a window, the first `errors` of them failing."""
     return [
-        await _store(database, run_id, start + timedelta(seconds=i * 60 / count), error=i < errors)
+        await _store(
+            database,
+            run_id,
+            start + timedelta(seconds=i * 60 / count),
+            error=i < errors,
+            service_id=service_id,
+        )
         for i in range(count)
     ]
 
@@ -739,9 +717,8 @@ async def test_interrupted_closure_leaves_the_window_open(
 
     async def close_then_crash() -> None:
         async with database.transaction() as session:
-            detection = DetectionRepository(session)
-            windows = await detection.open_scope_windows(scope, 10)
-            await close_windows(detection, POLICY, windows, WindowClosure.FINAL_FLUSH)
+            windows = await DetectionRepository(session).open_scope_windows(scope, 10)
+            await close_windows(session, POLICY, windows, WindowClosure.FINAL_FLUSH)
             raise Crash
 
     with pytest.raises(Crash):
@@ -827,9 +804,10 @@ async def _normalized_demo(
     *,
     seed: int,
     run_id: uuid.UUID | None,
+    scenario: Scenario = Scenario.DOWNSTREAM_TIMEOUT,
 ) -> list[EventEnvelope[EventPayload]]:
-    """A fault dataset through ingestion and the normalizer, in occurred-at order."""
-    dataset = generate(Scenario.DOWNSTREAM_TIMEOUT, seed=seed, start=start, duration=duration)
+    """A generated dataset through ingestion and the normalizer, in occurred-at order."""
+    dataset = generate(scenario, seed=seed, start=start, duration=duration)
     raw: list[EventEnvelope[EventPayload]] = []
     for kind, source in SOURCE_BY_KIND.items():
         items = [r.to_json() for r in dataset.records if r.source_id == source.id]

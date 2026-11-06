@@ -1,5 +1,6 @@
-"""Detection rules, windows, and histogram arithmetic (P05-T01, P05-T02)."""
+"""Detection rules, windows, and histogram arithmetic (P05-T01, P05-T02, P05-T03)."""
 
+import uuid
 from datetime import UTC, datetime, timedelta
 
 import pytest
@@ -7,6 +8,9 @@ from pydantic import SecretStr, ValidationError
 
 from signalops.config import Settings
 from signalops.contracts.adapters import MAX_DURATION_MS
+from signalops.contracts.common import replay_run_id_of, replay_scope_for
+from signalops.contracts.workflow import IncidentSeverity
+from signalops.detection.incidents import higher_severity
 from signalops.detection.rules import (
     DEFAULT_RULES,
     DURATION_BUCKETS_MS,
@@ -179,3 +183,35 @@ def test_settings_default_and_bound_allowed_lateness() -> None:
     assert _settings(detection_allowed_lateness_seconds=0).detection_allowed_lateness_seconds == 0
     with pytest.raises(ValidationError):
         _settings(detection_allowed_lateness_seconds=-1)
+
+
+def test_rule_severity_defaults_to_medium_and_default_rules_rank_errors_higher() -> None:
+    assert ERROR_RATE.severity is IncidentSeverity.MEDIUM
+    assert {rule.id: rule.severity for rule in DEFAULT_RULES}["trace_error_rate"] is (
+        IncidentSeverity.HIGH
+    )
+
+
+def test_higher_severity_ranks_by_enum_order() -> None:
+    assert higher_severity(IncidentSeverity.MEDIUM, IncidentSeverity.HIGH) is IncidentSeverity.HIGH
+    assert higher_severity(IncidentSeverity.CRITICAL, IncidentSeverity.LOW) is (
+        IncidentSeverity.CRITICAL
+    )
+
+
+@pytest.mark.parametrize(
+    "overrides",
+    [
+        {"incident_recovery_seconds": 30},  # shorter than a window
+        {"incident_recovery_seconds": 900},  # longer than the gap
+    ],
+)
+def test_settings_keep_recovery_between_window_and_gap(overrides: dict[str, int]) -> None:
+    with pytest.raises(ValidationError, match="incident recovery"):
+        _settings(**overrides)
+
+
+def test_replay_run_id_inverts_replay_scope() -> None:
+    run_id = uuid.uuid4()
+    assert replay_run_id_of(replay_scope_for(run_id)) == run_id
+    assert replay_run_id_of(replay_scope_for(None)) is None

@@ -80,6 +80,10 @@ class Settings(BaseSettings):
     detection_allowed_lateness_seconds: int = Field(default=30, ge=0, le=60 * 60)
     # How often the closer looks for live windows past their deadline.
     detection_closer_interval_ms: int = Field(default=5000, ge=100, le=60_000)
+    # A breach joins an incident seen within this long; a later one starts a new incident.
+    incident_correlation_gap_seconds: int = Field(default=600, ge=10, le=24 * 60 * 60)
+    # Breach-free time, shown by a sufficient window of every service, that resolves an incident.
+    incident_recovery_seconds: int = Field(default=300, ge=10, le=24 * 60 * 60)
     # Payload keys whose values are replaced before publishing, at any depth.
     # Matched case-insensitively with "-" and " " read as "_". A source's
     # config may add more under "redact_fields".
@@ -133,6 +137,15 @@ class Settings(BaseSettings):
     @model_validator(mode="after")
     def _check_detection_rules(self) -> Self:
         check_unique_rule_ids(self.detection_rules)
+        return self
+
+    @model_validator(mode="after")
+    def _check_incident_timing(self) -> Self:
+        recovery = self.incident_recovery_seconds
+        if not self.detection_window_seconds <= recovery <= self.incident_correlation_gap_seconds:
+            raise ValueError(
+                "incident recovery must be between the detection window and the correlation gap"
+            )
         return self
 
     @model_validator(mode="after")

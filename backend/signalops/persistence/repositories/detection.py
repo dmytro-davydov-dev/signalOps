@@ -280,9 +280,11 @@ class DetectionRepository:
         )
         return found is not None
 
-    async def add_trigger(self, series: SeriesKey, window: Window, record: TriggerRecord) -> bool:
-        """Insert the trigger; False when the rule already fired for this window."""
-        inserted = await self._session.scalar(
+    async def add_trigger(
+        self, series: SeriesKey, window: Window, record: TriggerRecord
+    ) -> uuid.UUID | None:
+        """Insert the trigger; None when the rule already fired for this window."""
+        return await self._session.scalar(
             insert(DetectionTrigger)
             .values(
                 workspace_id=series.workspace_id,
@@ -301,4 +303,10 @@ class DetectionRepository:
             .on_conflict_do_nothing(constraint="uq_detection_triggers_window")
             .returning(DetectionTrigger.id)
         )
-        return inserted is not None
+
+    async def link_trigger(self, trigger_id: uuid.UUID, incident_id: uuid.UUID) -> None:
+        await self._session.execute(
+            update(DetectionTrigger)
+            .where(DetectionTrigger.id == trigger_id)
+            .values(incident_id=incident_id)
+        )

@@ -12,7 +12,7 @@ signalops/
     contracts/                Pydantic models and exported JSON Schemas
     adapters/                 Logs, traces, deployments
     streaming/                Kafka consumers and outbox publisher
-    detection/                Rules and durable window state
+    detection/                Rules, durable window state, and incident correlation
     agents/                   Workflow nodes and tools
     gateway/                  Model calls, rate limits, budgets
     persistence/              SQLAlchemy models and repositories
@@ -176,7 +176,9 @@ Backend processes read `SIGNALOPS_`-prefixed variables (`backend/signalops/confi
 | `SIGNALOPS_DETECTION_WINDOW_SECONDS` | `60` | Detector tumbling window length (10–3600); a new length starts new aggregate series |
 | `SIGNALOPS_DETECTION_ALLOWED_LATENESS_SECONDS` | `30` | How long after a window ends a sample still counts (0–3600); see [events.md](events.md#closure-and-lateness) |
 | `SIGNALOPS_DETECTION_CLOSER_INTERVAL_MS` | `5000` | Closer wait after a batch that was not full (100–60000) |
-| `SIGNALOPS_DETECTION_RULES` | three rules (`detection/rules.py`) | JSON array of `DetectionRule` objects replacing the defaults: `id`, `version`, `metric` (`trace`, `log`), `kind` (`error_rate`, `latency_quantile`), `threshold`, `quantile`, `min_samples`, `cooldown_seconds`. A latency threshold must be a histogram bucket bound. Bump `version` when a rule's settings change (see [events.md](events.md#detector-detector-v1)) |
+| `SIGNALOPS_INCIDENT_CORRELATION_GAP_SECONDS` | `600` | A breach joins an incident seen within this long; a later one starts a new incident (10–86400) |
+| `SIGNALOPS_INCIDENT_RECOVERY_SECONDS` | `300` | Breach-free time, shown by a sufficient window of every service, that resolves an incident; between the window length and the gap |
+| `SIGNALOPS_DETECTION_RULES` | three rules (`detection/rules.py`) | JSON array of `DetectionRule` objects replacing the defaults: `id`, `version`, `metric` (`trace`, `log`), `kind` (`error_rate`, `latency_quantile`), `threshold`, `quantile`, `min_samples`, `cooldown_seconds`, `severity` (default `medium`). A latency threshold must be a histogram bucket bound. Bump `version` when a rule's settings change (see [events.md](events.md#detector-detector-v1)) |
 | `SIGNALOPS_INGEST_REDACT_FIELDS` | password, token, authorization, cookie, … (`config.py`) | JSON list of payload keys whose values are replaced before publishing; a source's `config.redact_fields` adds more |
 | `SIGNALOPS_MODEL_PROVIDER` | `fake` | only `fake` is accepted until P07-T01; no model key is read |
 | `SIGNALOPS_MIGRATIONS_PATH` | `migrations` | Alembic environment, relative to the working directory |

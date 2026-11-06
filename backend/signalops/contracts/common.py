@@ -144,6 +144,13 @@ def replay_scope_for(replay_run_id: uuid.UUID | None) -> str:
     return LIVE_REPLAY_SCOPE if replay_run_id is None else f"replay:{replay_run_id}"
 
 
+def replay_run_id_of(replay_scope: str) -> uuid.UUID | None:
+    """The replay run a stored replay scope came from; the inverse of `replay_scope_for`."""
+    if replay_scope == LIVE_REPLAY_SCOPE:
+        return None
+    return uuid.UUID(replay_scope.removeprefix("replay:"))
+
+
 def require_unique(values: tuple[Any, ...], field: str) -> None:
     if len(set(values)) != len(values):
         raise ValueError(f"{field} contains duplicates")

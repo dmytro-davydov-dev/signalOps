@@ -157,6 +157,24 @@ Format: **Decision**, **Reason**, **Trade-off**, **Revisit when**.
 
 ---
 
+## ADR-017: Incidents correlate by environment within a session, and recovery needs evidence
+
+**Decision:**
+- The fingerprint is `env:{environment}` of the breaching service.
+- A correlation window is a session: a breach joins the fingerprint's latest incident when its window falls within `SIGNALOPS_INCIDENT_CORRELATION_GAP_SECONDS` (600) of the incident's seen range. `correlation_window_start` is the start of the window that opened the incident.
+- Every breached window reaches the incident, including those a rule's cooldown suppresses. Cooldown limits triggers, not incident lifetime. Only triggers cite evidence: up to 20 breaching samples per trigger, worst first, and at most the contract's 200 per incident.
+- A trigger, its incident change, and an `incident.changed` outbox row share one transaction. An advisory lock per replay scope serializes correlation decisions; it is taken before the per-rule lock.
+- A window shows its service healthy when a rule had `min_samples` and none breached. An incident resolves when every service has such a window ending at least `SIGNALOPS_INCIDENT_RECOVERY_SECONDS` (300) after `last_seen_at`. `resolved_at` is that window's end.
+- A breach after resolution and within the gap reopens the incident. A breach in a window older than the resolution extends it without reopening.
+- Severity is the highest among breached rules (`DetectionRule.severity`; rule versions bumped to 2). Every service with a breach is `primary`, matching the role's definition; `affected` waits for the graph.
+- `detected_at` is the wall clock live and the window's closure deadline in replay.
+
+**Reason:** One downstream fault fires rules on several dependent services, and dependencies are not known until P05-T04, so a per-service fingerprint would split the fault. Time buckets would split a fault crossing a boundary, and the unique key takes either. A suppressed breach must count, or a fault outlasting the gap would split into incidents and look recovered under cooldown. Absence of breaches also describes a dead service or a stopped detector, so recovery needs windows that could have fired. Event time gives replay and live the same answers; only the live `detected_at` reports when detection really happened, for latency measurement.
+**Trade-off:** Two unrelated faults in one environment inside the gap merge into one incident. Sessions depend on processing order when breaches are processed out of order by more than the gap, which can split what ordered input keeps together; shuffling inside the lateness bound does not (`test_demo_fault_is_one_incident_that_recovers_with_or_without_shuffling`, one seed). The title describes the first breach processed. A service that stops sending keeps its incident open until an operator resolves it (P05-T05). A healthy generator run that fires a trigger opens an incident: triggers were not made stricter here, so the 2 in 100 healthy runs measured in ADR-015/016 carry over.
+**Revisit when:** P05-T04 gives dependencies to split a fingerprint by connected component, unrelated concurrent faults merge in evaluation, or false positives call for requiring a breach to persist across windows.
+
+---
+
 ## Open questions
 
 | # | Question | Decide by |

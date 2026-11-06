@@ -11,9 +11,9 @@ from dataclasses import dataclass
 from sqlalchemy import ColumnElement, and_
 
 from signalops.contracts.common import LIVE_REPLAY_SCOPE
-from signalops.persistence.models import Deployment, Signal
+from signalops.persistence.models import Deployment, Incident, Signal
 
-ScopedModel = type[Signal] | type[Deployment]
+ScopedModel = type[Signal] | type[Deployment] | type[Incident]
 
 
 @dataclass(frozen=True)

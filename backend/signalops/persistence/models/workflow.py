@@ -146,6 +146,14 @@ class Incident(Base):
             "replay_scope",
             text("detected_at DESC"),
         ),
+        # The detector's lookup: the fingerprint's most recent incident.
+        Index(
+            "ix_incidents_fingerprint_last_seen_at",
+            "workspace_id",
+            "replay_scope",
+            "fingerprint",
+            text("last_seen_at DESC"),
+        ),
     )
 
     id: Mapped[uuid.UUID] = uuid_pk()
@@ -186,6 +194,8 @@ class IncidentService(Base):
     service_id: Mapped[uuid.UUID] = mapped_column(primary_key=True)
     workspace_id: Mapped[uuid.UUID]
     role: Mapped[str] = mapped_column(Text)
+    # End of the latest window that showed this service healthy; recovery compares it.
+    healthy_through: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class IncidentSignal(Base):

@@ -71,6 +71,8 @@ on ack: UPDATE published_at
 - Live mode closes windows by wall clock (`detector-closer`). Replay uses a durable per-service simulated clock plus a final flush (`detector-flush`).
 - Lateness comes from stored timestamps, so redelivery gives the same answer and consumer lag does not make a signal late.
 - Closure state is the window row: a restart finds open windows there, and a crash mid-closure rolls the batch back, leaving them open. Closers lock rows with `FOR UPDATE SKIP LOCKED`; a sample and a closure on one window serialize on its row, so neither misses the other.
+- A trigger, its incident change, and the `incident.changed` outbox row share one transaction, so a crash leaves all or none. A transaction-scoped advisory lock per replay scope makes each correlation decision alone, and `uq_incidents_correlation` backs it (ADR-017).
+- Recovery comes from closed windows, in event time. A service with no traffic shows no recovery, so detector or source downtime cannot resolve an incident.
 - After detector downtime the closer can close a window before its backlog arrives. The backlog re-evaluates it, but a trigger raised from partial counts is not withdrawn.
 
 ## Streaming stats

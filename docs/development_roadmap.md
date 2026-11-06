@@ -27,11 +27,11 @@ PostgreSQL owns evidence, workflow progress, budgets, and the initial knowledge 
 | --- | --- |
 | Active phase | Phase 5 Detection and knowledge graph; Phase 4 gate passed |
 | Active task | None |
-| Last completed task | P05-T02 |
-| Latest verified commit | `0ba41c6` (P05-T01); P05-T02 pending commit, validated against the working tree |
-| Validation evidence | P05-T02: `SIGNALOPS_INTEGRATION=1 uv run pytest` 706 passed; `alembic check` clean on the dev database at `0010_window_closure`. Compose run: real-time `downstream-timeout` demo (300 s, 514 records accepted) gave 7 wall-clock triggers on payment, checkout, and bank-gateway about 30 s after window end, 0 late samples; closer stopped with 6 windows open and restarted, all closed. Earlier evidence is in the work log |
+| Last completed task | P05-T03 |
+| Latest verified commit | `5886d2e` (P05-T02); P05-T03 pending commit, validated against the working tree |
+| Validation evidence | P05-T03: `SIGNALOPS_INTEGRATION=1 uv run pytest` 730 passed; `alembic check` clean on the dev database at `0011_incident_correlation`. Compose run: real-time `downstream-timeout` then `healthy` demo gave one live incident (`env:demo`, high) on checkout and payment, 4 linked triggers, 36 cited signals, 6 `incident.changed` events published, resolved at 17:08 from healthy windows, 0 late samples, 0 detector or closer errors. `bank-gateway` was not included: 19 samples per window against `min_samples` 20. Earlier evidence is in the work log |
 | Blockers | None recorded |
-| Next task | P05-T03 |
+| Next task | P05-T04 |
 
 ### Scope and release boundaries
 
@@ -487,11 +487,22 @@ Start the React shell in Phase 1 and add API-backed incident views in Phase 5; P
 
 ### P05-T03 Create correlated incidents atomically
 
-- [ ] Complete this task.
+- [x] Complete this task.
 
 **Implementation:** Define fingerprint and correlation-window keys, attach evidence and services, track recovery, and write incident events through the outbox. Initially allow manual investigation requests; add automatic requests after Phase 6.
 
 **Acceptance:** Repeated triggers in one correlation window produce one logical incident; genuine later incidents remain distinguishable.
+
+**Notes (2026-11-06):**
+- **Decision (ADR-017):** the fingerprint is `env:{environment}` and a correlation window is a session bounded by `SIGNALOPS_INCIDENT_CORRELATION_GAP_SECONDS` (600), not a time bucket. The catalog has no dependencies until P05-T04, and one fault fires on several services. Two unrelated faults in one environment inside the gap merge.
+- `detection/incidents.py` runs in the transaction that closes the window, so a trigger, its incident change, and the `incident.changed` outbox row commit together. An advisory lock per replay scope, taken before the per-rule lock, serializes correlation.
+- Every breach reaches the incident, including those a cooldown suppresses; otherwise a long fault would split and look recovered.
+- **Recovery:** an incident resolves when every service has a window that could have fired, did not, and ended at least `SIGNALOPS_INCIDENT_RECOVERY_SECONDS` (300) after `last_seen_at`. Silence is not recovery. A breach within the gap reopens the same incident.
+- Migration `0011_incident_correlation` adds `detection_triggers.incident_id`, `incident_services.healthy_through`, and the fingerprint index. The 14 earlier dev triggers stay unlinked; no incidents were backfilled. `DetectionRule` gains `severity`, and default rules are now version 2.
+- The P05-T02 follow-up is done: shuffled arrivals give the same incident as ordered ones (demo dataset, one seed).
+- **Known gap:** in the Compose run `bank-gateway`, the faulted dependency, had a clear latency fault but stayed out of the incident, because its windows held 19 samples against `min_samples` 20. This is the sensitivity limit in ADR-015, not a correlation fault. The threshold was not changed. P05-T04 can add such services as `affected`.
+- **Not re-measured:** triggers are unchanged, so the 2 in 100 healthy generator runs that fire latency (ADR-015) should each open an incident. The one healthy seed tested opened none.
+- Left: automatic investigation requests (after Phase 6); operator status updates and read APIs (P05-T05); a service that stops sending keeps its incident open until then; an incident from a partial window after detector downtime is not withdrawn; the Compose `demo` service still backfills and needs `--realtime` to open an incident; `.env` still lacks two demo ingestion tokens, so the Compose run used temporary tokens in one process, and services were restarted without them.
 
 ### P05-T04 Implement the temporal graph projection
 
@@ -1114,13 +1125,23 @@ Keep these outside the release critical path unless measurements justify promoti
 
 ### 2026-11-06 — P05-T02
 - Status: completed
-- Commit: pending commit; validated against the current working tree.
+- Commit: `5886d2e`
 - Implemented: closure-time rule evaluation (`detection/detector.py`); `WindowCloser` and `flush_replay` (`detection/closure.py`); `detector-closer` and `detector-flush` commands and Compose `detector-closer`; repository closure and clock operations; migration `0010_window_closure`; settings `SIGNALOPS_DETECTION_ALLOWED_LATENESS_SECONDS` and `SIGNALOPS_DETECTION_CLOSER_INTERVAL_MS`; `demo-post --realtime`; ADR-016; docs (architecture, data-model, decisions, development, events, reliability).
 - Validation commands and results: `uv run ruff check .`, `uv run ruff format --check .`, `uv run mypy` (110 files), `uv run signalops export-schemas --check` pass; `uv run pytest` 458 passed, 248 skipped; `SIGNALOPS_INTEGRATION=1 uv run pytest` 706 passed, including the downgrade/upgrade schema test; race, concurrency, and shuffle tests repeated 5 times, 6 passed each; `docker compose config --quiet` passes; `alembic check` reports no new operations. Dev migration closed 80 earlier windows (1031 samples) as `backfill` and left the 7 existing triggers unchanged. Frontend checks not run: no frontend change.
 - Evidence or artifact references: `tests/integration/test_detector.py`, `tests/unit/test_detection_rules.py`, `tests/unit/test_demo_poster.py`, `tests/unit/test_cli.py`. Compose run on 2026-11-06, seed 781637803: 7 triggers, `checkout` and `payment` error rates at 16:31, all three latency rules at 16:32, closed by wall clock with 0 late samples. Closer outage: 6 windows open while stopped, 0 after restart.
 - Deviations and reasons: rules moved from per-sample to closure evaluation (ADR-016). Acceptance was verified on triggers, since incidents arrive in P05-T03. The offline calibration used a scratch script over the generator and is not a repository check.
 - Remaining issues: see task notes. The Compose `demo` service still backfills, so it needs `--realtime` or replay ingestion before it can show an incident.
 - Next task: P05-T03.
+
+### 2026-11-06 — P05-T03
+- Status: completed
+- Commit: pending commit; validated against the current working tree.
+- Implemented: incident correlation, recovery, and events (`detection/incidents.py`, `persistence/repositories/incidents.py`); breach and recovery calls in `detection/detector.py`; migration `0011_incident_correlation`; settings `SIGNALOPS_INCIDENT_CORRELATION_GAP_SECONDS` and `SIGNALOPS_INCIDENT_RECOVERY_SECONDS`; `DetectionRule.severity`; `replay_run_id_of`; ADR-017; docs (architecture, data-model, decisions, development, events, reliability). Test fixtures `seeded`, `database`, and `run_id` moved to `tests/integration/conftest.py`.
+- Validation commands and results: `uv run ruff check .`, `uv run ruff format --check .`, `uv run mypy` (113 files), `uv run signalops export-schemas --check` pass; `uv run pytest` 463 passed, 267 skipped; `SIGNALOPS_INTEGRATION=1 uv run pytest` 730 passed, including the downgrade/upgrade schema test; the concurrency test repeated 5 times, 3 passed each; `docker compose config --quiet` passes; `alembic check` reports no new operations. Three deliberate mutations (no cooldown extension, no all-services recovery check, no scope lock) each failed the tests. Frontend checks not run: no frontend change.
+- Evidence or artifact references: `tests/integration/test_incidents.py`, `tests/unit/test_detection_rules.py`. Compose run on 2026-11-06, seeds 781637804 (fault, 300 s) and 781637805 (healthy, 420 s), both `--realtime`: incident `5a5b37da-6ac4-49f6-a8d5-cd75426975d5`, first seen 17:01, last seen 17:03, detected 17:02:34, resolved 17:08, version 6.
+- Deviations and reasons: the acceptance's "correlation window" is implemented as a session, because time buckets split a fault crossing a boundary (ADR-017). Automatic investigation requests stay out of scope, as the task states.
+- Remaining issues: see task notes, chiefly the `bank-gateway` sample-count miss.
+- Next task: P05-T04.
 
 ## Work log template
 

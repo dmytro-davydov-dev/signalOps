@@ -1,6 +1,7 @@
+import asyncio
 import os
 import uuid
-from collections.abc import Callable, Iterator
+from collections.abc import AsyncIterator, Callable, Iterator
 from contextlib import AbstractContextManager, contextmanager
 
 import pytest
@@ -8,7 +9,9 @@ from pydantic import SecretStr
 from sqlalchemy import Engine, create_engine, make_url, text
 
 from signalops.config import Settings
+from signalops.persistence import database as db
 from signalops.persistence.migrations import upgrade_to_head
+from signalops.persistence.seed import seed_demo
 from tests.integration.schema_support import World
 
 
@@ -90,3 +93,31 @@ def engine(migrated: tuple[Settings, Engine]) -> Engine:
 @pytest.fixture
 def world(engine: Engine) -> World:
     return World(engine)
+
+
+@pytest.fixture(scope="module")
+def seeded(migrated: tuple[Settings, Engine]) -> tuple[Settings, Engine]:
+    async def seed() -> None:
+        engine = db.create_engine(migrated[0])
+        try:
+            await seed_demo(db.Database.from_engine(engine))
+        finally:
+            await engine.dispose()
+
+    asyncio.run(seed())
+    return migrated
+
+
+@pytest.fixture
+async def database(seeded: tuple[Settings, Engine]) -> AsyncIterator[db.Database]:
+    engine = db.create_engine(seeded[0])
+    try:
+        yield db.Database.from_engine(engine)
+    finally:
+        await engine.dispose()
+
+
+@pytest.fixture
+def run_id() -> uuid.UUID:
+    """A replay run per test: its scope isolates the test's windows."""
+    return uuid.uuid4()
