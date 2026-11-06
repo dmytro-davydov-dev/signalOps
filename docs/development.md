@@ -50,6 +50,7 @@ uv run signalops export-schemas --check  # exit 1 if they are out of date (pytes
 uv run signalops seed                    # create or verify the demo catalog (needs SIGNALOPS_DATABASE_URL)
 uv run signalops demo-generate downstream-timeout --out signals.jsonl --labels labels.json  # synthetic dataset
 uv run signalops normalizer              # normalize signals.raw.v1 into evidence until SIGINT/SIGTERM
+uv run signalops detector                # update detection windows from signals.normalized.v1 until SIGINT/SIGTERM
 uv run signalops outbox-publisher        # publish pending outbox rows until SIGINT/SIGTERM
 uv run signalops redrive-record --topic T --partition P --offset O  # republish one quarantined record
 uv run signalops redrive-outbox EVENT_ID # make one quarantined outbox row due again
@@ -170,6 +171,8 @@ Backend processes read `SIGNALOPS_`-prefixed variables (`backend/signalops/confi
 | `SIGNALOPS_INGEST_MAX_REQUEST_BYTES` | `4194304` | Ingestion request body limit (`413` above it) |
 | `SIGNALOPS_INGEST_MAX_FUTURE_SECONDS` / `SIGNALOPS_INGEST_MAX_AGE_SECONDS` | `86400` / `2592000` | Records with `occurred_at` further ahead of or behind receipt are rejected `timestamp_out_of_range` |
 | `SIGNALOPS_NORMALIZER_MAX_CLOCK_SKEW_SECONDS` / `SIGNALOPS_NORMALIZER_LATE_ARRIVAL_SECONDS` | `300` / `900` | Normalizer flags `clock_skew` (degraded) and `late_arrival` (noted) on live signals (see [events.md](events.md#normalizer-normalizer-v1)) |
+| `SIGNALOPS_DETECTION_WINDOW_SECONDS` | `60` | Detector tumbling window length (10–3600); a new length starts new aggregate series |
+| `SIGNALOPS_DETECTION_RULES` | three rules (`detection/rules.py`) | JSON array of `DetectionRule` objects replacing the defaults: `id`, `version`, `metric` (`trace`, `log`), `kind` (`error_rate`, `latency_quantile`), `threshold`, `quantile`, `min_samples`, `cooldown_seconds`. A latency threshold must be a histogram bucket bound. Bump `version` when a rule's settings change (see [events.md](events.md#detector-detector-v1)) |
 | `SIGNALOPS_INGEST_REDACT_FIELDS` | password, token, authorization, cookie, … (`config.py`) | JSON list of payload keys whose values are replaced before publishing; a source's `config.redact_fields` adds more |
 | `SIGNALOPS_MODEL_PROVIDER` | `fake` | only `fake` is accepted until P07-T01; no model key is read |
 | `SIGNALOPS_MIGRATIONS_PATH` | `migrations` | Alembic environment, relative to the working directory |

@@ -1,0 +1,163 @@
+"""Detector window state: samples, aggregates, and rule triggers.
+
+All writes run in the detector's consumer transaction. Aggregate updates are
+single upserts that add to the stored counts, so concurrent writers to one
+window serialize on its row and never lose an increment.
+"""
+
+import uuid
+from dataclasses import dataclass
+from datetime import datetime, timedelta
+from typing import Any
+
+from sqlalchemy import BigInteger, ColumnElement, Text, cast, func, select
+from sqlalchemy.dialects.postgresql import insert
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from signalops.detection.rules import Window, WindowCounts
+from signalops.persistence.models import DetectionSample, DetectionTrigger, SignalAggregate
+
+
+@dataclass(frozen=True)
+class SeriesKey:
+    """One service's aggregate series in one replay scope."""
+
+    workspace_id: uuid.UUID
+    service_id: uuid.UUID
+    replay_scope: str
+    metric_name: str
+
+
+@dataclass(frozen=True)
+class Sample:
+    signal_id: uuid.UUID
+    is_error: bool
+    # A duration in milliseconds and its histogram bucket; None for metrics without values.
+    value: float | None = None
+    bucket: str | None = None
+
+
+@dataclass(frozen=True)
+class TriggerRecord:
+    rule_id: str
+    rule_version: int
+    observed: float
+    threshold: float
+    counts: WindowCounts
+
+
+class DetectionRepository:
+    def __init__(self, session: AsyncSession) -> None:
+        self._session = session
+
+    async def record_sample(self, series: SeriesKey, window: Window, sample: Sample) -> bool:
+        """Insert the sample; False when the series already counts this signal."""
+        inserted = await self._session.scalar(
+            insert(DetectionSample)
+            .values(
+                signal_id=sample.signal_id,
+                metric_name=series.metric_name,
+                workspace_id=series.workspace_id,
+                service_id=series.service_id,
+                replay_scope=series.replay_scope,
+                window_start=window.start,
+                is_error=sample.is_error,
+                value=sample.value,
+            )
+            .on_conflict_do_nothing()
+            .returning(DetectionSample.signal_id)
+        )
+        return inserted is not None
+
+    async def add_to_window(
+        self, series: SeriesKey, window: Window, sample: Sample
+    ) -> WindowCounts:
+        """Add one sample to its window's aggregate and return the updated counts."""
+        histogram = {sample.bucket: 1} if sample.bucket is not None else {}
+        statement = insert(SignalAggregate).values(
+            workspace_id=series.workspace_id,
+            service_id=series.service_id,
+            replay_scope=series.replay_scope,
+            metric_name=series.metric_name,
+            window_start=window.start,
+            window_end=window.end,
+            sample_count=1,
+            error_count=int(sample.is_error),
+            value_sum=sample.value or 0.0,
+            histogram=histogram,
+        )
+        updates: dict[str, ColumnElement[Any]] = {
+            "sample_count": SignalAggregate.sample_count + 1,
+            "error_count": SignalAggregate.error_count + statement.excluded.error_count,
+            "value_sum": SignalAggregate.value_sum + statement.excluded.value_sum,
+        }
+        if sample.bucket is not None:
+            # `||` replaces the bucket's key with its incremented count.
+            stored = SignalAggregate.histogram
+            current = func.coalesce(stored[sample.bucket].astext.cast(BigInteger), 0)
+            updates["histogram"] = stored.op("||")(
+                func.jsonb_build_object(cast(sample.bucket, Text), current + 1)
+            )
+        row = (
+            await self._session.execute(
+                statement.on_conflict_do_update(
+                    constraint="uq_signal_aggregates_window", set_=updates
+                ).returning(
+                    SignalAggregate.sample_count,
+                    SignalAggregate.error_count,
+                    SignalAggregate.histogram,
+                )
+            )
+        ).one()
+        return WindowCounts(
+            sample_count=row.sample_count,
+            error_count=row.error_count,
+            histogram={str(key): int(count) for key, count in row.histogram.items()},
+        )
+
+    async def lock_rule(self, series: SeriesKey, rule_id: str) -> None:
+        """Serialize trigger decisions for one rule and service until the transaction ends."""
+        key = f"detection:{series.service_id}:{series.replay_scope}:{rule_id}"
+        await self._session.execute(
+            select(func.pg_advisory_xact_lock(func.hashtextextended(key, 0)))
+        )
+
+    async def triggered_near(
+        self, series: SeriesKey, rule_id: str, window_start: datetime, cooldown: timedelta
+    ) -> bool:
+        """Whether the rule fired for a window starting within `cooldown` of `window_start`."""
+        found = await self._session.scalar(
+            select(DetectionTrigger.id)
+            .where(
+                DetectionTrigger.service_id == series.service_id,
+                DetectionTrigger.replay_scope == series.replay_scope,
+                DetectionTrigger.rule_id == rule_id,
+                DetectionTrigger.window_start >= window_start - cooldown,
+                DetectionTrigger.window_start <= window_start + cooldown,
+            )
+            .limit(1)
+        )
+        return found is not None
+
+    async def add_trigger(self, series: SeriesKey, window: Window, record: TriggerRecord) -> bool:
+        """Insert the trigger; False when the rule already fired for this window."""
+        inserted = await self._session.scalar(
+            insert(DetectionTrigger)
+            .values(
+                workspace_id=series.workspace_id,
+                service_id=series.service_id,
+                replay_scope=series.replay_scope,
+                rule_id=record.rule_id,
+                rule_version=record.rule_version,
+                metric_name=series.metric_name,
+                window_start=window.start,
+                window_end=window.end,
+                observed=record.observed,
+                threshold=record.threshold,
+                sample_count=record.counts.sample_count,
+                error_count=record.counts.error_count,
+            )
+            .on_conflict_do_nothing(constraint="uq_detection_triggers_window")
+            .returning(DetectionTrigger.id)
+        )
+        return inserted is not None

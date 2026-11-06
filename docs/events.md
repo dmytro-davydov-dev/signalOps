@@ -118,6 +118,25 @@ A **malformed** record is stored, not dropped: kind from the source, severity `i
 
 IDs are derived, so reprocessing yields the same rows: signal ID = UUIDv5(source, replay scope, `source_event_id`); deployment and `signal.normalized` event IDs derive from the signal ID. `UNIQUE(source_id, replay_scope, source_event_id)` backs the receipt: a record already stored (for example by another consumer group) stages no second deployment or event. Only envelope faults raise `ContractError` and go to `processing.failed.v1`: a source outside the envelope's workspace, or a `source_kind` that disagrees with the source's kind.
 
+### Detector (`detector-v1`)
+
+`signalops detector` consumes `signals.normalized.v1` with `TransactionalProcessor` and `detection.detector.Detector` ([ADR-015](decisions.md#adr-015-detection-windows-count-accepted-samples-once-and-record-rule-triggers)). It counts a signal when the event and the stored row agree that it is a `log` or `trace`, `accepted`, with a resolved service; everything else is acknowledged without effect. In one transaction per event it writes the receipt, loads the signal by ID within the envelope's workspace and replay scope, inserts a `detection_samples` row, adds the sample to its `signal_aggregates` window, and evaluates that metric's rules, inserting a `detection_triggers` row when one fires. It emits no events yet; incidents come from triggers in P05-T03.
+
+| Metric | Sample | Error | Value |
+| --- | --- | --- | --- |
+| `trace` | one per trace summary | `record.status` is `error` | `record.duration_ms`, also counted in the histogram |
+| `log` | one per log | severity `error` or `critical` | none |
+
+Windows are epoch-aligned and `SIGNALOPS_DETECTION_WINDOW_SECONDS` (60) long; the series name carries the length (`trace.60s`). Default rules (`detection/rules.py`, replaced as a whole by `SIGNALOPS_DETECTION_RULES`):
+
+| Rule | Fires when | `min_samples` | Cooldown |
+| --- | --- | --- | --- |
+| `trace_error_rate` v1 | trace error rate ≥ 0.2 | 15 | 300 s |
+| `trace_latency_p95` v1 | trace p95 > 1000 ms | 20 | 300 s |
+| `log_error_rate` v1 | log error rate ≥ 0.5 | 10 | 300 s |
+
+Rules are evaluated after each sample against the updated window, so a rule can fire before its window ends; closure and the 30-second lateness rule are P05-T02. A signal ID that names no signal in the envelope's workspace and scope, or a trace without `record.duration_ms`/`record.status`, is a `ContractError` and goes to `processing.failed.v1`.
+
 ## Decoding
 
 `decode_event(bytes)` validates a message value and raises `ContractError` with one of these categories. Error details list field locations and messages only, never input values, so they can go on `processing.failed.v1`.

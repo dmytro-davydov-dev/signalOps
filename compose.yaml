@@ -137,6 +137,17 @@ services:
       migrate: { condition: service_completed_successfully }
       init-topics: { condition: service_completed_successfully }
 
+  # Scales by signals.normalized.v1 partitions (3); members share the detector-v1 group.
+  detector:
+    <<: *backend
+    command: ["detector"]
+    restart: unless-stopped
+    # Longer than SIGNALOPS_KAFKA_DELIVERY_TIMEOUT_MS so a quarantine publish can finish.
+    stop_grace_period: 40s
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+      init-topics: { condition: service_completed_successfully }
+
   # One instance only: a single publisher keeps each aggregate's events in order.
   outbox-publisher:
     <<: *backend

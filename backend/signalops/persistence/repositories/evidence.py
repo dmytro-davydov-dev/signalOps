@@ -94,6 +94,11 @@ class EvidenceRepository:
         )
         await self._session.flush()
 
+    async def get_signal(self, scope: EvidenceScope, signal_id: uuid.UUID) -> Signal | None:
+        return await self._session.scalar(
+            select(Signal).where(scope.clause(Signal), Signal.id == signal_id)
+        )
+
     async def list_signals(
         self,
         scope: EvidenceScope,

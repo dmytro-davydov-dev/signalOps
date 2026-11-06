@@ -7,6 +7,8 @@ from typing import Literal, Self
 from pydantic import Field, PostgresDsn, RedisDsn, SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from signalops.detection.rules import DEFAULT_RULES, DetectionRule, check_unique_rule_ids
+
 
 class Settings(BaseSettings):
     """Settings shared by the API and worker processes.
@@ -70,6 +72,10 @@ class Settings(BaseSettings):
     # late arrival (noted, still accepted).
     normalizer_max_clock_skew_seconds: int = Field(default=300, ge=0, le=24 * 60 * 60)
     normalizer_late_arrival_seconds: int = Field(default=15 * 60, ge=1, le=30 * 24 * 60 * 60)
+    # Detector tumbling window length, and its rules as a JSON array of
+    # `DetectionRule` objects (replaces the defaults entirely).
+    detection_window_seconds: int = Field(default=60, ge=10, le=60 * 60)
+    detection_rules: tuple[DetectionRule, ...] = Field(default=DEFAULT_RULES, max_length=64)
     # Payload keys whose values are replaced before publishing, at any depth.
     # Matched case-insensitively with "-" and " " read as "_". A source's
     # config may add more under "redact_fields".
@@ -118,6 +124,11 @@ class Settings(BaseSettings):
             raise ValueError(
                 "query_default_window_seconds must not exceed query_max_window_seconds"
             )
+        return self
+
+    @model_validator(mode="after")
+    def _check_detection_rules(self) -> Self:
+        check_unique_rule_ids(self.detection_rules)
         return self
 
     @model_validator(mode="after")

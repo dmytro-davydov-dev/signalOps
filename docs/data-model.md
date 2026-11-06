@@ -44,10 +44,14 @@ erDiagram
 | `signals` | `workspace_id`, `source_id`, nullable `service_id`, `source_event_id` (1–512 chars), `kind` (`log`, `trace`, `deployment`), `occurred_at`, `ingested_at`, `severity` (`debug`, `info`, `warning`, `error`, `critical`), `message`, `trace_id`, `attributes` (object), `quality_status` (`accepted`, `degraded`, `quarantined`), `quality_flags` (array; flag effects in [events.md](events.md#normalizer-normalizer-v1)), `replay_scope` (1–128 chars, default `'live'`). `UNIQUE(source_id, replay_scope, source_event_id)` |
 | `deployments` | `workspace_id`, `service_id`, `signal_id` UNIQUE, `replay_scope`, `revision`, `deployed_at`, `attributes`. `(workspace_id, replay_scope, service_id, signal_id)` must match the cited signal |
 | `signal_aggregates` | `workspace_id`, `service_id`, `replay_scope`, `metric_name`, `window_start`, `window_end` (> start), `sample_count`, `error_count` (`0 ≤ error_count ≤ sample_count`), `value_sum`, `histogram`. `UNIQUE(service_id, replay_scope, metric_name, window_start)` |
+| `detection_samples` | PK `(signal_id, metric_name)`; `signal_id` references `signals` `ON DELETE CASCADE`; `workspace_id`, `service_id`, `replay_scope`, `window_start`, `is_error`, `value` (NULL or ≥ 0), `recorded_at` |
+| `detection_triggers` | `workspace_id`, `service_id`, `replay_scope` (1–128 chars), `rule_id`, `rule_version` ≥ 1, `metric_name`, `window_start`, `window_end` (> start), `observed`, `threshold`, `sample_count`, `error_count` (`0 ≤ error_count ≤ sample_count`), `triggered_at`. `UNIQUE(service_id, replay_scope, rule_id, window_start)` named `uq_detection_triggers_window` |
 
 **Workspace safety:** each workspace-owned reference is a composite foreign key that includes `workspace_id` (targets expose `UNIQUE(workspace_id, id)`), so a signal cannot cite a source or service from another workspace. A NULL `service_id` skips the service check. Enumerations live in `signalops.contracts.evidence`; adding a value requires a migration that widens the CHECK constraint. Foreign keys use the default `RESTRICT` behaviour: evidence is never cascade-deleted.
 
 **Deviations from the plan (P02-T01):** `deployments` gains `replay_scope` so deployment queries can be scoped without joining `signals`, and `deployments` and `signal_aggregates` gain `workspace_id` for the composite keys. The aggregate unique constraint is named `uq_signal_aggregates_window` because the conventional name exceeds PostgreSQL's 63-character limit.
+
+**Detector state (P05-T01, revision `0009_detection_state`):** the plan lists only `signal_aggregates`. `detection_samples` is the business key of a contribution, so a signal counts once per series even under another event ID, and it lets a window be recomputed from its members (P05-T02). Samples are derived from their signal and the only cascade from evidence; the aggregate keeps the counts after a signal expires. `detection_triggers` records each rule firing for the incident writer (P05-T03). Aggregate `metric_name` is `{metric}.{window_seconds}s`, and `histogram` maps bucket upper bounds in milliseconds (string keys) to counts. Semantics in [events.md](events.md#detector-detector-v1).
 
 **Identity:**
 
@@ -141,6 +145,7 @@ The investigation runtime's database role has **no access** to evaluation ground
 - A partial index on `outbox_events(aggregate_id, aggregate_version)` `WHERE published_at IS NULL`, for holding back an aggregate behind a deferred or quarantined row.
 - `graph_edges(from_node_id, relation)`, `graph_edges(to_node_id, relation)`.
 - Foreign-key support (revision `0006_baseline_indexes`): `incident_services(service_id)`, `incident_signals(signal_id)`, partial indexes on `graph_nodes(service_id)`, `(deployment_id)`, `(incident_id)` and `graph_edges(provenance_signal_id)` where not null. Rule, enforced by `test_every_foreign_key_has_a_supporting_index`: every foreign key to a parent other than the workspace has an index led by one of its identifying (non-`workspace_id`, non-`replay_scope`) columns, so parent-side key checks and reverse lookups avoid sequential scans. Workspace-only references are exempt; workspaces are not deleted row by row.
+- `detection_samples(service_id, replay_scope, metric_name, window_start)` for recomputing a window; the trigger unique constraint serves the cooldown lookup.
 - JSONB indexes are added only after query profiling.
 
 ## Retention (initial local targets)
@@ -150,7 +155,8 @@ The investigation runtime's database role has **no access** to evaluation ground
 | Kafka raw events | 3 days |
 | Kafka normalized events | 7 days |
 | PostgreSQL detailed signals | 7 days |
-| Aggregates | 30 days |
+| Aggregates and detection triggers | 30 days |
+| Detection samples | With their signal (cascade) |
 | Consumer receipts | At least the replay horizon |
 
 Before deleting evidence that a diagnosis cites, keep its redacted excerpt, content hash, and provenance, or mark it expired in the UI. Date partitioning, object storage, or a telemetry analytics database come only after a benchmark shows PostgreSQL falling short.

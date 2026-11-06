@@ -3,8 +3,15 @@
 import argparse
 import sys
 import uuid
+from collections.abc import Callable
+from typing import TYPE_CHECKING
 
 from signalops import __version__
+
+if TYPE_CHECKING:
+    from signalops.config import Settings
+    from signalops.contracts.events import EventType
+    from signalops.streaming.consumer import EventHandler
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -19,6 +26,9 @@ def build_parser() -> argparse.ArgumentParser:
     )
     commands.add_parser(
         "normalizer", help="normalize signals.raw.v1 records into evidence until stopped"
+    )
+    commands.add_parser(
+        "detector", help="update detection windows from signals.normalized.v1 until stopped"
     )
     commands.add_parser(
         "seed", help="create or verify the deterministic demo workspace catalog, then exit"
@@ -200,14 +210,16 @@ def run_outbox_publisher() -> int:
     return 0
 
 
-def run_normalizer() -> int:
+def _run_consumer(
+    consumer_group: str,
+    event_type: "EventType",
+    handler: Callable[["Settings"], "EventHandler"],
+) -> int:
+    """Consume one event type with a transactional handler until SIGINT or SIGTERM."""
     import asyncio
     import signal
 
-    from signalops.adapters.normalizer import NORMALIZER_CONSUMER_GROUP, Normalizer
-    from signalops.adapters.quality import TimingPolicy
     from signalops.config import get_settings
-    from signalops.contracts.events import EventType
     from signalops.logs import configure_logging
     from signalops.persistence.database import Database, create_engine
     from signalops.streaming.consumer import ConsumerRunner, TransactionalProcessor, create_consumer
@@ -217,37 +229,55 @@ def run_normalizer() -> int:
 
     settings = get_settings()
     configure_logging(settings.log_level)
+    client_id = f"signalops-{consumer_group.removesuffix('-v1')}"
 
-    async def normalize() -> None:
+    async def consume() -> None:
         stop = asyncio.Event()
         loop = asyncio.get_running_loop()
         for signum in (signal.SIGINT, signal.SIGTERM):
             loop.add_signal_handler(signum, stop.set)
         engine = create_engine(settings)
-        failures = EventProducer(settings, client_id="signalops-normalizer-failures")
+        failures = EventProducer(settings, client_id=f"{client_id}-failures")
         runner = ConsumerRunner(
-            create_consumer(
-                settings, group_id=NORMALIZER_CONSUMER_GROUP, client_id="signalops-normalizer"
-            ),
-            TransactionalProcessor(
-                Database.from_engine(engine),
-                NORMALIZER_CONSUMER_GROUP,
-                Normalizer(TimingPolicy.from_settings(settings)),
-            ),
-            consumer_group=NORMALIZER_CONSUMER_GROUP,
+            create_consumer(settings, group_id=consumer_group, client_id=client_id),
+            TransactionalProcessor(Database.from_engine(engine), consumer_group, handler(settings)),
+            consumer_group=consumer_group,
             failure_publisher=failures,
             retry_policy=RetryPolicy.from_settings(settings),
             stats_interval_seconds=settings.streaming_stats_interval_ms / 1000,
         )
-        runner.subscribe([TOPIC_BY_EVENT_TYPE[EventType.SIGNAL_RAW]])
+        runner.subscribe([TOPIC_BY_EVENT_TYPE[event_type]])
         try:
             await runner.run(stop)
         finally:
             failures.close()
             await engine.dispose()
 
-    asyncio.run(normalize())
+    asyncio.run(consume())
     return 0
+
+
+def run_normalizer() -> int:
+    from signalops.adapters.normalizer import NORMALIZER_CONSUMER_GROUP, Normalizer
+    from signalops.adapters.quality import TimingPolicy
+    from signalops.contracts.events import EventType
+
+    return _run_consumer(
+        NORMALIZER_CONSUMER_GROUP,
+        EventType.SIGNAL_RAW,
+        lambda settings: Normalizer(TimingPolicy.from_settings(settings)),
+    )
+
+
+def run_detector() -> int:
+    from signalops.contracts.events import EventType
+    from signalops.detection.detector import DETECTOR_CONSUMER_GROUP, DetectionPolicy, Detector
+
+    return _run_consumer(
+        DETECTOR_CONSUMER_GROUP,
+        EventType.SIGNAL_NORMALIZED,
+        lambda settings: Detector(DetectionPolicy.from_settings(settings)),
+    )
 
 
 def run_redrive_record(args: argparse.Namespace) -> int:
@@ -423,6 +453,7 @@ COMMANDS = {
     "seed": run_seed,
     "outbox-publisher": run_outbox_publisher,
     "normalizer": run_normalizer,
+    "detector": run_detector,
 }
 
 

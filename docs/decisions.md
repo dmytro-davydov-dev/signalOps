@@ -124,6 +124,22 @@ Format: **Decision**, **Reason**, **Trade-off**, **Revisit when**.
 
 ---
 
+## ADR-015: Detection windows count accepted samples once and record rule triggers
+
+**Decision:**
+- The detector counts `log` and `trace` signals that are `accepted` and have a resolved service. Degraded signals with a service carry `clock_skew`, so their `occurred_at` cannot place them in a window.
+- Each counted signal inserts a `detection_samples` row keyed by (signal, series) before its aggregate changes; a conflict means it is already counted. Aggregates are updated by additive upserts.
+- Windows are epoch-aligned tumbling windows; the series name includes the window length.
+- Rules (`DetectionRule`) are versioned settings: metric, kind, threshold, `min_samples`, cooldown. A rule fires only with at least `min_samples` samples. Latency thresholds must be histogram bucket bounds, and a latency rule fires when fewer than ceil(q × n) samples are at or below the threshold, which is exact for such thresholds.
+- A firing inserts a `detection_triggers` row, unique per (service, scope, rule, window). The rule does not fire again for that service for windows starting within `cooldown_seconds`, compared in event time.
+- Rules are evaluated after every sample against the updated window.
+
+**Reason:** The consumer receipt covers redelivery of one event, but a contribution's identity is the signal; the sample key holds even if the same signal arrives under another event ID, and keeps window membership for recomputation under late data. Reading a quantile as its bucket's upper bound would count a 625 ms request as "at least 1000 ms"; testing counts against a bound avoids that. Triggers separate "a rule crossed its threshold" from "an incident exists", which P05-T03 decides with fingerprints and correlation windows. Event-time cooldowns make replay deterministic.
+**Trade-off:** One extra row per counted signal. Evaluating partial windows detects a fault sooner, but the first `min_samples` samples of a window decide alone. Measured offline with the demo generator (100 healthy and 100 fault runs of 10 minutes, default rules, 60 s windows): 2 healthy runs gave latency triggers where two isolated gateway timeouts shared one 20-sample window, and 1 fault run had no latency trigger for `bank-gateway`. A latency `min_samples` of 30 removed the false triggers but missed every latency fault at demo traffic (about 20 traces per service per minute). These are generator measurements, not production rates.
+**Revisit when:** P05-T02 adds closure (evaluate at closure, or require persistence across windows), traffic per window grows enough to raise `min_samples`, a metric needs a non-bucket latency threshold, or a fourth adapter adds a metric kind.
+
+---
+
 ## Open questions
 
 | # | Question | Decide by |

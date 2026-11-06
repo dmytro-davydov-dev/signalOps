@@ -27,11 +27,11 @@ PostgreSQL owns evidence, workflow progress, budgets, and the initial knowledge 
 | --- | --- |
 | Active phase | Phase 5 Detection and knowledge graph; Phase 4 gate passed |
 | Active task | None |
-| Last completed task | P04-T05 |
-| Latest verified commit | `c23b1b4` (P04-T04); P04-T05 pending commit, validated against the working tree |
-| Validation evidence | P04-T05: dev database migrated to `0008_evidence_query_indexes`, `alembic check` clean. API rebuilt with temporary shell-only operator and source tokens: no token and the source token on `GET /v1/signals` → 401, the operator token on `POST /v1/ingest` → 401; `GET /v1/signals` paged all 1036 dev signals in 6 pages of ≤200 with 1036 unique IDs; a trace lookup returned 5 log/trace signals, the same trace in another replay scope 404; `limit=201` and an 8-day window 422; a cursor reused with another filter 400; `GET /v1/sources/quality` gave per-source totals with statuses and flags. API restarted without the tokens. `SIGNALOPS_INTEGRATION=1 uv run pytest` 657 passed. Earlier evidence is in the work log |
+| Last completed task | P05-T01 |
+| Latest verified commit | `7baea33` (P04-T05); P05-T01 pending commit, validated against the working tree |
+| Validation evidence | P05-T01: dev database migrated to `0009_detection_state`, `alembic check` clean; 0009 downgrade and re-upgrade on a scratch database. Compose `detector` started on the rebuilt image and consumed the 1036 existing `signals.normalized.v1` events with no errors: 1036 `detector-v1` receipts, 1031 countable signals → 1031 samples (one per signal) and aggregate totals of 796 trace + 235 log samples; 7 triggers, all in the 15:41–15:42 windows where the dev data's upstream timeouts cluster (payment and checkout error rate and p95, bank-gateway p95, payment and checkout log error rate). `SIGNALOPS_INTEGRATION=1 uv run pytest` 684 passed. Earlier evidence is in the work log |
 | Blockers | None recorded |
-| Next task | P05-T01 |
+| Next task | P05-T02 |
 
 ### Scope and release boundaries
 
@@ -451,11 +451,20 @@ Start the React shell in Phase 1 and add API-backed incident views in Phase 5; P
 
 ### P05-T01 Implement durable detection windows
 
-- [ ] Complete this task.
+- [x] Complete this task.
 
 **Implementation:** Persist sample/error counts and latency histograms per service, replay scope, rule, and time window. Deduplicate before aggregate updates. Configure minimum samples, thresholds, cooldowns, and rule versions.
 
 **Acceptance:** Duplicate delivery does not inflate error rate; low-sample windows do not trigger misleading incidents.
+
+**Notes (2026-10-30):**
+- `signalops detector` (Compose `detector`, group `detector-v1`) consumes `signals.normalized.v1`; the handler is `detection/detector.py` and the pure rules, windows, and histogram are in `detection/rules.py`. It counts `log`/`trace` signals that are `accepted` with a resolved service, loading the stored row in the envelope's workspace and scope. Details in docs/events.md#detector-detector-v1 and ADR-015.
+- **Decision (ADR-015), deviation from the plan's tables:** migration `0009_detection_state` adds `detection_samples` (PK signal + series, cascades with its signal) as the dedupe key before an aggregate changes, and `detection_triggers` (unique per service, scope, rule, window) as the record of a rule firing. Aggregates are keyed per metric series, not per rule: rules over the same metric share one row (`trace.60s`, `log.60s`), and triggers carry the rule ID and version.
+- Aggregate updates are additive upserts (`histogram || jsonb_build_object(bucket, n + 1)`); trigger decisions take a transaction-scoped advisory lock per (service, scope, rule). Cooldowns compare window starts (event time).
+- Settings: `SIGNALOPS_DETECTION_WINDOW_SECONDS` (60) and `SIGNALOPS_DETECTION_RULES` (JSON; defaults `trace_error_rate` ≥ 0.2 / 15 samples, `trace_latency_p95` > 1000 ms / 20, `log_error_rate` ≥ 0.5 / 10, all with a 300 s cooldown). Settings refuse duplicate rule IDs; a latency threshold must be a bucket bound.
+- **Found while testing:** the first version read p95 as the bucket upper bound and compared with ≥, so a 625 ms request counted as 1000 ms and a single slow request fired the rule in a 10-sample window (a demo false positive before the fault). Fixed by the exact count-against-bound test and `min_samples` 20 for p95. Offline calibration over 100 healthy and 100 fault demo runs (generator only, no services): 2 healthy runs fire the latency rule (two isolated timeouts in one 20-sample window), and 1 fault run misses `bank-gateway` latency. Recorded in ADR-015.
+- `cli.py`: the normalizer and detector share `_run_consumer`.
+- Left: rules evaluate on every sample, before window closure, with no lateness bound (P05-T02); triggers create no incidents or events yet (P05-T03); no API for aggregates or triggers (P05-T05); retention cleanup for aggregates and triggers is not implemented.
 
 ### P05-T02 Handle late data and window closure
 
@@ -1074,13 +1083,23 @@ Keep these outside the release critical path unless measurements justify promoti
 
 ### 2026-10-30 — P04-T05
 - Status: completed
-- Commit: pending (validated against the working tree)
+- Commit: `7baea33`
 - Implemented: `api/evidence.py` (three routes, window/limit checks, `SignalCursor`, `OutputRedaction`); `api/auth.py` (`OperatorTokens`, `operator_workspace`); `contracts/queries.py` and exported schemas; `persistence/repositories/scope.py`; `EvidenceRepository` read methods; `CatalogRepository.list_sources`; `Resources.database`; settings `SIGNALOPS_OPERATOR_TOKENS` and `SIGNALOPS_QUERY_*` with validators; migration `0008_evidence_query_indexes` and model indexes; Compose passthrough and `.env.example` placeholder; ADR-014; docs (api, data-model, development, decisions); tests `tests/unit/test_evidence_api.py`, `tests/integration/test_evidence_api.py`.
 - Validation commands and results: `uv run ruff check .`, `uv run ruff format --check .`, `uv run mypy` (103 files), `uv run signalops export-schemas --check` pass; `uv run pytest` 434 passed, 223 skipped; with `.env` sourced, `SIGNALOPS_INTEGRATION=1 uv run pytest` 657 passed (evidence integration tests also pass with `-W error::Warning`); `docker compose config --quiet` passes; `alembic check` on the migrated dev database reports no new operations. Acceptance in integration tests against real PostgreSQL, with signals in two workspaces and two replay scopes: each token sees only its workspace, each `replay_scope` only its rows, filters by another workspace's source return nothing, the shared trace ID resolves per scope and is 404 where absent; five signals paged two at a time arrive in order with the ID tiebreaker and no repeats, also with the default window taken from the cursor; cursors replayed with another filter, scope, window, or workspace are 400; configured limits and windows are enforced (422) and the default limit applies; a quarantined record's `password` (process list) and `customer_email` (source list added after storage) are `[REDACTED]` in responses; quality counts match per source, scope, and window, including zero-count sources. Unit tests: 401 for missing, wrong, Basic, and source tokens on all three routes; an operator token cannot ingest; 422 for every out-of-bounds parameter before database access; malformed cursors 400; settings refuse shared tokens and defaults above maximums. Live stack as in the ledger. Frontend unchanged (it does not consume the OpenAPI file), not re-run.
 - Evidence or artifact references: `tests/unit/test_evidence_api.py`, `tests/integration/test_evidence_api.py`, `migrations/versions/0008_evidence_query_indexes.py`.
 - Deviations and reasons: interim operator tokens added ahead of P11-T02 because scope enforcement needs a principal (ADR-014); the plan's service and source signal indexes replaced (task notes).
 - Remaining issues: see task notes. The Compose `api` runs the rebuilt image with no operator tokens configured.
 - Next task: P05-T01
+
+### 2026-10-30 — P05-T01
+- Status: completed
+- Commit: pending (validated against the working tree)
+- Implemented: `detection/rules.py` (`DetectionRule`, `DEFAULT_RULES`, `window_for`, `series_name`, `duration_bucket`, `histogram_quantile`, `evaluate`); `detection/detector.py` (`Detector`, `DetectionPolicy`, `sample_for`, `DETECTOR_CONSUMER_GROUP`); `persistence/models/detection.py` (`DetectionSample`, `DetectionTrigger`); `persistence/repositories/detection.py` (`DetectionRepository`); `EvidenceRepository.get_signal`; migration `0009_detection_state`; settings `SIGNALOPS_DETECTION_WINDOW_SECONDS` and `SIGNALOPS_DETECTION_RULES`; `signalops detector` command and the shared `_run_consumer`; Compose `detector` service; ADR-015; docs (events, data-model, reliability, development, decisions); tests `tests/unit/test_detection_rules.py`, `tests/integration/test_detector.py`.
+- Validation commands and results: `uv run ruff check .`, `uv run ruff format --check .`, `uv run mypy` (109 files), `uv run signalops export-schemas --check` pass; `uv run pytest` 452 passed, 232 skipped; with `.env` sourced, `SIGNALOPS_INTEGRATION=1 uv run pytest` 684 passed; `docker compose config --quiet` passes; `alembic check` on the migrated dev database reports no new operations; 0009 downgrade/upgrade round trip on a scratch database. Acceptance in integration tests against real PostgreSQL: 20 signals with 4 errors processed, then redelivered with the same event IDs (all `duplicate`) and with new event IDs (applied, no effect), leave one window of 20 samples and 4 errors and one trigger; 14 failing slow traces and 9 error logs in one window (below `min_samples`) give no trigger; a rule fires once per window, is suppressed for windows 60 s and 300 s later, and fires again at 360 s; p95 fires from the histogram (18 fast, 2 slow of 20); windows stay separate per replay scope and service; deployments, degraded, unresolved, and quarantined signals leave no samples; a signal ID from another scope or unknown is a `ContractError` with no receipt; 60 concurrent transactions (30 signals, each twice) count exactly 30 samples, 10 errors, and the exact histogram; the generated demo fault, run through ingestion, the normalizer, and the detector, fires only for payment, checkout, and bank-gateway, inside the fault, once per rule and service. Unit tests: window alignment, buckets, quantiles, exact threshold behaviour, low-sample evaluation, rule validation, settings JSON override and duplicate IDs. Live stack as in the ledger. Frontend unchanged, not re-run.
+- Evidence or artifact references: `tests/unit/test_detection_rules.py`, `tests/integration/test_detector.py`, `migrations/versions/0009_detection_state.py`.
+- Deviations and reasons: `detection_samples` and `detection_triggers` tables beyond the plan; aggregates per metric series rather than per rule (task notes, ADR-015).
+- Remaining issues: see task notes. Generator calibration shows rare latency triggers in healthy runs; P05-T02/T03 decide how triggers become incidents.
+- Next task: P05-T02
 
 ## Work log template
 
