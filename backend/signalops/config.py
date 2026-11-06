@@ -84,6 +84,10 @@ class Settings(BaseSettings):
     incident_correlation_gap_seconds: int = Field(default=600, ge=10, le=24 * 60 * 60)
     # Breach-free time, shown by a sufficient window of every service, that resolves an incident.
     incident_recovery_seconds: int = Field(default=300, ge=10, le=24 * 60 * 60)
+    # An observed dependency stays valid this long after each observation.
+    graph_dependency_ttl_seconds: int = Field(
+        default=7 * 24 * 60 * 60, ge=60, le=365 * 24 * 60 * 60
+    )
     # Payload keys whose values are replaced before publishing, at any depth.
     # Matched case-insensitively with "-" and " " read as "_". A source's
     # config may add more under "redact_fields".

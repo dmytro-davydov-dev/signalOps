@@ -51,6 +51,7 @@ uv run signalops seed                    # create or verify the demo catalog (ne
 uv run signalops demo-generate downstream-timeout --out signals.jsonl --labels labels.json  # synthetic dataset
 uv run signalops normalizer              # normalize signals.raw.v1 into evidence until SIGINT/SIGTERM
 uv run signalops detector                # update detection windows from signals.normalized.v1 until SIGINT/SIGTERM
+uv run signalops graph-projector         # project signals.normalized.v1 into the temporal graph until SIGINT/SIGTERM
 uv run signalops detector-closer         # close live detection windows by wall clock until SIGINT/SIGTERM
 uv run signalops detector-flush --workspace-id W --replay-run-id R  # close a replay's remaining windows, then exit
 uv run signalops outbox-publisher        # publish pending outbox rows until SIGINT/SIGTERM
@@ -178,6 +179,7 @@ Backend processes read `SIGNALOPS_`-prefixed variables (`backend/signalops/confi
 | `SIGNALOPS_DETECTION_CLOSER_INTERVAL_MS` | `5000` | Closer wait after a batch that was not full (100–60000) |
 | `SIGNALOPS_INCIDENT_CORRELATION_GAP_SECONDS` | `600` | A breach joins an incident seen within this long; a later one starts a new incident (10–86400) |
 | `SIGNALOPS_INCIDENT_RECOVERY_SECONDS` | `300` | Breach-free time, shown by a sufficient window of every service, that resolves an incident; between the window length and the gap |
+| `SIGNALOPS_GRAPH_DEPENDENCY_TTL_SECONDS` | `604800` | An observed dependency stays valid this long after each observation (60–31536000) |
 | `SIGNALOPS_DETECTION_RULES` | three rules (`detection/rules.py`) | JSON array of `DetectionRule` objects replacing the defaults: `id`, `version`, `metric` (`trace`, `log`), `kind` (`error_rate`, `latency_quantile`), `threshold`, `quantile`, `min_samples`, `cooldown_seconds`, `severity` (default `medium`). A latency threshold must be a histogram bucket bound. Bump `version` when a rule's settings change (see [events.md](events.md#detector-detector-v1)) |
 | `SIGNALOPS_INGEST_REDACT_FIELDS` | password, token, authorization, cookie, … (`config.py`) | JSON list of payload keys whose values are replaced before publishing; a source's `config.redact_fields` adds more |
 | `SIGNALOPS_MODEL_PROVIDER` | `fake` | only `fake` is accepted until P07-T01; no model key is read |

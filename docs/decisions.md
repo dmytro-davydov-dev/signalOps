@@ -175,6 +175,18 @@ Format: **Decision**, **Reason**, **Trade-off**, **Revisit when**.
 
 ---
 
+## ADR-018: Observed edges are merged intervals that expire
+
+**Decision:** `signalops graph-projector` (group `graph-projector-v1`) projects `signals.normalized.v1`. An observed dependency is one edge per interval: an observation at `t` covers `[t, t + SIGNALOPS_GRAPH_DEPENDENCY_TTL_SECONDS)` (default 7 days), and every edge of the pair that interval touches merges into one row. `valid_to` is always set. `provenance_signal_id` is the earliest signal; `properties` holds the observation count and the last observation. A deployment's `DEPLOYED_TO` edge runs from `deployed_at` to the service's next deployment, or stays open. Migration `0012_graph_projection` adds `ex_graph_edges_validity`, which rejects overlapping intervals for one pair and relation, and the `btree_gist` extension it needs.
+
+Reads take the evidence cutoff as `as_of`. `GraphRepository.dependencies` walks `DEPENDS_ON` up to 3 hops downstream or upstream, with node paths preventing cycles and `MAX_WALK_PATHS` (1000) bounding the walk; it reports `truncated`. `deployments_as_of` gives what each service ran. Neither returns an edge's `valid_to`, and confidence is a constant 1.0, so a historical answer holds nothing from after `as_of`.
+
+**Reason:** Unions of intervals do not depend on arrival order, so shuffled and replayed input give the same edges. Every instant in an edge is within the TTL after an observation at or before it, so an as-of read cannot be supported only by a later signal, and a removed dependency expires with no background job. An advisory lock per relationship makes concurrent projectors merge; the exclusion constraint is the guarantee if a writer does not. Observation counts in `confidence` would leak future evidence into historical answers.
+
+**Trade-off:** A removed dependency stays valid for up to the TTL, and one called less often than the TTL splits into several edges. Each trace rewrites its edge rows, which is a hot row per dependency. `observations` assumes the consumer receipt: event IDs derive from the signal, but the same signal under a new event ID would count twice, while the interval and provenance would not change. A service not in the catalog has no node, so a dependency on it is invisible. A rebuild from a new consumer group reaches only as far back as the topic's 7-day retention.
+
+**Revisit when:** Traces name uncatalogued dependencies often enough to matter, edge write load shows up in profiling, or the graph must be rebuilt from PostgreSQL evidence past Kafka retention.
+
 ## Open questions
 
 | # | Question | Decide by |

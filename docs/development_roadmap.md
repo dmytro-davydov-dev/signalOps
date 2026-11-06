@@ -27,11 +27,11 @@ PostgreSQL owns evidence, workflow progress, budgets, and the initial knowledge 
 | --- | --- |
 | Active phase | Phase 5 Detection and knowledge graph; Phase 4 gate passed |
 | Active task | None |
-| Last completed task | P05-T03 |
-| Latest verified commit | `5886d2e` (P05-T02); P05-T03 pending commit, validated against the working tree |
-| Validation evidence | P05-T03: `SIGNALOPS_INTEGRATION=1 uv run pytest` 730 passed; `alembic check` clean on the dev database at `0011_incident_correlation`. Compose run: real-time `downstream-timeout` then `healthy` demo gave one live incident (`env:demo`, high) on checkout and payment, 4 linked triggers, 36 cited signals, 6 `incident.changed` events published, resolved at 17:08 from healthy windows, 0 late samples, 0 detector or closer errors. `bank-gateway` was not included: 19 samples per window against `min_samples` 20. Earlier evidence is in the work log |
+| Last completed task | P05-T04 |
+| Latest verified commit | `4077875` (P05-T03); P05-T04 pending commit, validated against the working tree |
+| Validation evidence | P05-T04: `SIGNALOPS_INTEGRATION=1 uv run pytest` 775 passed; `alembic check` clean on the dev database at `0012_graph_projection`. Compose run: `graph-projector-v1` consumed all 1619 retained `signals.normalized.v1` events with lag 0 and no warnings or errors; 4 `DEPENDS_ON` edges and 3 deployment edges match a separate SQL derivation from `signals` over the same range; a restart left the observation total at 1324. As-of 16:00 on 2026-11-06 returns nothing and 17:02 returns the call path. The 1036 signals past the topic's 7-day retention were not projected. Earlier evidence is in the work log |
 | Blockers | None recorded |
-| Next task | P05-T04 |
+| Next task | P05-T05 |
 
 ### Scope and release boundaries
 
@@ -506,11 +506,20 @@ Start the React shell in Phase 1 and add API-backed incident views in Phase 5; P
 
 ### P05-T04 Implement the temporal graph projection
 
-- [ ] Complete this task.
+- [x] Complete this task.
 
 **Implementation:** Use an independent consumer group with receipts to project services, deployments, and observed dependencies. Preserve provenance and validity intervals. Add bounded recursive queries with cycle prevention and three-hop limits.
 
 **Acceptance:** Historical queries exclude future deployments/dependencies; graph cycles terminate within bounded query limits.
+
+**Notes (2026-11-06):**
+- **Decision (ADR-018):** `signalops graph-projector` (group `graph-projector-v1`, new Compose service) projects `accepted` traces and deployments with a resolved service. An observed dependency is one edge per merged interval: each observation covers `SIGNALOPS_GRAPH_DEPENDENCY_TTL_SECONDS` (7 days), so a dependency nothing confirms expires with no background job, and shuffled input gives the same edges. A `DEPLOYED_TO` edge lasts until the service's next deployment, also out of order.
+- Migration `0012_graph_projection` adds `ex_graph_edges_validity` and the `btree_gist` extension, which stays on downgrade. An advisory lock per relationship makes concurrent projectors merge; the constraint is the guarantee behind it. `test_edges_of_one_relationship_cannot_overlap` covers the constraint.
+- **Reads:** `GraphRepository.dependencies` (3 hops, downstream or upstream, node paths against cycles, `MAX_WALK_PATHS` 1000, `truncated`) and `deployments_as_of`, returning the existing `DependencyEntry` and `DeploymentEntry` contracts. Neither returns `valid_to`, because it would disclose a later deployment or observation.
+- **Bound measured:** on a dense graph of 80 services (6320 edges) the walk stopped at 1001 paths in about 10 ms. Without the limit, the same query ran about 15 s before the run failed; that failure was not examined. The result-level test could not see this, so `test_walk_reads_no_more_paths_than_its_bound` asserts on the walk.
+- **Rebuild limit, found in the Compose run:** a new group reads only retained history. `signals.normalized.v1` keeps 7 days, so 1036 of 2655 stored signals, including 199 per edge and one `inventory` deployment, were not projected. Earliest offsets sum to exactly 1036, and lag is 0. Edges therefore start at 2026-11-06 16:29 although traces go back to 2026-10-30.
+- **Not done, by choice:** no `AFFECTS` edges, incident nodes, or `DOCUMENTED_BY`, which the task does not list. The incident fingerprint stays `env:{environment}` and `bank-gateway` is not added as `affected`, so the P05-T03 gap stands; `payment` depends on it in the graph, which P05-T05 can show as the neighborhood.
+- Left: an API over these reads (P05-T05); graph rebuild from PostgreSQL past Kafka retention; a dependency on a service not in the catalog is logged and gets no edge; a degraded deployment has no graph edge, though its row exists; edge and node retention. No real-time fault run was repeated here, because `.env` still lacks the two demo ingestion tokens.
 
 ### P05-T05 Expose incident and graph APIs
 
@@ -1135,13 +1144,23 @@ Keep these outside the release critical path unless measurements justify promoti
 
 ### 2026-11-06 — P05-T03
 - Status: completed
-- Commit: pending commit; validated against the current working tree.
+- Commit: `4077875`
 - Implemented: incident correlation, recovery, and events (`detection/incidents.py`, `persistence/repositories/incidents.py`); breach and recovery calls in `detection/detector.py`; migration `0011_incident_correlation`; settings `SIGNALOPS_INCIDENT_CORRELATION_GAP_SECONDS` and `SIGNALOPS_INCIDENT_RECOVERY_SECONDS`; `DetectionRule.severity`; `replay_run_id_of`; ADR-017; docs (architecture, data-model, decisions, development, events, reliability). Test fixtures `seeded`, `database`, and `run_id` moved to `tests/integration/conftest.py`.
 - Validation commands and results: `uv run ruff check .`, `uv run ruff format --check .`, `uv run mypy` (113 files), `uv run signalops export-schemas --check` pass; `uv run pytest` 463 passed, 267 skipped; `SIGNALOPS_INTEGRATION=1 uv run pytest` 730 passed, including the downgrade/upgrade schema test; the concurrency test repeated 5 times, 3 passed each; `docker compose config --quiet` passes; `alembic check` reports no new operations. Three deliberate mutations (no cooldown extension, no all-services recovery check, no scope lock) each failed the tests. Frontend checks not run: no frontend change.
 - Evidence or artifact references: `tests/integration/test_incidents.py`, `tests/unit/test_detection_rules.py`. Compose run on 2026-11-06, seeds 781637804 (fault, 300 s) and 781637805 (healthy, 420 s), both `--realtime`: incident `5a5b37da-6ac4-49f6-a8d5-cd75426975d5`, first seen 17:01, last seen 17:03, detected 17:02:34, resolved 17:08, version 6.
 - Deviations and reasons: the acceptance's "correlation window" is implemented as a session, because time buckets split a fault crossing a boundary (ADR-017). Automatic investigation requests stay out of scope, as the task states.
 - Remaining issues: see task notes, chiefly the `bank-gateway` sample-count miss.
 - Next task: P05-T04.
+
+### 2026-11-06 — P05-T04
+- Status: completed
+- Commit: pending commit; validated against the current working tree.
+- Implemented: `detection/graph.py` (`GraphProjector`, `GraphPolicy`); `persistence/repositories/graph.py` (node upserts, interval merge, deployment intervals, bounded as-of reads); `signalops graph-projector` and Compose `graph-projector`; migration `0012_graph_projection`; setting `SIGNALOPS_GRAPH_DEPENDENCY_TTL_SECONDS`; ADR-018; docs (architecture, data-model, decisions, development, events, reliability). Test helper `_store` gains `downstream`.
+- Validation commands and results: `uv run ruff check .`, `uv run ruff format --check .`, `uv run mypy` (117 files), `uv run signalops export-schemas --check` pass; `uv run pytest` 474 passed, 301 skipped; `SIGNALOPS_INTEGRATION=1 uv run pytest` 775 passed, including the downgrade/upgrade schema test; concurrency and node-ordering tests repeated 5 times, 2 passed each; `docker compose config --quiet` passes; `alembic check` reports no new operations. Eight deliberate mutations each failed the tests: no cycle guard, no hop limit, no as-of filter, no path bound, no relationship lock, no merge across touching edges, no end on a deployment, and both quality guards removed. The path-bound and quality mutations survived at first: the first exposed a real test gap, now closed; the second was one guard covering for the other. Frontend checks not run: no frontend change.
+- Evidence or artifact references: `tests/integration/test_graph.py`, `tests/unit/test_graph_projection.py`, `tests/integration/test_graph_reliability_schema.py`. Compose on 2026-11-06: 1619 receipts, lag 0, 0 warnings or errors; `checkout` to `inventory`, `orders-db`, and `payment`, and `payment` to `bank-gateway`, 331 observations each, matching `signals` for the retained range; `dependencies` as of 17:02 returned the four edges with `bank-gateway` at 2 hops, and as of 16:00 none.
+- Deviations and reasons: the plan's open-ended `valid_to` applies only to deployments; observed dependencies always end, so stale ones expire (ADR-018). `btree_gist` is a new extension, needed for the exclusion constraint.
+- Remaining issues: see task notes, chiefly the rebuild limit of Kafka retention.
+- Next task: P05-T05.
 
 ## Work log template
 

@@ -31,6 +31,10 @@ def build_parser() -> argparse.ArgumentParser:
         "detector", help="update detection windows from signals.normalized.v1 until stopped"
     )
     commands.add_parser(
+        "graph-projector",
+        help="project signals.normalized.v1 into the temporal knowledge graph until stopped",
+    )
+    commands.add_parser(
         "detector-closer", help="close live detection windows by wall clock until stopped"
     )
     flush = commands.add_parser(
@@ -294,6 +298,17 @@ def run_detector() -> int:
     )
 
 
+def run_graph_projector() -> int:
+    from signalops.contracts.events import EventType
+    from signalops.detection.graph import GRAPH_CONSUMER_GROUP, GraphPolicy, GraphProjector
+
+    return _run_consumer(
+        GRAPH_CONSUMER_GROUP,
+        EventType.SIGNAL_NORMALIZED,
+        lambda settings: GraphProjector(GraphPolicy.from_settings(settings)),
+    )
+
+
 def run_detector_closer() -> int:
     import asyncio
     import signal
@@ -540,6 +555,7 @@ COMMANDS = {
     "outbox-publisher": run_outbox_publisher,
     "normalizer": run_normalizer,
     "detector": run_detector,
+    "graph-projector": run_graph_projector,
     "detector-closer": run_detector_closer,
 }
 

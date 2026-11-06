@@ -121,7 +121,8 @@ Diagnosis status and investigation status map one to one (`DIAGNOSIS_STATUS_BY_I
 - Queries are "as of" the incident time, filtered by `valid_from` and `valid_to`.
 - Several observations can support one edge. The projector coalesces duplicates and keeps provenance.
 - An observed dependency or a correlation is not proof of causation.
-- The schema rejects self-loops only; longer cycles are prevented by the traversal.
+- The schema rejects self-loops and, through `ex_graph_edges_validity` (`0012_graph_projection`, needs `btree_gist`), overlapping intervals for one pair and relation; longer cycles are prevented by the traversal.
+- Merge rule ([ADR-018](decisions.md#adr-018-observed-edges-are-merged-intervals-that-expire)): `DEPENDS_ON` rows are intervals that touching observations join. `provenance_signal_id` is the earliest signal, and `properties` holds `observations`, `last_observed_at`, and `last_signal_id`. `DEPLOYED_TO` runs from the deployment node to its service, until the next deployment. `AFFECTS`, `DOCUMENTED_BY`, and incident and runbook nodes have no writer yet.
 
 **Deviations from the plan (P02-T03):** `replay_scope` on nodes and edges, so replay graphs stay isolated from the live graph (CLAUDE.md requires replay scope across graph traversals); the typed entity reference columns, because the conventions forbid unchecked polymorphic IDs; `created_at` on nodes and edges; `deployments` gains `UNIQUE(workspace_id, replay_scope, id)` as the node reference target. Edge uniqueness and coalescing of repeated observations are left to the projector (P05-T04), which owns the merge rule.
 

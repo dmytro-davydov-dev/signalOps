@@ -7,7 +7,7 @@
 | Topic | Message key | Consumer groups | Initial partitions |
 | --- | --- | --- | --- |
 | `signals.raw.v1` | `source_id` + service hint | `normalizer-v1` | 3 |
-| `signals.normalized.v1` | `workspace_id` + `service_id` | `detector-v1`, later `graph-projector-v1` | 3 |
+| `signals.normalized.v1` | `workspace_id` + `service_id` | `detector-v1`, `graph-projector-v1` | 3 |
 | `incidents.changed.v1` | `incident_id` | `notification-projector-v1` | 1 |
 | `investigations.requested.v1` | `investigation_id` | `dispatcher-v1` | 1 |
 | `investigations.completed.v1` | `investigation_id` | `evaluation-projector-v1` | 1 |
@@ -165,6 +165,18 @@ Incidents come from breaches, in the transaction that decides them ([ADR-017](de
 | Every service has a healthy window ending at least `SIGNALOPS_INCIDENT_RECOVERY_SECONDS` (300) after `last_seen_at` | Resolved; `resolved_at` is that window's end | `resolved` |
 
 The fingerprint is `env:{environment}`. A healthy window had `min_samples` for one of its rules and breached none; a quiet service shows no recovery. Each change bumps `incidents.version`, and the event ID derives from the incident and version. `incidents.changed.v1` has no consumer until `notification-projector-v1`. Investigations are not requested automatically; that follows Phase 6.
+
+### Graph projector (`graph-projector-v1`)
+
+`signalops graph-projector` consumes `signals.normalized.v1` with `TransactionalProcessor` and `detection.graph.GraphProjector` ([ADR-018](decisions.md#adr-018-observed-edges-are-merged-intervals-that-expire)). Its own group and receipts keep it independent of the detector. It projects `accepted` signals with a resolved service, in event time; a degraded signal has a skewed clock, which an edge would inherit.
+
+| Signal | Effect |
+| --- | --- |
+| Trace | Service nodes, and `DEPENDS_ON` from the service to each of `record.downstream_services` valid for `[occurred_at, occurred_at + SIGNALOPS_GRAPH_DEPENDENCY_TTL_SECONDS)`; the interval merges with every edge of that pair it touches |
+| Deployment | A deployment node, and `DEPLOYED_TO` to the service from `deployed_at` until that service's next deployment |
+| Log, unresolved service, quarantined, degraded | Nothing |
+
+Downstream names resolve in the caller's environment. A name not in the catalog gets no edge and is logged, and a service calling itself gets none. A signal ID that names no stored signal, a trace without `record.downstream_services`, and an accepted deployment with no deployment row are each a `ContractError` and go to `processing.failed.v1`.
 
 ## Decoding
 

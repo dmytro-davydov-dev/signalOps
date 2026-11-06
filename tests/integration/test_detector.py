@@ -94,6 +94,7 @@ async def _store(
     status: QualityStatus = QualityStatus.ACCEPTED,
     flags: tuple[QualityFlag, ...] = (),
     ingested_at: datetime | None = None,
+    downstream: Sequence[str] = (),
 ) -> EventEnvelope[EventPayload]:
     """Store one signal and return the `signal.normalized` envelope the normalizer would emit."""
     source_kind = {
@@ -103,7 +104,11 @@ async def _store(
     }[kind]
     record: dict[str, object] = {}
     if kind is SignalKind.TRACE:
-        record = {"duration_ms": duration_ms, "status": "error" if error else "ok"}
+        record = {
+            "duration_ms": duration_ms,
+            "status": "error" if error else "ok",
+            "downstream_services": list(downstream),
+        }
     signal = NormalizedSignal(
         id=uuid.uuid4(),
         workspace_id=DEMO_WORKSPACE_ID,

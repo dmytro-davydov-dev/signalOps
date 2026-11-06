@@ -47,6 +47,7 @@ All processes come from one Python codebase and one backend image, started with 
 | `api` (FastAPI) | Ingestion, query endpoints, investigation requests, SSE | HTTP replicas |
 | `normalizer` | Adapter validation, identity resolution, quality scoring | Kafka partitions |
 | `detector` | Time-window rules and incident grouping | Kafka partitions plus durable detector state |
+| `graph-projector` | Projects services, deployments, and observed dependencies into the temporal graph | Kafka partitions |
 | `detector-closer` | Closes live detection windows by wall clock and evaluates their rules | Row locks with SKIP LOCKED; state is in PostgreSQL |
 | `dispatcher` | Turn investigation-request events into durable jobs | Kafka partitions |
 | `investigation-worker` | Claim jobs, execute workflow steps, checkpoint | Worker concurrency and model budget |
@@ -74,7 +75,7 @@ Every query, graph traversal, tool call, and cache key carries three values:
 
 ## Deployment shape
 
-Docker Compose runs these core services: `frontend`, `api`, `normalizer`, `detector`, `detector-closer`, `dispatcher`, `investigation-worker`, `outbox-publisher`, `postgres`, `redis`, `kafka`.
+Docker Compose runs these core services: `frontend`, `api`, `normalizer`, `detector`, `graph-projector`, `detector-closer`, `dispatcher`, `investigation-worker`, `outbox-publisher`, `postgres`, `redis`, `kafka`.
 
 - One-shot `migrate` and `init-topics` services handle schema and topic setup.
 - The optional profiles are `demo` (an instrumented app, possibly the OpenTelemetry Demo), `evaluation`, and `observability`.

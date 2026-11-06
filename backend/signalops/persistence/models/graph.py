@@ -5,6 +5,10 @@ endpoints through `(workspace_id, replay_scope, id)`, so a traversal never leave
 its workspace or replay run. Entity nodes reference their service, deployment, or
 incident row through a typed foreign key, and their `external_key` is that row's
 ID, so each entity has at most one node per replay scope.
+
+Edges between one pair and relation never overlap in time: the projector merges
+touching observations, and `ex_graph_edges_validity` holds that against a
+writer that does not (ADR-018).
 """
 
 import uuid
@@ -22,6 +26,7 @@ from sqlalchemy import (
     UniqueConstraint,
     text,
 )
+from sqlalchemy.dialects.postgresql import ExcludeConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from signalops.contracts.common import MAX_REPLAY_SCOPE_LENGTH
@@ -132,6 +137,16 @@ class GraphEdge(Base):
         CheckConstraint("valid_to IS NULL OR valid_to > valid_from", name="validity_interval"),
         CheckConstraint("confidence BETWEEN 0 AND 1", name="confidence_range"),
         CheckConstraint(json_object("properties"), name="properties_object"),
+        ExcludeConstraint(
+            ("workspace_id", "="),
+            ("replay_scope", "="),
+            ("from_node_id", "="),
+            ("to_node_id", "="),
+            ("relation", "="),
+            (text("tstzrange(valid_from, valid_to)"), "&&"),
+            name="ex_graph_edges_validity",
+            using="gist",
+        ),
         Index("ix_graph_edges_from_node_id_relation", "from_node_id", "relation"),
         Index("ix_graph_edges_to_node_id_relation", "to_node_id", "relation"),
         Index(

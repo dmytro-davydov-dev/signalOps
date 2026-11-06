@@ -244,6 +244,17 @@ def test_open_and_closed_validity_intervals_are_accepted(graph: Graph) -> None:
     graph.edge(valid_to=T0 + timedelta(hours=1))
 
 
+def test_edges_of_one_relationship_cannot_overlap(graph: Graph) -> None:
+    pair = {
+        "from_node_id": graph.runbook_node(key=f"runbooks/{uuid.uuid4()}.md"),
+        "to_node_id": graph.runbook_node(key=f"runbooks/{uuid.uuid4()}.md"),
+    }
+    graph.edge(**pair, valid_to=T0 + timedelta(hours=1))
+    graph.edge(**pair, valid_from=T0 + timedelta(hours=1), valid_to=None)
+    overlapping = graph.edge_values(**pair, valid_from=T0 + timedelta(hours=2))
+    assert violated_constraint(graph.engine, GraphEdge, **overlapping) == "ex_graph_edges_validity"
+
+
 @pytest.mark.parametrize(
     ("overrides", "constraint"),
     [
