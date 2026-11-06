@@ -31,6 +31,15 @@ def build_parser() -> argparse.ArgumentParser:
         "detector", help="update detection windows from signals.normalized.v1 until stopped"
     )
     commands.add_parser(
+        "detector-closer", help="close live detection windows by wall clock until stopped"
+    )
+    flush = commands.add_parser(
+        "detector-flush",
+        help="close a replay's remaining windows and evaluate them, then exit",
+    )
+    flush.add_argument("--workspace-id", required=True, type=uuid.UUID, help="replay's workspace")
+    flush.add_argument("--replay-run-id", required=True, type=uuid.UUID, help="replay run to flush")
+    commands.add_parser(
         "seed", help="create or verify the deterministic demo workspace catalog, then exit"
     )
     demo = commands.add_parser(
@@ -67,6 +76,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--duration-s", type=int, default=600, help="length of the dataset in seconds"
     )
     post.add_argument("--batch-size", type=int, default=200, help="records per request")
+    post.add_argument(
+        "--realtime",
+        action="store_true",
+        help="start now and post records as their timestamps arrive, so detection windows fire",
+    )
     redrive = commands.add_parser(
         "redrive-record",
         help="republish one quarantined record to its topic with a new redrive attempt ID",
@@ -280,6 +294,67 @@ def run_detector() -> int:
     )
 
 
+def run_detector_closer() -> int:
+    import asyncio
+    import signal
+
+    from signalops.config import get_settings
+    from signalops.detection.closure import WindowCloser
+    from signalops.detection.detector import DetectionPolicy
+    from signalops.logs import configure_logging
+    from signalops.persistence.database import Database, create_engine
+
+    settings = get_settings()
+    configure_logging(settings.log_level)
+
+    async def close() -> None:
+        stop = asyncio.Event()
+        loop = asyncio.get_running_loop()
+        for signum in (signal.SIGINT, signal.SIGTERM):
+            loop.add_signal_handler(signum, stop.set)
+        engine = create_engine(settings)
+        closer = WindowCloser(
+            Database.from_engine(engine),
+            DetectionPolicy.from_settings(settings),
+            interval_seconds=settings.detection_closer_interval_ms / 1000,
+        )
+        try:
+            await closer.run(stop)
+        finally:
+            await engine.dispose()
+
+    asyncio.run(close())
+    return 0
+
+
+def run_detector_flush(args: argparse.Namespace) -> int:
+    import asyncio
+
+    from signalops.config import get_settings
+    from signalops.contracts.common import replay_scope_for
+    from signalops.detection.closure import flush_replay
+    from signalops.detection.detector import DetectionPolicy
+    from signalops.logs import configure_logging
+    from signalops.persistence.database import Database, create_engine
+    from signalops.persistence.repositories.scope import EvidenceScope
+
+    settings = get_settings()
+    configure_logging(settings.log_level)
+    scope = EvidenceScope(args.workspace_id, replay_scope_for(args.replay_run_id))
+
+    async def flush() -> int:
+        engine = create_engine(settings)
+        try:
+            return await flush_replay(
+                Database.from_engine(engine), scope, DetectionPolicy.from_settings(settings)
+            )
+        finally:
+            await engine.dispose()
+
+    print(f"closed {asyncio.run(flush())} windows in {scope.replay_scope}")
+    return 0
+
+
 def run_redrive_record(args: argparse.Namespace) -> int:
     from signalops.config import get_settings
     from signalops.logs import configure_logging
@@ -370,7 +445,12 @@ def run_demo_post(args: argparse.Namespace) -> int:
     from pydantic import TypeAdapter, ValidationError
 
     from signalops.demo.generator import Scenario, generate
-    from signalops.demo.poster import PostError, post_records, urllib_transport
+    from signalops.demo.poster import (
+        PostError,
+        post_records,
+        post_records_realtime,
+        urllib_transport,
+    )
     from signalops.logs import configure_logging
 
     configure_logging(os.environ.get("SIGNALOPS_LOG_LEVEL", "INFO"))
@@ -387,7 +467,12 @@ def run_demo_post(args: argparse.Namespace) -> int:
         )
         return 2
     duration = timedelta(seconds=args.duration_s)
-    if args.start is None:
+    if args.realtime and args.start is not None:
+        print("--realtime starts now; it does not take --start", file=sys.stderr)
+        return 2
+    if args.realtime:
+        start = datetime.now(UTC).replace(microsecond=0)
+    elif args.start is None:
         start = datetime.now(UTC).replace(microsecond=0) - duration
     else:
         start = datetime.fromisoformat(args.start)
@@ -402,7 +487,8 @@ def run_demo_post(args: argparse.Namespace) -> int:
         print(error, file=sys.stderr)
         return 2
     try:
-        summary = post_records(
+        post = post_records_realtime if args.realtime else post_records
+        summary = post(
             dataset.records,
             api_url=args.api_url,
             tokens=tokens,
@@ -454,6 +540,7 @@ COMMANDS = {
     "outbox-publisher": run_outbox_publisher,
     "normalizer": run_normalizer,
     "detector": run_detector,
+    "detector-closer": run_detector_closer,
 }
 
 
@@ -466,6 +553,8 @@ def main(argv: list[str] | None = None) -> int:
         return run_demo_generate(args)
     if args.command == "demo-post":
         return run_demo_post(args)
+    if args.command == "detector-flush":
+        return run_detector_flush(args)
     if args.command == "redrive-record":
         return run_redrive_record(args)
     if args.command == "redrive-outbox":

@@ -8,7 +8,7 @@ from typing import Any
 import pytest
 
 from signalops.demo.generator import Scenario, generate
-from signalops.demo.poster import PostError, post_records
+from signalops.demo.poster import PostError, post_records, post_records_realtime
 from signalops.persistence.seed import DEMO_SOURCES
 
 TOKENS = {source.id: f"token-{source.name}" for source in DEMO_SOURCES}
@@ -158,3 +158,44 @@ def test_missing_token_is_reported_before_sending() -> None:
     with pytest.raises(PostError, match="no ingestion token"):
         post_records(dataset().records, api_url="http://api", tokens=tokens, transport=api)
     assert api.requests == []
+
+
+class FakeTime:
+    def __init__(self, start: datetime) -> None:
+        self.current = start
+
+    def now(self) -> datetime:
+        return self.current
+
+    def sleep(self, seconds: float) -> None:
+        self.current += timedelta(seconds=seconds)
+
+
+def test_realtime_posts_no_record_before_its_timestamp() -> None:
+    records = generate(Scenario.HEALTHY, seed=7, start=START, duration=timedelta(minutes=5)).records
+    api = FakeApi()
+    clock = FakeTime(START)
+    sent_at: list[tuple[datetime, str]] = []
+
+    def transport(url: str, body: bytes, headers: Mapping[str, str]) -> tuple[int, bytes]:
+        sent_at.extend(
+            (clock.now(), item["source_event_id"]) for item in json.loads(body)["records"]
+        )
+        return api(url, body, headers)
+
+    summary = post_records_realtime(
+        records,
+        api_url="http://api",
+        tokens=TOKENS,
+        transport=transport,
+        sleep=clock.sleep,
+        now=clock.now,
+    )
+
+    assert summary.accepted == len(records)
+    assert summary.batches > 10
+    occurred = {record.source_event_id: record.occurred_at for record in records}
+    assert len(sent_at) == len(records)
+    for at, source_event_id in sent_at:
+        assert occurred[source_event_id] <= at
+        assert at - occurred[source_event_id] <= timedelta(seconds=10)

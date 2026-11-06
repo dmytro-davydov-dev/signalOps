@@ -2,9 +2,8 @@
 
 `Detector` runs inside `TransactionalProcessor`'s transaction, after the
 consumer receipt. For a signal it can count, it loads the stored row (the
-event carries a reference, not the evidence), records the sample, adds it to
-its window, and evaluates the metric's rules against the updated window, all
-in that one transaction.
+event carries a reference, not the evidence), records the sample, and adds it
+to its window, all in that one transaction.
 
 Counted signals: kind `log` or `trace`, status `accepted`, and a resolved
 service. Degraded signals are skipped: with a resolved service the only
@@ -15,13 +14,27 @@ Deduplication happens twice before an aggregate changes: the consumer receipt
 per event, then the sample key per (signal, series), which also holds when the
 same signal arrives under another event ID.
 
+Rules are evaluated when a window closes, so arrival order inside the lateness
+bound cannot change the result. A window closes once its clock is past
+`window_end` plus the allowed lateness. Live, that clock is the wall clock
+(`closure.WindowCloser`) and a sample is judged by its `ingested_at`, so
+consumer lag does not make it late. In a replay scope it is the service's
+durable simulated clock, advanced here, plus a final flush.
+
+A sample past the deadline is recorded with `late` set and counted only in
+`late_count`; it never reaches a rule, so old data cannot raise a historical
+trigger. An on-time sample that finds its window already closed (consumer lag,
+or the race at the deadline) joins the counts and re-evaluates the window;
+triggers are unique per window, so this is idempotent, and one already raised
+is not withdrawn.
+
 A rule fires when the window has at least `min_samples` samples and crosses
 its threshold, and the same rule has not fired for the service within
 `cooldown_seconds` of the window (event time, so replay gives the same result).
-Rules are evaluated as windows fill; closure and late data are P05-T02.
 """
 
 import logging
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import timedelta
 from typing import Final
@@ -29,7 +42,7 @@ from typing import Final
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from signalops.config import Settings
-from signalops.contracts.common import ContractError, ContractErrorCategory
+from signalops.contracts.common import LIVE_REPLAY_SCOPE, ContractError, ContractErrorCategory
 from signalops.contracts.events import (
     EventEnvelope,
     EventPayload,
@@ -40,14 +53,19 @@ from signalops.contracts.evidence import QualityStatus, Severity, SignalKind
 from signalops.detection.rules import (
     DetectionMetric,
     DetectionRule,
+    Window,
+    WindowClosure,
+    WindowCounts,
     duration_bucket,
     evaluate,
+    metric_of_series,
     series_name,
     window_for,
 )
 from signalops.persistence.models import Signal
 from signalops.persistence.repositories.detection import (
     DetectionRepository,
+    OpenWindow,
     Sample,
     SeriesKey,
     TriggerRecord,
@@ -70,10 +88,19 @@ ERROR_SEVERITIES: Final = frozenset({Severity.ERROR, Severity.CRITICAL})
 class DetectionPolicy:
     window_seconds: int
     rules: tuple[DetectionRule, ...]
+    allowed_lateness_seconds: int
 
     @classmethod
     def from_settings(cls, settings: Settings) -> "DetectionPolicy":
-        return cls(settings.detection_window_seconds, settings.detection_rules)
+        return cls(
+            settings.detection_window_seconds,
+            settings.detection_rules,
+            settings.detection_allowed_lateness_seconds,
+        )
+
+    @property
+    def lateness(self) -> timedelta:
+        return timedelta(seconds=self.allowed_lateness_seconds)
 
 
 def sample_for(signal: Signal, metric: DetectionMetric) -> Sample:
@@ -99,6 +126,63 @@ def sample_for(signal: Signal, metric: DetectionMetric) -> Sample:
         value=float(duration),
         bucket=duration_bucket(duration),
     )
+
+
+async def evaluate_window(
+    detection: DetectionRepository,
+    policy: DetectionPolicy,
+    series: SeriesKey,
+    window: Window,
+    counts: WindowCounts,
+) -> None:
+    """Run the series' rules against a closed window, recording what fires."""
+    metric = metric_of_series(series.metric_name)
+    for rule in policy.rules:
+        if rule.metric is not metric:
+            continue
+        result = evaluate(rule, counts)
+        if not result.breached:
+            continue
+        assert result.observed is not None  # noqa: S101 - a breach has a value
+        await detection.lock_rule(series, rule.id)
+        if await detection.triggered_near(
+            series, rule.id, window.start, timedelta(seconds=rule.cooldown_seconds)
+        ):
+            continue
+        if await detection.add_trigger(
+            series,
+            window,
+            TriggerRecord(rule.id, rule.version, result.observed, rule.threshold, counts),
+        ):
+            logger.info(
+                "detection rule fired",
+                extra={
+                    "rule_id": rule.id,
+                    "rule_version": rule.version,
+                    "service_id": str(series.service_id),
+                    "replay_scope": series.replay_scope,
+                    "window_start": window.start.isoformat(),
+                    "observed": result.observed,
+                    "threshold": rule.threshold,
+                    "sample_count": counts.sample_count,
+                },
+            )
+
+
+async def close_windows(
+    detection: DetectionRepository,
+    policy: DetectionPolicy,
+    windows: Sequence[OpenWindow],
+    closed_by: WindowClosure,
+) -> None:
+    """Close locked windows and evaluate them, in the given order (oldest first for cooldowns)."""
+    if not windows:
+        return
+    await detection.mark_closed([open_window.id for open_window in windows], closed_by)
+    for open_window in windows:
+        await evaluate_window(
+            detection, policy, open_window.series, open_window.window, open_window.counts
+        )
 
 
 class Detector:
@@ -150,37 +234,21 @@ class Detector:
         )
         window = window_for(signal.occurred_at, window_seconds)
         detection = DetectionRepository(session)
-        if not await detection.record_sample(series, window, sample):
+        live = series.replay_scope == LIVE_REPLAY_SCOPE
+        clock = (
+            signal.ingested_at
+            if live
+            else await detection.advance_clock(series, signal.occurred_at)
+        )
+        late = window.is_past(clock, self._policy.lateness)
+        if not await detection.record_sample(series, window, sample, late=late):
             return
-        counts = await detection.add_to_window(series, window, sample)
-
-        for rule in self._policy.rules:
-            if rule.metric is not metric:
-                continue
-            result = evaluate(rule, counts)
-            if not result.breached:
-                continue
-            assert result.observed is not None  # noqa: S101 - a breach has a value
-            await detection.lock_rule(series, rule.id)
-            if await detection.triggered_near(
-                series, rule.id, window.start, timedelta(seconds=rule.cooldown_seconds)
-            ):
-                continue
-            if await detection.add_trigger(
-                series,
-                window,
-                TriggerRecord(rule.id, rule.version, result.observed, rule.threshold, counts),
-            ):
-                logger.info(
-                    "detection rule fired",
-                    extra={
-                        "rule_id": rule.id,
-                        "rule_version": rule.version,
-                        "service_id": str(series.service_id),
-                        "replay_scope": series.replay_scope,
-                        "window_start": window.start.isoformat(),
-                        "observed": result.observed,
-                        "threshold": rule.threshold,
-                        "sample_count": counts.sample_count,
-                    },
-                )
+        if late:
+            await detection.add_late_to_window(series, window)
+        else:
+            update = await detection.add_to_window(series, window, sample)
+            if update.closed:
+                await evaluate_window(detection, self._policy, series, window, update.counts)
+        if not live:
+            due = await detection.due_service_windows(series, clock - self._policy.lateness)
+            await close_windows(detection, self._policy, due, WindowClosure.SIMULATED_CLOCK)

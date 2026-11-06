@@ -4,6 +4,10 @@ Records are grouped by source and sent in batches with that source's token.
 Records that fail (503) are resent with the same `source_event_id` after a
 backoff; rejected records are counted and not resent, because resending an
 invalid record unchanged fails again.
+
+The default posts a whole dataset at once, which reaches the live detector as
+history: its windows are past the lateness bound and fire nothing.
+`post_records_realtime` posts records as their timestamps arrive.
 """
 
 import json
@@ -14,6 +18,7 @@ import urllib.request
 import uuid
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
+from datetime import UTC, datetime, timedelta
 
 from pydantic import JsonValue
 
@@ -98,6 +103,49 @@ def post_records(
                     )
                 summary.retries += 1
                 sleep(backoff_seconds * 2 ** (attempt - 1))
+    return summary
+
+
+def post_records_realtime(
+    records: Sequence[DemoRecord],
+    *,
+    api_url: str,
+    tokens: Mapping[uuid.UUID, str],
+    transport: Transport,
+    batch_size: int = 200,
+    tick: timedelta = timedelta(seconds=5),
+    sleep: Callable[[float], None] = time.sleep,
+    now: Callable[[], datetime] = lambda: datetime.now(UTC),
+) -> PostSummary:
+    """Post records once their `occurred_at` has passed, in ticks of `tick`."""
+    pending = sorted(records, key=lambda record: record.occurred_at)
+    summary = PostSummary()
+    sent = 0
+    while sent < len(pending):
+        wait = (pending[sent].occurred_at - now()).total_seconds()
+        if wait > 0:
+            sleep(min(wait, tick.total_seconds()))
+            continue
+        current = now()
+        due = sent
+        while due < len(pending) and pending[due].occurred_at <= current:
+            due += 1
+        part = post_records(
+            pending[sent:due],
+            api_url=api_url,
+            tokens=tokens,
+            transport=transport,
+            batch_size=batch_size,
+            sleep=sleep,
+        )
+        sent = due
+        summary.accepted += part.accepted
+        summary.rejected += part.rejected
+        summary.batches += part.batches
+        summary.retries += part.retries
+        for reason, count in part.rejected_reasons.items():
+            summary.rejected_reasons[reason] = summary.rejected_reasons.get(reason, 0) + count
+        sleep(tick.total_seconds())
     return summary
 
 

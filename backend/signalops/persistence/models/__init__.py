@@ -1,6 +1,10 @@
 """ORM models. Importing this package registers every table on `Base.metadata`."""
 
-from signalops.persistence.models.detection import DetectionSample, DetectionTrigger
+from signalops.persistence.models.detection import (
+    DetectionClock,
+    DetectionSample,
+    DetectionTrigger,
+)
 from signalops.persistence.models.evidence import (
     Deployment,
     Service,
@@ -27,6 +31,7 @@ __all__ = [
     "AgentStep",
     "ConsumerReceipt",
     "Deployment",
+    "DetectionClock",
     "DetectionSample",
     "DetectionTrigger",
     "GraphEdge",

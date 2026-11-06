@@ -76,6 +76,10 @@ class Settings(BaseSettings):
     # `DetectionRule` objects (replaces the defaults entirely).
     detection_window_seconds: int = Field(default=60, ge=10, le=60 * 60)
     detection_rules: tuple[DetectionRule, ...] = Field(default=DEFAULT_RULES, max_length=64)
+    # A sample counts while its clock is within this long after its window ends.
+    detection_allowed_lateness_seconds: int = Field(default=30, ge=0, le=60 * 60)
+    # How often the closer looks for live windows past their deadline.
+    detection_closer_interval_ms: int = Field(default=5000, ge=100, le=60_000)
     # Payload keys whose values are replaced before publishing, at any depth.
     # Matched case-insensitively with "-" and " " read as "_". A source's
     # config may add more under "redact_fields".

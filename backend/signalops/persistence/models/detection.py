@@ -8,6 +8,10 @@ their signal's retention (`ON DELETE CASCADE`); aggregates outlive them.
 `detection_triggers` records each time a rule crossed its threshold for a
 service's window. One row per (service, scope, rule, window); the incident
 writer (P05-T03) groups them.
+
+`detection_clocks` holds each service's simulated clock in a replay scope: the
+latest `occurred_at` counted. A service's signals share a partition, so its
+clock advances in that partition's order regardless of other services.
 """
 
 import uuid
@@ -23,10 +27,11 @@ from sqlalchemy import (
     Index,
     Text,
     UniqueConstraint,
+    false,
 )
 from sqlalchemy.orm import Mapped, mapped_column
 
-from signalops.contracts.common import MAX_REPLAY_SCOPE_LENGTH
+from signalops.contracts.common import LIVE_REPLAY_SCOPE, MAX_REPLAY_SCOPE_LENGTH
 from signalops.persistence.base import Base
 from signalops.persistence.models.common import (
     created_at,
@@ -65,6 +70,8 @@ class DetectionSample(Base):
     window_start: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     is_error: Mapped[bool]
     value: Mapped[float | None] = mapped_column(Double)
+    # Past the window's lateness deadline: kept as evidence, not in the aggregate's counts.
+    late: Mapped[bool] = mapped_column(default=False, server_default=false())
     recorded_at: Mapped[datetime] = created_at()
 
 
@@ -106,3 +113,22 @@ class DetectionTrigger(Base):
     sample_count: Mapped[int] = mapped_column(BigInteger)
     error_count: Mapped[int] = mapped_column(BigInteger)
     triggered_at: Mapped[datetime] = created_at()
+
+
+class DetectionClock(Base):
+    __tablename__ = "detection_clocks"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["workspace_id", "service_id"], ["services.workspace_id", "services.id"]
+        ),
+        CheckConstraint(
+            length_between("replay_scope", 1, MAX_REPLAY_SCOPE_LENGTH), name="replay_scope_length"
+        ),
+        # Live windows close by wall clock.
+        CheckConstraint(f"replay_scope <> '{LIVE_REPLAY_SCOPE}'", name="replay_only"),
+    )
+
+    service_id: Mapped[uuid.UUID] = mapped_column(primary_key=True)
+    replay_scope: Mapped[str] = mapped_column(Text, primary_key=True)
+    workspace_id: Mapped[uuid.UUID]
+    clock_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))

@@ -132,11 +132,28 @@ Format: **Decision**, **Reason**, **Trade-off**, **Revisit when**.
 - Windows are epoch-aligned tumbling windows; the series name includes the window length.
 - Rules (`DetectionRule`) are versioned settings: metric, kind, threshold, `min_samples`, cooldown. A rule fires only with at least `min_samples` samples. Latency thresholds must be histogram bucket bounds, and a latency rule fires when fewer than ceil(q × n) samples are at or below the threshold, which is exact for such thresholds.
 - A firing inserts a `detection_triggers` row, unique per (service, scope, rule, window). The rule does not fire again for that service for windows starting within `cooldown_seconds`, compared in event time.
-- Rules are evaluated after every sample against the updated window.
+- ~~Rules are evaluated after every sample against the updated window.~~ Replaced by closure-time evaluation in ADR-016.
 
 **Reason:** The consumer receipt covers redelivery of one event, but a contribution's identity is the signal; the sample key holds even if the same signal arrives under another event ID, and keeps window membership for recomputation under late data. Reading a quantile as its bucket's upper bound would count a 625 ms request as "at least 1000 ms"; testing counts against a bound avoids that. Triggers separate "a rule crossed its threshold" from "an incident exists", which P05-T03 decides with fingerprints and correlation windows. Event-time cooldowns make replay deterministic.
 **Trade-off:** One extra row per counted signal. Evaluating partial windows detects a fault sooner, but the first `min_samples` samples of a window decide alone. Measured offline with the demo generator (100 healthy and 100 fault runs of 10 minutes, default rules, 60 s windows): 2 healthy runs gave latency triggers where two isolated gateway timeouts shared one 20-sample window, and 1 fault run had no latency trigger for `bank-gateway`. A latency `min_samples` of 30 removed the false triggers but missed every latency fault at demo traffic (about 20 traces per service per minute). These are generator measurements, not production rates.
 **Revisit when:** P05-T02 adds closure (evaluate at closure, or require persistence across windows), traffic per window grows enough to raise `min_samples`, a metric needs a non-bucket latency threshold, or a fourth adapter adds a metric kind.
+
+---
+
+## ADR-016: Rules evaluate at window closure, with lateness judged from durable clocks
+
+**Decision:**
+- Rules evaluate when a window closes, not per sample. A window closes once its clock is past `window_end` plus the allowed lateness (`SIGNALOPS_DETECTION_ALLOWED_LATENESS_SECONDS`, 30); the deadline itself is still on time.
+- **Live clock:** a sample is judged by its stored `ingested_at`. Windows are closed by `signalops detector-closer` (Compose `detector-closer`) from the wall clock, every `SIGNALOPS_DETECTION_CLOSER_INTERVAL_MS` (5000).
+- **Replay clock:** `detection_clocks` holds one simulated clock per (service, replay scope), the latest counted `occurred_at`, advanced and applied in the detector's consumer transaction. `signalops detector-flush` closes what remains at the end of a replay. The closer never touches replay scopes, and a flush never touches live.
+- A sample past its deadline is recorded with `detection_samples.late` and added to `signal_aggregates.late_count` only. It is outside the counts and reaches no rule.
+- An on-time sample that finds its window closed joins the counts and re-evaluates that window. Triggers are unique per window, so this is idempotent; a trigger is never withdrawn.
+- Closure metadata lives on the window row: `closed_at`, `closed_by` (`wall_clock`, `simulated_clock`, `final_flush`, `backfill`), `late_count`. Open windows are rows, indexed by a partial index, so the closer needs no in-memory state. Migration `0010` closes earlier windows as `backfill` without evaluating them, because their rules already ran.
+- `signalops demo-post` posts a whole dataset at once by default, which the policy treats as history. `--realtime` posts records as their timestamps arrive, so a demo can fire rules.
+
+**Reason:** Per-sample evaluation lets the first `min_samples` arrivals decide, so shuffled input can change the outcome; a closed window has one final set of counts. Judging lateness from `ingested_at` makes it a fact about the signal: redelivery gives the same answer, and detector downtime does not turn on-time data into late data, as comparing with the detector's own arrival time would. A scope-wide replay clock would let the partition that is furthest ahead close another service's windows, so the clock follows the unit Kafka keeps in order. The closer is a separate process because a quiet service has no next sample to close its window, and it keeps `ConsumerRunner` free of timers. Closure and sample upserts both hold the window row, so a sample either lands in the counts closure reads or sees the window closed and evaluates it.
+**Trade-off:** Detection waits for closure: up to window plus lateness, 90 s by default, instead of as soon as `min_samples` is reached. After detector downtime the closer can close a partly consumed window; a false trigger from those partial counts is not withdrawn, and a re-evaluation of an older window can be suppressed by a newer window's cooldown. Replay does not validate timestamps, so one far-future `occurred_at` moves that service's clock and makes its later samples late. A single demo-post backfill into live is counted as late rather than evaluated. The sample-count calibration in ADR-015 is unchanged by closure: over the same 100 healthy and 100 fault generator runs, per-sample and closure evaluation both fire on 2 healthy runs and both miss latency in 1 fault run (generator measurements, ordered input). Closure gives order independence here, not fewer false positives; the demo false positives remain for P05-T03 or a persistence requirement.
+**Revisit when:** Detection latency needs an early-warning path, triggers need withdrawal, closure should wait on consumer lag, or replay orchestration (P10-T02) replaces the manual flush.
 
 ---
 
@@ -150,7 +167,7 @@ Format: **Decision**, **Reason**, **Trade-off**, **Revisit when**.
 | Q4 | Expired or unknown SSE cursor behavior (full resync vs error) | P08-T03 |
 | Q5 | Idempotency-key storage table and retention window | P06-T01 |
 | Q6 | ~~Diagnosis status ↔ investigation terminal status mapping~~ **Resolved (P02-T05):** one-to-one. `completed` ⇔ `diagnosed`, `insufficient_evidence` ⇔ `insufficient_evidence`, no diagnosis otherwise; enforced in contracts, a database CHECK, and the generated UI module. See data-model.md | P02-T05 |
-| Q7 | Detector window closure metadata schema | P05-T02 |
+| Q7 | ~~Detector window closure metadata schema~~ **Resolved (P05-T02):** columns on `signal_aggregates` plus `detection_clocks`; see ADR-016 | P05-T02 |
 | Q8 | Which real model provider is implemented first, and its pricing provenance format | P07-T01 / P07-T02 |
 | Q9 | Operator authentication mechanism before public exposure. Interim: static per-workspace tokens (ADR-014) | P11-T02 |
 | Q10 | Whether the OpenTelemetry Demo fits local resources, or a smaller synthetic app suffices for the `demo` profile | P10-T03 |

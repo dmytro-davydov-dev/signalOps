@@ -27,11 +27,11 @@ PostgreSQL owns evidence, workflow progress, budgets, and the initial knowledge 
 | --- | --- |
 | Active phase | Phase 5 Detection and knowledge graph; Phase 4 gate passed |
 | Active task | None |
-| Last completed task | P05-T01 |
-| Latest verified commit | `7baea33` (P04-T05); P05-T01 pending commit, validated against the working tree |
-| Validation evidence | P05-T01: dev database migrated to `0009_detection_state`, `alembic check` clean; 0009 downgrade and re-upgrade on a scratch database. Compose `detector` started on the rebuilt image and consumed the 1036 existing `signals.normalized.v1` events with no errors: 1036 `detector-v1` receipts, 1031 countable signals → 1031 samples (one per signal) and aggregate totals of 796 trace + 235 log samples; 7 triggers, all in the 15:41–15:42 windows where the dev data's upstream timeouts cluster (payment and checkout error rate and p95, bank-gateway p95, payment and checkout log error rate). `SIGNALOPS_INTEGRATION=1 uv run pytest` 684 passed. Earlier evidence is in the work log |
+| Last completed task | P05-T02 |
+| Latest verified commit | `0ba41c6` (P05-T01); P05-T02 pending commit, validated against the working tree |
+| Validation evidence | P05-T02: `SIGNALOPS_INTEGRATION=1 uv run pytest` 706 passed; `alembic check` clean on the dev database at `0010_window_closure`. Compose run: real-time `downstream-timeout` demo (300 s, 514 records accepted) gave 7 wall-clock triggers on payment, checkout, and bank-gateway about 30 s after window end, 0 late samples; closer stopped with 6 windows open and restarted, all closed. Earlier evidence is in the work log |
 | Blockers | None recorded |
-| Next task | P05-T02 |
+| Next task | P05-T03 |
 
 ### Scope and release boundaries
 
@@ -468,11 +468,22 @@ Start the React shell in Phase 1 and add API-backed incident views in Phase 5; P
 
 ### P05-T02 Handle late data and window closure
 
-- [ ] Complete this task.
+- [x] Complete this task.
 
 **Implementation:** Implement configurable 30-second allowed lateness, durable closure/recovery state, and explicit late flags. Use wall-clock closure live and a simulated clock plus final flush during replay.
 
 **Acceptance:** Shuffled events within the lateness bound yield the expected incident; older arrivals follow the documented historical policy.
+
+**Notes (2026-11-06):**
+- **Decision (ADR-016, resolves Q7), deviation from P05-T01:** rules now run at window closure instead of on every sample, because per-sample evaluation lets arrival order decide. Worst-case detection is window plus lateness, 90 s by default.
+- Live lateness uses the signal's `ingested_at`, so consumer lag does not make a signal late. Replay uses a durable per-service clock (`detection_clocks`), because a scope-wide clock would let one partition close another's windows.
+- `signalops detector-closer` (new Compose service) closes live windows by wall clock; `signalops detector-flush` ends a replay. Migration `0010_window_closure` adds `late_count`, `closed_at`, `closed_by`, `detection_samples.late`, and `detection_clocks`, and closes earlier windows as `backfill` without evaluating them.
+- Older arrivals: `detection_samples.late` and `late_count` only; they reach no rule. An on-time sample that finds its window closed joins it and re-evaluates; triggers are not withdrawn.
+- **Acceptance scope:** incidents do not exist until P05-T03, so "expected incident" was verified at trigger level: shuffled arrivals produce the same triggers as ordered ones (synthetic windows, three seeds; the demo fault dataset, one seed). P05-T03 should repeat this at incident level.
+- **Behavior change:** a default `demo-post` backfill, and the Compose `demo` service that runs it, is now mostly past the bound and fires only in its newest windows. `demo-post --realtime` (new, `demo/poster.py`) posts as timestamps arrive; a 300 s run took about 5 minutes.
+- **Recalibrated offline:** over the same 100 healthy and 100 fault generator runs, per-sample and closure evaluation give identical results (2 healthy runs fire latency, 1 fault run misses latency). Closure adds order independence, not fewer false positives.
+- **Local configuration:** `.env` lacks ingestion tokens for two demo sources, so `demo-post` fails with `no ingestion token for sources`. The Compose validation used temporary tokens held in one process's environment, and `api` was restarted without them afterward. `.env` was not changed.
+- Left: the replay API path and automatic flush (P10-T02; replay tests set `replay_run_id` on the envelope); no API for late counts or closure state (P05-T05); after detector downtime a trigger from a partly consumed window is not withdrawn; replay does not bound far-future timestamps; retention for clocks, aggregates, and triggers.
 
 ### P05-T03 Create correlated incidents atomically
 
@@ -1100,6 +1111,16 @@ Keep these outside the release critical path unless measurements justify promoti
 - Deviations and reasons: `detection_samples` and `detection_triggers` tables beyond the plan; aggregates per metric series rather than per rule (task notes, ADR-015).
 - Remaining issues: see task notes. Generator calibration shows rare latency triggers in healthy runs; P05-T02/T03 decide how triggers become incidents.
 - Next task: P05-T02
+
+### 2026-11-06 — P05-T02
+- Status: completed
+- Commit: pending commit; validated against the current working tree.
+- Implemented: closure-time rule evaluation (`detection/detector.py`); `WindowCloser` and `flush_replay` (`detection/closure.py`); `detector-closer` and `detector-flush` commands and Compose `detector-closer`; repository closure and clock operations; migration `0010_window_closure`; settings `SIGNALOPS_DETECTION_ALLOWED_LATENESS_SECONDS` and `SIGNALOPS_DETECTION_CLOSER_INTERVAL_MS`; `demo-post --realtime`; ADR-016; docs (architecture, data-model, decisions, development, events, reliability).
+- Validation commands and results: `uv run ruff check .`, `uv run ruff format --check .`, `uv run mypy` (110 files), `uv run signalops export-schemas --check` pass; `uv run pytest` 458 passed, 248 skipped; `SIGNALOPS_INTEGRATION=1 uv run pytest` 706 passed, including the downgrade/upgrade schema test; race, concurrency, and shuffle tests repeated 5 times, 6 passed each; `docker compose config --quiet` passes; `alembic check` reports no new operations. Dev migration closed 80 earlier windows (1031 samples) as `backfill` and left the 7 existing triggers unchanged. Frontend checks not run: no frontend change.
+- Evidence or artifact references: `tests/integration/test_detector.py`, `tests/unit/test_detection_rules.py`, `tests/unit/test_demo_poster.py`, `tests/unit/test_cli.py`. Compose run on 2026-11-06, seed 781637803: 7 triggers, `checkout` and `payment` error rates at 16:31, all three latency rules at 16:32, closed by wall clock with 0 late samples. Closer outage: 6 windows open while stopped, 0 after restart.
+- Deviations and reasons: rules moved from per-sample to closure evaluation (ADR-016). Acceptance was verified on triggers, since incidents arrive in P05-T03. The offline calibration used a scratch script over the generator and is not a repository check.
+- Remaining issues: see task notes. The Compose `demo` service still backfills, so it needs `--realtime` or replay ingestion before it can show an incident.
+- Next task: P05-T03.
 
 ## Work log template
 

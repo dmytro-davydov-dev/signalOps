@@ -1,4 +1,4 @@
-"""Detection rules, windows, and histogram arithmetic (P05-T01)."""
+"""Detection rules, windows, and histogram arithmetic (P05-T01, P05-T02)."""
 
 from datetime import UTC, datetime, timedelta
 
@@ -17,6 +17,7 @@ from signalops.detection.rules import (
     duration_bucket,
     evaluate,
     histogram_quantile,
+    metric_of_series,
     series_name,
     window_for,
 )
@@ -51,6 +52,21 @@ def test_windows_are_epoch_aligned_and_half_open() -> None:
     assert window_for(datetime(2026, 10, 30, 12, 7, 30, tzinfo=UTC), 300).start == datetime(
         2026, 10, 30, 12, 5, tzinfo=UTC
     )
+
+
+def test_window_is_past_only_beyond_its_lateness_deadline() -> None:
+    window = window_for(datetime(2026, 10, 30, 12, 0, tzinfo=UTC), 60)
+    lateness = timedelta(seconds=30)
+    deadline = window.end + lateness
+    assert not window.is_past(deadline - timedelta(microseconds=1), lateness)
+    assert not window.is_past(deadline, lateness)
+    assert window.is_past(deadline + timedelta(microseconds=1), lateness)
+    assert window.is_past(window.end + timedelta(microseconds=1), timedelta(0))
+
+
+def test_series_name_round_trips_to_its_metric() -> None:
+    for metric in DetectionMetric:
+        assert metric_of_series(series_name(metric, 300)) is metric
 
 
 def test_window_requires_aware_datetime() -> None:
@@ -156,3 +172,10 @@ def test_settings_default_rules_and_json_override(monkeypatch: pytest.MonkeyPatc
 def test_settings_refuse_duplicate_rule_ids() -> None:
     with pytest.raises(ValidationError, match="duplicate detection rule id"):
         _settings(detection_rules=(ERROR_RATE, ERROR_RATE.model_copy(update={"version": 2})))
+
+
+def test_settings_default_and_bound_allowed_lateness() -> None:
+    assert _settings().detection_allowed_lateness_seconds == 30
+    assert _settings(detection_allowed_lateness_seconds=0).detection_allowed_lateness_seconds == 0
+    with pytest.raises(ValidationError):
+        _settings(detection_allowed_lateness_seconds=-1)

@@ -69,3 +69,15 @@ def test_redrive_outbox_requires_a_uuid() -> None:
     with pytest.raises(SystemExit) as exc:
         main(["redrive-outbox", "not-a-uuid"])
     assert exc.value.code == 2
+
+
+def test_detector_flush_requires_workspace_and_run() -> None:
+    with pytest.raises(SystemExit) as exc:
+        main(["detector-flush", "--workspace-id", "not-a-uuid", "--replay-run-id", "x"])
+    assert exc.value.code == 2
+
+
+def test_demo_post_realtime_refuses_a_start_time(capsys: pytest.CaptureFixture[str]) -> None:
+    argv = ["demo-post", "healthy", "--realtime", "--start", "2026-10-30T09:00:00+00:00"]
+    assert main(argv) == 2
+    assert "--realtime" in capsys.readouterr().err

@@ -112,7 +112,7 @@ Raw adapter records are validated by the normalizer against `contracts/adapters.
 | `derived_event_id` | `source_event_id_derived` is true | none (`accepted`) |
 | `truncated_message` | Reserved; nothing truncates yet | none |
 
-Timing compares the envelope's own timestamps, so reprocessing gives the same flags; `occurred_at` is stored as reported, never corrected. Replay scopes skip timing flags. The detector's 30-second lateness rule is separate and uses its window clock (P05).
+Timing compares the envelope's own timestamps, so reprocessing gives the same flags; `occurred_at` is stored as reported, never corrected. Replay scopes skip timing flags. The detector's 30-second lateness rule is separate; see [closure and lateness](#closure-and-lateness).
 
 A **malformed** record is stored, not dropped: kind from the source, severity `info`, no `service_id` or `trace_id`, message `malformed {source_kind} record: {errors}`, `attributes.record.contract_errors` with field locations and messages, and the raw (redacted) record under `attributes.source`. If keeping the record would exceed 16 KiB, `source` is empty and `provenance.record_omitted_bytes` holds its size; the full record stays on `signals.raw.v1` for its retention. It gets a receipt and a `signal.normalized` event like any other signal, and never a `deployments` row.
 
@@ -120,7 +120,7 @@ IDs are derived, so reprocessing yields the same rows: signal ID = UUIDv5(source
 
 ### Detector (`detector-v1`)
 
-`signalops detector` consumes `signals.normalized.v1` with `TransactionalProcessor` and `detection.detector.Detector` ([ADR-015](decisions.md#adr-015-detection-windows-count-accepted-samples-once-and-record-rule-triggers)). It counts a signal when the event and the stored row agree that it is a `log` or `trace`, `accepted`, with a resolved service; everything else is acknowledged without effect. In one transaction per event it writes the receipt, loads the signal by ID within the envelope's workspace and replay scope, inserts a `detection_samples` row, adds the sample to its `signal_aggregates` window, and evaluates that metric's rules, inserting a `detection_triggers` row when one fires. It emits no events yet; incidents come from triggers in P05-T03.
+`signalops detector` consumes `signals.normalized.v1` with `TransactionalProcessor` and `detection.detector.Detector` ([ADR-015](decisions.md#adr-015-detection-windows-count-accepted-samples-once-and-record-rule-triggers)). It counts a signal when the event and the stored row agree that it is a `log` or `trace`, `accepted`, with a resolved service; everything else is acknowledged without effect. In one transaction per event it writes the receipt, loads the signal by ID within the envelope's workspace and replay scope, inserts a `detection_samples` row, and adds the sample to its `signal_aggregates` window. Rules run when the window closes, inserting a `detection_triggers` row when one fires. It emits no events yet; incidents come from triggers in P05-T03.
 
 | Metric | Sample | Error | Value |
 | --- | --- | --- | --- |
@@ -135,7 +135,23 @@ Windows are epoch-aligned and `SIGNALOPS_DETECTION_WINDOW_SECONDS` (60) long; th
 | `trace_latency_p95` v1 | trace p95 > 1000 ms | 20 | 300 s |
 | `log_error_rate` v1 | log error rate ≥ 0.5 | 10 | 300 s |
 
-Rules are evaluated after each sample against the updated window, so a rule can fire before its window ends; closure and the 30-second lateness rule are P05-T02. A signal ID that names no signal in the envelope's workspace and scope, or a trace without `record.duration_ms`/`record.status`, is a `ContractError` and goes to `processing.failed.v1`.
+#### Closure and lateness
+
+Rules are evaluated at closure ([ADR-016](decisions.md#adr-016-rules-evaluate-at-window-closure-with-lateness-judged-from-durable-clocks)), so arrival order inside the bound does not change the result. A window's deadline is `window_end` plus `SIGNALOPS_DETECTION_ALLOWED_LATENESS_SECONDS` (30); its clock must pass the deadline, not just reach it.
+
+| | Live | Replay scope |
+| --- | --- | --- |
+| A sample is judged by | its `ingested_at` | the service's `detection_clocks` value, including that sample |
+| Windows close by | `signalops detector-closer`, wall clock | the detector, as the clock advances |
+| Last windows | wall clock | `signalops detector-flush --workspace-id W --replay-run-id R`, after the detector has consumed the run |
+
+| Sample | Effect |
+| --- | --- |
+| On time, window open | Joins the counts |
+| On time, window closed (consumer lag, or the race at the deadline) | Joins the counts and re-evaluates the window; a trigger already raised stays |
+| Past the deadline | `detection_samples.late` set, `late_count` + 1; the counts do not change and no rule runs, so it cannot raise a historical trigger. The signal stays queryable evidence |
+
+The detector's `late` flag is separate from the normalizer's `late_arrival` quality flag, which has a 900-second threshold and does not affect the signal's status. A signal ID that names no signal in the envelope's workspace and scope, or a trace without `record.duration_ms`/`record.status`, is a `ContractError` and goes to `processing.failed.v1`.
 
 ## Decoding
 

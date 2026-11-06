@@ -15,6 +15,9 @@ reaches it, an overestimate by at most one bucket.
 
 A rule fires only when its window holds at least `min_samples` samples, so a
 single error in an almost empty window is not a 100 % error rate.
+
+A window stops accepting samples once its clock is past `window_end` plus the
+allowed lateness; see `Window.is_past`.
 """
 
 import math
@@ -35,6 +38,19 @@ class DetectionMetric(StrEnum):
     TRACE = "trace"
     # One sample per log: error at severity error or critical; no value.
     LOG = "log"
+
+
+class WindowClosure(StrEnum):
+    """What closed a window."""
+
+    # Live: wall clock past the window's lateness deadline.
+    WALL_CLOCK = "wall_clock"
+    # Replay: the service's simulated clock past the deadline.
+    SIMULATED_CLOCK = "simulated_clock"
+    # Replay: closed by the end-of-run flush.
+    FINAL_FLUSH = "final_flush"
+    # Counted before closure existed; closed by migration 0010, rules not re-evaluated.
+    BACKFILL = "backfill"
 
 
 class RuleKind(StrEnum):
@@ -151,6 +167,10 @@ class Window:
     start: datetime
     end: datetime
 
+    def is_past(self, clock: datetime, lateness: timedelta) -> bool:
+        """Whether `clock` is beyond this window's lateness deadline; the deadline itself is not."""
+        return clock > self.end + lateness
+
 
 def window_for(at: datetime, window_seconds: int) -> Window:
     """The epoch-aligned tumbling window containing `at`."""
@@ -163,6 +183,10 @@ def window_for(at: datetime, window_seconds: int) -> Window:
 
 def series_name(metric: DetectionMetric, window_seconds: int) -> str:
     return f"{metric}.{window_seconds}s"
+
+
+def metric_of_series(name: str) -> DetectionMetric:
+    return DetectionMetric(name.partition(".")[0])
 
 
 def duration_bucket(duration_ms: float) -> str:

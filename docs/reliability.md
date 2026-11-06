@@ -65,10 +65,13 @@ on ack: UPDATE published_at
 - The receipt insert and the aggregate update share one transaction, so a Redis-only window would not survive a restart.
 - Two checks run before an aggregate changes: the consumer receipt per event, then the `detection_samples` key per (signal, series). A signal redelivered under another event ID adds nothing (P05-T01).
 - Aggregates change by one upsert that adds to the stored counts and histogram, so concurrent writers to one window serialize on its row. A transaction-scoped advisory lock per (service, scope, rule) serializes the cooldown check and the trigger insert; the trigger unique key backs it.
-- Cooldowns compare window starts (event time), so a replay reaches the same triggers as the live run. Rule evaluation happens on each sample, not at closure (P05-T02 below).
-- Events up to **30 seconds late** update their window, and the rule is recomputed idempotently.
-- Older events are kept as evidence with a late flag. They never silently create historical incidents.
-- Live mode closes windows by wall clock. Replay uses a simulated clock plus a final flush.
+- Cooldowns compare window starts (event time), so a replay reaches the same triggers as the live run. Windows of a service close oldest first, which keeps the cooldown decision the same whatever the arrival order.
+- Events up to **30 seconds late** update their window. Rules run at closure, and an on-time sample that finds its window closed re-evaluates it; the trigger unique key makes that idempotent (ADR-016).
+- Older events are kept as evidence with a late flag (`detection_samples.late`, `late_count`). They never reach a rule, so they cannot silently create historical incidents.
+- Live mode closes windows by wall clock (`detector-closer`). Replay uses a durable per-service simulated clock plus a final flush (`detector-flush`).
+- Lateness comes from stored timestamps, so redelivery gives the same answer and consumer lag does not make a signal late.
+- Closure state is the window row: a restart finds open windows there, and a crash mid-closure rolls the batch back, leaving them open. Closers lock rows with `FOR UPDATE SKIP LOCKED`; a sample and a closure on one window serialize on its row, so neither misses the other.
+- After detector downtime the closer can close a window before its backlog arrives. The backlog re-evaluates it, but a trigger raised from partial counts is not withdrawn.
 
 ## Streaming stats
 

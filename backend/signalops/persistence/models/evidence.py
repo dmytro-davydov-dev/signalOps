@@ -31,6 +31,7 @@ from signalops.contracts.evidence import (
     SignalKind,
     SourceKind,
 )
+from signalops.detection.rules import WindowClosure
 from signalops.persistence.base import Base
 from signalops.persistence.models.common import (
     created_at,
@@ -219,6 +220,16 @@ class SignalAggregate(Base):
         # Also implies a nonnegative sample_count.
         CheckConstraint("0 <= error_count AND error_count <= sample_count", name="counts_range"),
         CheckConstraint(json_object("histogram"), name="histogram_object"),
+        CheckConstraint("late_count >= 0", name="late_count_nonnegative"),
+        CheckConstraint("(closed_at IS NULL) = (closed_by IS NULL)", name="closure_complete"),
+        CheckConstraint(one_of("closed_by", WindowClosure), name="closed_by_known"),
+        # Finds windows due for closure.
+        Index(
+            "ix_signal_aggregates_open",
+            "replay_scope",
+            "window_end",
+            postgresql_where=text("closed_at IS NULL"),
+        ),
     )
 
     id: Mapped[uuid.UUID] = uuid_pk()
@@ -232,3 +243,7 @@ class SignalAggregate(Base):
     error_count: Mapped[int] = mapped_column(BigInteger, default=0, server_default=text("0"))
     value_sum: Mapped[float] = mapped_column(Double, default=0.0, server_default=text("0"))
     histogram: Mapped[dict[str, Any]] = json_attributes()
+    # Samples past the lateness deadline: never in the counts above, never evaluated.
+    late_count: Mapped[int] = mapped_column(BigInteger, default=0, server_default=text("0"))
+    closed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    closed_by: Mapped[str | None] = mapped_column(Text)
