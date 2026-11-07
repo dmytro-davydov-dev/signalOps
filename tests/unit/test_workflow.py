@@ -48,7 +48,7 @@ def checkpoint(workflow_version: str = "v1") -> dict[str, Any]:
 
 def test_step_keys_are_stable_and_unique() -> None:
     """Stored steps name these keys, so renaming one strands running investigations."""
-    assert [node.key for node in WORKFLOWS["v1"].nodes] == [
+    assert [node.key for node in WORKFLOWS["v1"].steps] == [
         "load_context",
         "investigate",
         "conclude",

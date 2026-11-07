@@ -20,6 +20,7 @@ from sqlalchemy.exc import OperationalError
 from signalops.agents.investigations import INVESTIGATION_EVENT_NAMESPACE
 from signalops.agents.jobs import (
     JobErrorCategory,
+    JobHandler,
     JobPolicy,
     JobRunner,
     PermanentJobError,
@@ -30,6 +31,7 @@ from signalops.agents.jobs import (
     release_job,
     retry_job,
 )
+from signalops.contracts.diagnosis import Diagnosis
 from signalops.contracts.events import EventType
 from signalops.contracts.workflow import (
     AgentRole,
@@ -41,7 +43,7 @@ from signalops.persistence import database as db
 from signalops.persistence.models import AgentStep, Investigation, Job, OutboxEvent
 from signalops.persistence.repositories.jobs import JobLease, JobRepository, LeaseLostError
 from signalops.streaming.retry import RetryPolicy
-from tests.integration.job_support import add_job
+from tests.integration.job_support import ABSTENTION, add_job
 
 pytestmark = pytest.mark.integration
 
@@ -202,7 +204,7 @@ StaleWrite = Callable[[db.Database, JobLease], Awaitable[Any]]
 STALE_WRITES: dict[str, StaleWrite] = {
     "heartbeat": heartbeat,
     "checkpoint": lambda database, lease: checkpoint(database, lease, "stale"),
-    "complete": complete_job,
+    "complete": lambda database, lease: complete_job(database, lease, ABSTENTION),
     "retry": lambda database, lease: retry_job(database, lease, TransientJobError("x"), POLICY),
     "fail": lambda database, lease: fail_job(database, lease, PermanentJobError("x")),
     "release": release_job,
@@ -268,7 +270,7 @@ async def test_the_new_owner_can_finish_after_a_takeover(database: db.Database) 
 
     assert await checkpoint(database, current, "current")
     await heartbeat(database, current)
-    await complete_job(database, current)
+    await complete_job(database, current, ABSTENTION)
 
     job = await job_of(database, investigation_id)
     assert (job.status, job.lease_owner, job.lease_until) == (JobStatus.SUCCEEDED, None, None)
@@ -490,12 +492,12 @@ async def test_a_release_refunds_the_attempt(database: db.Database) -> None:
     next_lease = await claim(database, B)
     assert (next_lease.generation, next_lease.attempt) == (2, 1)
     with pytest.raises(LeaseLostError):
-        await complete_job(database, lease)
+        await complete_job(database, lease, ABSTENTION)
 
 
 async def run_until(
     database: db.Database,
-    handler: Callable[[JobLease], Awaitable[None]],
+    handler: JobHandler,
     done: Callable[[], Awaitable[bool]],
     policy: JobPolicy = FAST,
     owner: str = A,
@@ -524,8 +526,9 @@ async def test_the_runner_completes_a_job(database: db.Database) -> None:
     investigation_id = await add_job(database)
     seen: list[JobLease] = []
 
-    async def handler(lease: JobLease) -> None:
+    async def handler(lease: JobLease) -> Diagnosis:
         seen.append(lease)
+        return ABSTENTION
 
     await run_until(
         database, handler, job_status_is(database, investigation_id, JobStatus.SUCCEEDED)
@@ -544,7 +547,7 @@ async def test_the_runner_retries_an_unexpected_error_without_storing_its_text(
         retry=RetryPolicy(base_delay_seconds=3600, max_delay_seconds=3600),
     )
 
-    async def handler(_lease: JobLease) -> None:
+    async def handler(_lease: JobLease) -> Diagnosis:
         raise ValueError("token=hunter2 from a quoted log line")
 
     async def retried() -> bool:
@@ -559,7 +562,7 @@ async def test_the_runner_retries_an_unexpected_error_without_storing_its_text(
 async def test_the_runner_fails_a_permanent_error(database: db.Database) -> None:
     investigation_id = await add_job(database)
 
-    async def handler(_lease: JobLease) -> None:
+    async def handler(_lease: JobLease) -> Diagnosis:
         raise PermanentJobError("no such workflow")
 
     await run_until(database, handler, job_status_is(database, investigation_id, JobStatus.FAILED))
@@ -573,10 +576,11 @@ async def test_heartbeats_keep_a_long_job_from_another_worker(database: db.Datab
     investigation_id = await add_job(database)
     rival_claims: list[JobLease | None] = []
 
-    async def handler(_lease: JobLease) -> None:
+    async def handler(_lease: JobLease) -> Diagnosis:
         for _ in range(4):
             await asyncio.sleep(FAST.lease_seconds / 2)
             rival_claims.append(await claim_job(database, B, FAST))
+        return ABSTENTION
 
     await run_until(
         database, handler, job_status_is(database, investigation_id, JobStatus.SUCCEEDED)
@@ -591,13 +595,14 @@ async def test_losing_the_lease_cancels_the_handler_and_writes_nothing(
     investigation_id = await add_job(database)
     started, cancelled = asyncio.Event(), asyncio.Event()
 
-    async def handler(_lease: JobLease) -> None:
+    async def handler(_lease: JobLease) -> Diagnosis:
         started.set()
         try:
             await asyncio.sleep(60)
         except asyncio.CancelledError:
             cancelled.set()
             raise
+        return ABSTENTION
 
     async def taken_over() -> bool:
         return cancelled.is_set()
@@ -623,9 +628,10 @@ async def test_a_stopping_runner_releases_its_job(database: db.Database) -> None
     investigation_id = await add_job(database)
     started = asyncio.Event()
 
-    async def handler(_lease: JobLease) -> None:
+    async def handler(_lease: JobLease) -> Diagnosis:
         started.set()
         await asyncio.sleep(60)
+        return ABSTENTION
 
     async def is_started() -> bool:
         return started.is_set()
@@ -647,13 +653,14 @@ async def test_a_worker_cut_off_from_postgres_stops_when_its_lease_runs_out(
     async def unreachable(*_args: object) -> None:
         raise OperationalError("heartbeat", {}, Exception("connection refused"))
 
-    async def handler(_lease: JobLease) -> None:
+    async def handler(_lease: JobLease) -> Diagnosis:
         started_at.append(loop.time())
         try:
             await asyncio.sleep(60)
         except asyncio.CancelledError:
             cancelled_at.append(loop.time())
             raise
+        return ABSTENTION
 
     async def stopped() -> bool:
         return bool(cancelled_at)

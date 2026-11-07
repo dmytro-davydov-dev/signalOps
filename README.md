@@ -4,7 +4,7 @@ SignalOps turns noisy telemetry into evidence-backed software incident diagnoses
 
 It ingests logs, trace summaries, and deployment events, detects incidents with deterministic time-window rules, and runs bounded, budgeted agent investigations. Each investigation returns a validated diagnosis that cites evidence, or an explicit *insufficient evidence* result. A replay-based evaluation lab scores diagnoses against injected faults.
 
-> **Status: Phase 1 of 12 complete (project foundation).** The Compose stack, API health endpoints, migrations, topic provisioning, and a React shell run today. Ingestion, detection, investigations, and evaluation are not built yet; the sections below describe the intended system. See the [progress ledger](docs/development_roadmap.md#progress-ledger) for actual progress.
+> **Status: Phase 6 of 12 complete (durable jobs and workflow runtime).** Ingestion, detection, incidents, the service graph, and durable investigations run today, on a fake workflow that makes no model call and always abstains. The gateway, a real agent, the live UI, and evaluation are not built yet; the sections below describe the intended system. See the [progress ledger](docs/development_roadmap.md#progress-ledger) for actual progress.
 
 ## What it does
 

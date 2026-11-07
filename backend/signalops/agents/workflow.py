@@ -18,12 +18,16 @@ fails the job, because a completed step can never run again.
 transaction, so no node starts after either commits. Phase 7 must make the same
 check before each model call inside a node (ADR-023).
 
+**Outcome.** A workflow ends in a node whose output is the `Diagnosis`. The engine
+returns it, reused if a crash came after that step, and `JobRunner` ends the job and
+investigation with it in one transaction (ADR-024). So a replay of a finished
+workflow reaches the outcome already stored.
+
 **Versions.** An investigation runs the workflow version it was requested with. A
 change to the nodes or their output needs a new entry in `WORKFLOWS`.
 
 The nodes run in sequence. `investigate` stands in for the model-backed investigator
-of Phase 7 and always abstains, so nothing here calls a provider or writes a
-diagnosis to the investigation (P06-T05).
+of Phase 7 and always abstains, so nothing here calls a provider.
 """
 
 import logging
@@ -103,7 +107,13 @@ class Node[T: ContractModel]:
 @dataclass(frozen=True)
 class Workflow:
     version: str
+    # The nodes before the conclusion.
     nodes: tuple[Node[Any], ...]
+    conclusion: Node[Diagnosis]
+
+    @property
+    def steps(self) -> tuple[Node[Any], ...]:
+        return (*self.nodes, self.conclusion)
 
 
 async def load_context(context: NodeContext) -> IncidentBrief:
@@ -139,7 +149,7 @@ INVESTIGATE: Final = Node("investigate", AgentRole.INVESTIGATOR, InvestigatorFin
 CONCLUDE: Final = Node("conclude", AgentRole.SYNTHESIZER, Diagnosis, conclude)
 
 WORKFLOWS: Final[Mapping[str, Workflow]] = {
-    WORKFLOW_VERSION: Workflow(WORKFLOW_VERSION, (LOAD_CONTEXT, INVESTIGATE, CONCLUDE)),
+    WORKFLOW_VERSION: Workflow(WORKFLOW_VERSION, (LOAD_CONTEXT, INVESTIGATE), CONCLUDE),
 }
 
 
@@ -163,7 +173,7 @@ class WorkflowEngine:
         self._database = database
         self._workflows = workflows
 
-    async def __call__(self, lease: JobLease) -> None:
+    async def __call__(self, lease: JobLease) -> Diagnosis:
         async with self._database.transaction() as session:
             run = WorkflowRun.of(await session.get_one(Investigation, lease.investigation_id))
             stored = await JobRepository(session).steps_of(lease.investigation_id)
@@ -172,7 +182,7 @@ class WorkflowEngine:
             raise PermanentJobError(f"unknown workflow version {run.workflow_version}")
         steps = {step.step_key: step for step in stored}
         context = NodeContext(self._database, run)
-        for index, node in enumerate(workflow.nodes):
+        for index, node in enumerate(workflow.steps):
             step = steps.get(node.key)
             if step is not None and step.status == StepStatus.COMPLETED:
                 context.keep(node, reused_output(node, step, run.workflow_version))
@@ -181,6 +191,7 @@ class WorkflowEngine:
                 raise PermanentJobError(f"max_steps {run.max_steps} reached before {node.key}")
             else:
                 await self._execute(lease, node, context)
+        return context.output(workflow.conclusion)
 
     async def _execute[T: ContractModel](
         self, lease: JobLease, node: Node[T], context: NodeContext
@@ -210,7 +221,7 @@ class WorkflowEngine:
             failed = checkpoint.model_copy(update={"state": {"error": error_record(error)}})
             async with self._database.transaction() as session:
                 await JobRepository(session).fail_step(
-                    lease, node.key, failed.model_dump(mode="json")
+                    lease, node.key, failed.model_dump(mode="json"), error_record(error)["category"]
                 )
             raise
         async with self._database.transaction() as session:

@@ -4,10 +4,11 @@
 runs. Each claim spends an attempt, including a takeover after a crash, so a job
 that kills its workers stops at `max_attempts`.
 
-**Settling.** A handler that returns completes the job. `PermanentJobError` fails
-it. Any other exception retries it after a capped, jittered delay kept in
-`available_at`. A job out of attempts fails its investigation, in one transaction
-with the `investigation.completed` outbox row.
+**Settling.** A handler returns the diagnosis, and one transaction ends the job and
+its investigation with it (ADR-024). `PermanentJobError` fails the job. Any other
+exception retries it after a capped, jittered delay kept in `available_at`. A job
+out of attempts fails its investigation, in one transaction with the
+`investigation.completed` outbox row.
 
 **Lease loss.** A worker that loses its lease, or cannot reach PostgreSQL before
 the lease runs out, cancels the handler and writes nothing more. A write that
@@ -40,6 +41,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from signalops.agents.investigations import end_investigation
 from signalops.config import Settings
 from signalops.contracts.common import MAX_ERROR_DETAIL_LENGTH
+from signalops.contracts.diagnosis import Diagnosis
+from signalops.contracts.investigations import terminal_status_for
 from signalops.contracts.workflow import InvestigationStatus, JobStatus
 from signalops.persistence.database import Database
 from signalops.persistence.models import Job
@@ -53,7 +56,7 @@ from signalops.streaming.retry import RetryPolicy
 
 logger = logging.getLogger(__name__)
 
-JobHandler = Callable[[JobLease], Awaitable[None]]
+JobHandler = Callable[[JobLease], Awaitable[Diagnosis]]
 
 
 class JobErrorCategory(StrEnum):
@@ -174,7 +177,8 @@ async def claim_job(database: Database, owner: str, policy: JobPolicy) -> JobLea
                 await _exhaust(session, job, error)
 
 
-async def complete_job(database: Database, lease: JobLease) -> None:
+async def complete_job(database: Database, lease: JobLease, diagnosis: Diagnosis) -> None:
+    """End the job and its investigation together, unless a cancellation got there first."""
     async with database.transaction() as session:
         jobs = JobRepository(session)
         await jobs.hold(lease)
@@ -182,6 +186,9 @@ async def complete_job(database: Database, lease: JobLease) -> None:
             await _stop(session, lease.job_id, lease.investigation_id, JobStop.CANCELLED)
         else:
             await jobs.finish(lease.job_id, JobStatus.SUCCEEDED)
+            await end_investigation(
+                session, lease.investigation_id, terminal_status_for(diagnosis), diagnosis
+            )
 
 
 async def retry_job(
@@ -285,12 +292,12 @@ class JobRunner:
         except LeaseLostError:
             logger.warning("job lease lost before settling", extra={"job_id": str(lease.job_id)})
 
-    async def _settle(self, lease: JobLease, work: "asyncio.Future[None]") -> None:
+    async def _settle(self, lease: JobLease, work: "asyncio.Future[Diagnosis]") -> None:
         error = None if work.cancelled() else work.exception()
         if work.cancelled():
             await release_job(self._database, lease)
         elif error is None:
-            await complete_job(self._database, lease)
+            await complete_job(self._database, lease, work.result())
         elif not isinstance(error, Exception):
             raise error
         elif isinstance(error, JobStoppedError):

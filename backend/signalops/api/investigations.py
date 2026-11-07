@@ -1,4 +1,4 @@
-"""Investigation requests, reads, and cancellation.
+"""Investigation requests, reads, progress history, and cancellation.
 
 A request's response is `202` once the investigation and its outbox request
 commit, and a cancellation's once the request commits; the API never waits for
@@ -10,7 +10,7 @@ import uuid
 from datetime import UTC, datetime
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Header, HTTPException, Path, Request, status
+from fastapi import APIRouter, Header, HTTPException, Path, Query, Request, status
 from sqlalchemy.exc import SQLAlchemyError
 
 from signalops.agents.investigations import (
@@ -24,7 +24,15 @@ from signalops.agents.investigations import (
     request_hash_for,
 )
 from signalops.api.auth import OperatorWorkspace
-from signalops.api.evidence import ReadFailed, ReplayScopeQuery, read_database
+from signalops.api.evidence import (
+    InvalidQueryError,
+    LimitQuery,
+    ReadFailed,
+    ReplayScopeQuery,
+    check_limit,
+    invalid_query,
+    read_database,
+)
 from signalops.config import Settings
 from signalops.contracts.common import LIVE_REPLAY_SCOPE, MAX_KEY_LENGTH
 from signalops.contracts.diagnosis import Diagnosis
@@ -34,9 +42,11 @@ from signalops.contracts.investigations import (
     InvestigationUsage,
     InvestigationView,
 )
+from signalops.contracts.progress import ProgressEventView, ProgressPage
 from signalops.contracts.workflow import InvestigationStatus
 from signalops.persistence.models import Investigation
 from signalops.persistence.repositories.investigations import InvestigationRepository
+from signalops.persistence.repositories.progress import ProgressRepository
 from signalops.persistence.repositories.scope import EvidenceScope
 
 router = APIRouter(prefix="/v1", tags=["investigations"])
@@ -144,6 +154,49 @@ async def get_investigation(
             return _view(row)
     except SQLAlchemyError as error:
         raise ReadFailed("investigations/detail", error) from None
+
+
+@router.get("/investigations/{investigation_id}/progress", responses=NOT_FOUND)
+async def get_progress(
+    request: Request,
+    workspace_id: OperatorWorkspace,
+    investigation_id: Annotated[uuid.UUID, Path()],
+    replay_scope: ReplayScopeQuery = LIVE_REPLAY_SCOPE,
+    after: Annotated[int, Query(ge=0, description="The last event ID already read")] = 0,
+    limit: LimitQuery = None,
+) -> ProgressPage:
+    """An investigation's durable progress after `after`, oldest first."""
+    settings: Settings = request.app.state.settings
+    scope = EvidenceScope(workspace_id, replay_scope)
+    try:
+        page_size = check_limit(limit, settings)
+        async with read_database(request).transaction() as session:
+            if await InvestigationRepository(session).get(scope, investigation_id) is None:
+                raise _not_found()
+            rows = await ProgressRepository(session).after(
+                investigation_id, after, limit=page_size + 1
+            )
+            items = [
+                ProgressEventView.model_validate(
+                    {
+                        "id": row.id,
+                        "event_type": row.event_type,
+                        "payload": row.payload,
+                        "created_at": row.created_at,
+                    }
+                )
+                for row in rows[:page_size]
+            ]
+    except InvalidQueryError as error:
+        raise invalid_query(error) from None
+    except SQLAlchemyError as error:
+        raise ReadFailed("investigations/progress", error) from None
+    return ProgressPage(
+        investigation_id=investigation_id,
+        replay_scope=replay_scope,
+        items=tuple(items),
+        next_after=items[-1].id if len(rows) > page_size else None,
+    )
 
 
 @router.post(

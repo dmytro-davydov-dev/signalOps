@@ -464,6 +464,13 @@ class ProgressEvent(Base):
         CheckConstraint(length_between("event_type", 1, 128), name="event_type_length"),
         CheckConstraint(json_object("payload"), name="payload_object"),
         Index("ix_progress_events_investigation_id_id", "investigation_id", "id"),
+        # An investigation ends once, however often its work is replayed.
+        Index(
+            "uq_progress_events_investigation_ended",
+            "investigation_id",
+            unique=True,
+            postgresql_where=text("event_type = 'investigation.ended'"),
+        ),
     )
 
     # The SSE cursor: monotonically increasing, never reused.

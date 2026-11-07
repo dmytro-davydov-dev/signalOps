@@ -34,6 +34,7 @@ from signalops.contracts.investigations import (
     InvestigationRequest,
     InvestigationView,
 )
+from signalops.contracts.progress import ProgressPage
 from signalops.contracts.queries import QualitySummary, ServiceGraph, SignalPage, TraceEvidence
 from signalops.contracts.tools import TOOL_RESULT_ADAPTER, ToolFailure
 from signalops.contracts.workflow import TERMINAL_INVESTIGATION_STATUSES, InvestigationStatus
@@ -165,6 +166,7 @@ def artifacts() -> list[Artifact]:
         Artifact(
             SCHEMA_DIR / "investigations" / "investigation.v1.json", _schema(InvestigationView)
         ),
+        Artifact(SCHEMA_DIR / "investigations" / "progress-page.v1.json", _schema(ProgressPage)),
         Artifact(
             SCHEMA_DIR / "investigations" / "investigation-request.v1.json",
             _schema(InvestigationRequest),

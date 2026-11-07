@@ -13,7 +13,11 @@ from datetime import timedelta
 import pytest
 from sqlalchemy import delete, func, update
 
-from signalops.agents.investigations import cancel_investigation, end_investigation
+from signalops.agents.investigations import (
+    InvestigationFinishedError,
+    cancel_investigation,
+    end_investigation,
+)
 from signalops.agents.jobs import (
     JobErrorCategory,
     JobPolicy,
@@ -42,7 +46,7 @@ from signalops.persistence import database as db
 from signalops.persistence.models import Investigation, Job
 from signalops.persistence.repositories.investigations import InvestigationRepository
 from signalops.persistence.repositories.jobs import JobLease, JobRepository, LeaseLostError
-from tests.integration.job_support import LIVE, add_job
+from tests.integration.job_support import ABSTENTION, LIVE, add_job
 from tests.integration.test_job_leases import completed_events, expire, investigation_of, job_of
 from tests.integration.test_workflow_engine import claim, counted, run_once, steps_of
 
@@ -79,7 +83,7 @@ async def pass_deadline(database: db.Database, investigation_id: uuid.UUID) -> N
 
 
 def engine_with(database: db.Database, *nodes: Node[ContractModel]) -> WorkflowEngine:
-    return WorkflowEngine(database, {"v1": Workflow("v1", nodes)})
+    return WorkflowEngine(database, {"v1": Workflow("v1", nodes, CONCLUDE)})
 
 
 def hanging(entered: asyncio.Event, stopped: list[bool]) -> Node[InvestigatorFindings]:
@@ -259,9 +263,12 @@ async def test_work_finished_past_the_deadline_still_succeeds(database: db.Datab
     lease = await claim(database)
     await pass_deadline(database, investigation_id)
 
-    await complete_job(database, lease)
+    await complete_job(database, lease, ABSTENTION)
 
     assert (await job_of(database, investigation_id)).status == JobStatus.SUCCEEDED
+    assert (await investigation_of(database, investigation_id)).status == (
+        InvestigationStatus.INSUFFICIENT_EVIDENCE
+    )
 
 
 async def test_a_claim_ends_a_job_past_its_deadline_without_running_it(
@@ -329,7 +336,7 @@ async def test_a_stale_worker_cannot_write_after_a_cancellation(database: db.Dat
 
 async def assert_fenced(database: db.Database, stale: JobLease) -> None:
     with pytest.raises(LeaseLostError):
-        await complete_job(database, stale)
+        await complete_job(database, stale, ABSTENTION)
     with pytest.raises(LeaseLostError):
         await fail_job(database, stale, PermanentJobError("late"))
     with pytest.raises(LeaseLostError):
@@ -347,7 +354,9 @@ async def assert_fenced(database: db.Database, stale: JobLease) -> None:
 @pytest.mark.parametrize(
     "settle",
     [
-        pytest.param(lambda database, lease: complete_job(database, lease), id="complete"),
+        pytest.param(
+            lambda database, lease: complete_job(database, lease, ABSTENTION), id="complete"
+        ),
         pytest.param(
             lambda database, lease: fail_job(database, lease, PermanentJobError("no")), id="fail"
         ),
@@ -441,14 +450,24 @@ async def test_a_cancellation_racing_completion_has_one_outcome(
     investigation_id = await add_job(database)
     lease = await claim(database)
 
-    calls = [cancel(database, investigation_id), complete_job(database, lease)]
-    await asyncio.gather(*(calls if attempt % 2 else reversed(calls)))
+    calls = [cancel(database, investigation_id), complete_job(database, lease, ABSTENTION)]
+    results = await asyncio.gather(
+        *(calls if attempt % 2 else reversed(calls)), return_exceptions=True
+    )
 
-    # The job ended first or the cancellation did. Either way the investigation is cancelled.
+    # Whichever committed first decides both rows. A cancellation that lost is refused.
     job = await job_of(database, investigation_id)
-    assert job.status in {JobStatus.CANCELLED, JobStatus.SUCCEEDED}
     investigation = await investigation_of(database, investigation_id)
-    assert investigation.status == InvestigationStatus.CANCELLED
+    refused = [r for r in results if isinstance(r, InvestigationFinishedError)]
+    if job.status == JobStatus.SUCCEEDED:
+        assert investigation.status == InvestigationStatus.INSUFFICIENT_EVIDENCE
+        assert investigation.diagnosis is not None
+        assert len(refused) == 1
+    else:
+        assert job.status == JobStatus.CANCELLED
+        assert investigation.status == InvestigationStatus.CANCELLED
+        assert investigation.diagnosis is None
+        assert refused == []
     assert len(await completed_events(database, investigation_id)) == 1
 
 

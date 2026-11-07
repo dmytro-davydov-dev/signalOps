@@ -9,6 +9,9 @@ row, so a takeover cannot slip between the check and the write. A lease past
 `lease_until` that nobody has taken stays valid: its generation is still current.
 
 Writers lock a job before its investigation, so they cannot deadlock.
+
+A step's transition and its progress event commit together, so a replayed attempt
+adds events only for what it actually changed.
 """
 
 import uuid
@@ -22,6 +25,12 @@ from sqlalchemy import and_, func, or_, select, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from signalops.contracts.progress import (
+    STEP_ABANDONED,
+    ProgressEventType,
+    StepFailed,
+    StepProgress,
+)
 from signalops.contracts.workflow import (
     TERMINAL_INVESTIGATION_STATUSES,
     AgentRole,
@@ -30,6 +39,7 @@ from signalops.contracts.workflow import (
     StepStatus,
 )
 from signalops.persistence.models import AgentStep, Investigation, Job
+from signalops.persistence.repositories.progress import ProgressRepository
 
 
 class LeaseLostError(Exception):
@@ -233,7 +243,14 @@ class JobRepository:
                 where=AgentStep.status.in_((StepStatus.RUNNING, StepStatus.FAILED)),
             ).returning(AgentStep.id)
         )
-        return saved is not None
+        if saved is None:
+            return False
+        await ProgressRepository(self._session).add(
+            lease.investigation_id,
+            ProgressEventType.STEP_STARTED,
+            StepProgress(step_key=step_key, agent_role=agent_role, attempt=lease.attempt),
+        )
+        return True
 
     async def steps_of(self, investigation_id: uuid.UUID) -> Sequence[AgentStep]:
         rows = await self._session.scalars(
@@ -249,34 +266,63 @@ class JobRepository:
         checkpoint: dict[str, Any],
     ) -> bool:
         """Fenced end of a running step, with the output a resume reuses."""
-        return await self._end_step(
+        ended = await self._end_step(
             lease,
             step_key,
             status=StepStatus.COMPLETED,
             output=output,
             checkpoint=checkpoint,
         )
+        if ended is None:
+            return False
+        await ProgressRepository(self._session).add(
+            lease.investigation_id, ProgressEventType.STEP_COMPLETED, ended
+        )
+        return True
 
-    async def fail_step(self, lease: JobLease, step_key: str, checkpoint: dict[str, Any]) -> bool:
+    async def fail_step(
+        self, lease: JobLease, step_key: str, checkpoint: dict[str, Any], error_category: str
+    ) -> bool:
         """Fenced end of a running step that raised; a retry reopens it."""
-        return await self._end_step(
+        ended = await self._end_step(
             lease, step_key, status=StepStatus.FAILED, checkpoint=checkpoint
         )
+        if ended is None:
+            return False
+        await ProgressRepository(self._session).add(
+            lease.investigation_id,
+            ProgressEventType.STEP_FAILED,
+            StepFailed(**ended.model_dump(), error_category=error_category),
+        )
+        return True
 
     async def abandon_steps(self, investigation_id: uuid.UUID) -> None:
         """Fail steps left running by an investigation that has ended."""
-        await self._session.execute(
+        abandoned = await self._session.execute(
             update(AgentStep)
             .where(
                 AgentStep.investigation_id == investigation_id,
                 AgentStep.status == StepStatus.RUNNING,
             )
             .values(status=StepStatus.FAILED, completed_at=func.clock_timestamp())
+            .returning(AgentStep.step_key, AgentStep.agent_role, AgentStep.attempt)
         )
+        progress = ProgressRepository(self._session)
+        for step_key, agent_role, attempt in abandoned.all():
+            await progress.add(
+                investigation_id,
+                ProgressEventType.STEP_FAILED,
+                StepFailed(
+                    step_key=step_key,
+                    agent_role=AgentRole(agent_role),
+                    attempt=attempt,
+                    error_category=STEP_ABANDONED,
+                ),
+            )
 
-    async def _end_step(self, lease: JobLease, step_key: str, **values: Any) -> bool:
+    async def _end_step(self, lease: JobLease, step_key: str, **values: Any) -> StepProgress | None:
         await self.hold(lease)
-        ended = await self._session.scalar(
+        ended = await self._session.execute(
             update(AgentStep)
             .where(
                 AgentStep.investigation_id == lease.investigation_id,
@@ -288,6 +334,9 @@ class JobRepository:
                 completed_at=func.clock_timestamp(),
                 **values,
             )
-            .returning(AgentStep.id)
+            .returning(AgentStep.agent_role, AgentStep.attempt)
         )
-        return ended is not None
+        row = ended.first()
+        if row is None:
+            return None
+        return StepProgress(step_key=step_key, agent_role=row.agent_role, attempt=row.attempt)

@@ -21,6 +21,7 @@ from signalops.contracts.steps import IncidentBrief
 from signalops.contracts.workflow import InvestigationStatus, JobStatus, StepStatus
 from signalops.persistence import database as db
 from signalops.persistence.models import AgentStep, Investigation, Job
+from signalops.persistence.repositories.progress import ProgressRepository
 from tests.integration.job_support import LIVE, add_job
 
 pytestmark = pytest.mark.integration
@@ -126,7 +127,25 @@ async def test_a_killed_worker_resumes_at_the_next_unfinished_node(
 
     async with database.transaction() as session:
         investigation = await session.get_one(Investigation, investigation_id)
-    assert investigation.status == InvestigationStatus.RUNNING  # P06-T05 writes the terminal state
+        rows = await ProgressRepository(session).after(investigation_id, 0, limit=100)
+        history = [
+            (row.event_type, row.payload.get("step_key"), row.payload.get("attempt"))
+            for row in rows
+        ]
+    assert investigation.status == InvestigationStatus.INSUFFICIENT_EVIDENCE
+    assert investigation.diagnosis == steps["conclude"].output
+
+    # Both workers are gone: what each committed reads as one history.
+    assert history == [
+        ("step.started", "load_context", 1),
+        ("step.completed", "load_context", 1),
+        ("step.started", "investigate", 1),
+        ("step.started", "investigate", 2),
+        ("step.completed", "investigate", 2),
+        ("step.started", "conclude", 2),
+        ("step.completed", "conclude", 2),
+        ("investigation.ended", None, None),
+    ]
 
 
 async def test_cancelling_a_worker_mid_call_leaves_no_downstream_call(

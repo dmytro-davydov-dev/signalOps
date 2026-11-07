@@ -29,7 +29,7 @@ async def hang(_context: NodeContext) -> InvestigatorFindings:
 async def main() -> None:
     settings = get_settings()
     database = Database.from_engine(create_engine(settings))
-    workflow = Workflow("v1", (LOAD_CONTEXT, replace(INVESTIGATE, run=hang), CONCLUDE))
+    workflow = Workflow("v1", (LOAD_CONTEXT, replace(INVESTIGATE, run=hang)), CONCLUDE)
     runner = JobRunner(
         database, WorkflowEngine(database, {"v1": workflow}), JobPolicy.from_settings(settings)
     )

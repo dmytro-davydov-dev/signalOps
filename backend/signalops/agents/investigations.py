@@ -23,7 +23,11 @@ detector can add spend to one.
 **Cancellation.** A request with no worker on the job ends the investigation in
 its own transaction. Otherwise it stays recorded, and the worker ends the
 investigation at its next check, or the next claim does if that worker died
-(ADR-023). An ending investigation stages `investigation.completed` once.
+(ADR-023).
+
+**Ending.** An investigation ends once. That write sets its status and diagnosis,
+stages `investigation.completed`, and adds its last progress event together, so
+every reader sees the same outcome (ADR-024).
 """
 
 import hashlib
@@ -39,6 +43,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from signalops.config import Settings
 from signalops.contracts.common import ContractError, ContractErrorCategory, replay_run_id_of
+from signalops.contracts.diagnosis import Diagnosis
 from signalops.contracts.events import (
     EventEnvelope,
     EventPayload,
@@ -48,6 +53,7 @@ from signalops.contracts.events import (
     InvestigationTrigger,
 )
 from signalops.contracts.investigations import InvestigationRequest
+from signalops.contracts.progress import InvestigationEnded, ProgressEventType
 from signalops.contracts.workflow import (
     TERMINAL_INVESTIGATION_STATUSES,
     InvestigationStatus,
@@ -60,6 +66,7 @@ from signalops.persistence.repositories.investigations import (
     NewInvestigation,
 )
 from signalops.persistence.repositories.jobs import JobRepository
+from signalops.persistence.repositories.progress import ProgressRepository
 from signalops.persistence.repositories.reliability import OutboxRepository
 from signalops.persistence.repositories.scope import EvidenceScope
 
@@ -256,7 +263,10 @@ async def cancel_investigation(
 
 
 async def end_investigation(
-    session: AsyncSession, investigation_id: uuid.UUID, status: InvestigationStatus
+    session: AsyncSession,
+    investigation_id: uuid.UUID,
+    status: InvestigationStatus,
+    diagnosis: Diagnosis | None = None,
 ) -> None:
     """Move the investigation to a terminal status and stage `investigation.completed`.
 
@@ -271,9 +281,16 @@ async def end_investigation(
     assert at is not None  # noqa: S101 - a scalar function always returns a row
     investigation.status = status
     investigation.completed_at = at
+    investigation.diagnosis = None if diagnosis is None else diagnosis.model_dump(mode="json")
     investigation.version += 1
     await session.flush()
     await JobRepository(session).abandon_steps(investigation_id)
+    diagnosis_status = None if diagnosis is None else diagnosis.status
+    await ProgressRepository(session).add(
+        investigation_id,
+        ProgressEventType.INVESTIGATION_ENDED,
+        InvestigationEnded(status=status, diagnosis_status=diagnosis_status),
+    )
     envelope = EventEnvelope[EventPayload](
         event_id=uuid.uuid5(INVESTIGATION_EVENT_NAMESPACE, f"{investigation.id}:completed"),
         event_type=EventType.INVESTIGATION_COMPLETED,
@@ -286,6 +303,7 @@ async def end_investigation(
             investigation_id=investigation.id,
             incident_id=investigation.incident_id,
             status=status,
+            diagnosis_status=diagnosis_status,
             workflow_version=investigation.workflow_version,
         ),
     )

@@ -1,6 +1,19 @@
 {
   "components": {
     "schemas": {
+      "AgentRole": {
+        "enum": [
+          "investigator",
+          "coordinator",
+          "telemetry_investigator",
+          "deployment_investigator",
+          "dependency_investigator",
+          "synthesizer",
+          "verifier"
+        ],
+        "title": "AgentRole",
+        "type": "string"
+      },
       "Alternative": {
         "additionalProperties": false,
         "properties": {
@@ -988,6 +1001,29 @@
         "title": "InvestigationAccepted",
         "type": "object"
       },
+      "InvestigationEnded": {
+        "additionalProperties": false,
+        "properties": {
+          "diagnosis_status": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DiagnosisStatus"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "status": {
+            "$ref": "#/components/schemas/InvestigationStatus"
+          }
+        },
+        "required": [
+          "status"
+        ],
+        "title": "InvestigationEnded",
+        "type": "object"
+      },
       "InvestigationRequest": {
         "additionalProperties": false,
         "description": "Body of POST /v1/incidents/{id}/investigations; limits only lower the configured ones.",
@@ -1304,6 +1340,101 @@
           "quality_status"
         ],
         "title": "NormalizedSignal",
+        "type": "object"
+      },
+      "ProgressEventType": {
+        "enum": [
+          "step.started",
+          "step.completed",
+          "step.failed",
+          "investigation.ended"
+        ],
+        "title": "ProgressEventType",
+        "type": "string"
+      },
+      "ProgressEventView": {
+        "additionalProperties": false,
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "event_type": {
+            "$ref": "#/components/schemas/ProgressEventType"
+          },
+          "id": {
+            "exclusiveMinimum": 0.0,
+            "title": "Id",
+            "type": "integer"
+          },
+          "payload": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/StepFailed"
+              },
+              {
+                "$ref": "#/components/schemas/StepProgress"
+              },
+              {
+                "$ref": "#/components/schemas/InvestigationEnded"
+              }
+            ],
+            "title": "Payload"
+          }
+        },
+        "required": [
+          "id",
+          "event_type",
+          "payload",
+          "created_at"
+        ],
+        "title": "ProgressEventView",
+        "type": "object"
+      },
+      "ProgressPage": {
+        "additionalProperties": false,
+        "description": "Body of GET /v1/investigations/{id}/progress, oldest event first.",
+        "properties": {
+          "investigation_id": {
+            "format": "uuid",
+            "title": "Investigation Id",
+            "type": "string"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ProgressEventView"
+            },
+            "maxItems": 1000,
+            "title": "Items",
+            "type": "array"
+          },
+          "next_after": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next After"
+          },
+          "replay_scope": {
+            "maxLength": 128,
+            "minLength": 1,
+            "pattern": "^[a-z0-9][a-z0-9._:-]*$",
+            "title": "Replay Scope",
+            "type": "string"
+          }
+        },
+        "required": [
+          "investigation_id",
+          "replay_scope",
+          "items"
+        ],
+        "title": "ProgressPage",
         "type": "object"
       },
       "QualityFlag": {
@@ -1628,6 +1759,68 @@
           "by_flag"
         ],
         "title": "SourceQuality",
+        "type": "object"
+      },
+      "StepFailed": {
+        "additionalProperties": false,
+        "properties": {
+          "agent_role": {
+            "$ref": "#/components/schemas/AgentRole"
+          },
+          "attempt": {
+            "minimum": 1.0,
+            "title": "Attempt",
+            "type": "integer"
+          },
+          "error_category": {
+            "maxLength": 128,
+            "minLength": 1,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]*$",
+            "title": "Error Category",
+            "type": "string"
+          },
+          "step_key": {
+            "maxLength": 256,
+            "minLength": 1,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]*$",
+            "title": "Step Key",
+            "type": "string"
+          }
+        },
+        "required": [
+          "step_key",
+          "agent_role",
+          "attempt",
+          "error_category"
+        ],
+        "title": "StepFailed",
+        "type": "object"
+      },
+      "StepProgress": {
+        "additionalProperties": false,
+        "properties": {
+          "agent_role": {
+            "$ref": "#/components/schemas/AgentRole"
+          },
+          "attempt": {
+            "minimum": 1.0,
+            "title": "Attempt",
+            "type": "integer"
+          },
+          "step_key": {
+            "maxLength": 256,
+            "minLength": 1,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]*$",
+            "title": "Step Key",
+            "type": "string"
+          }
+        },
+        "required": [
+          "step_key",
+          "agent_role",
+          "attempt"
+        ],
+        "title": "StepProgress",
         "type": "object"
       },
       "SuggestedAction": {
@@ -2523,6 +2716,105 @@
           }
         ],
         "summary": "Cancel",
+        "tags": [
+          "investigations"
+        ]
+      }
+    },
+    "/v1/investigations/{investigation_id}/progress": {
+      "get": {
+        "description": "An investigation's durable progress after `after`, oldest first.",
+        "operationId": "get_progress_v1_investigations__investigation_id__progress_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "investigation_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Investigation Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Replay dataset; `live` by default",
+            "in": "query",
+            "name": "replay_scope",
+            "required": false,
+            "schema": {
+              "default": "live",
+              "description": "Replay dataset; `live` by default",
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^[a-z0-9][a-z0-9._:-]*$",
+              "title": "Replay Scope",
+              "type": "string"
+            }
+          },
+          {
+            "description": "The last event ID already read",
+            "in": "query",
+            "name": "after",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "description": "The last event ID already read",
+              "minimum": 0,
+              "title": "After",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "At most SIGNALOPS_QUERY_MAX_LIMIT",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "At most SIGNALOPS_QUERY_MAX_LIMIT",
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProgressPage"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "description": "No such investigation"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "OperatorBearer": []
+          }
+        ],
+        "summary": "Get Progress",
         "tags": [
           "investigations"
         ]

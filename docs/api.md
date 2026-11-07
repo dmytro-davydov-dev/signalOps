@@ -1,6 +1,6 @@
 # HTTP API
 
-> Status: planned design. The source is [SignalOps_Implementation_Plan.md](SignalOps_Implementation_Plan.md) §9. The generated OpenAPI document, [`openapi.v1.json`](../backend/signalops/contracts/schemas/openapi.v1.json), is authoritative for implemented routes (health, ingestion, evidence queries, incidents, service graphs, and investigation requests); body schemas for planned routes are exported alongside it (for example `investigations/investigation.v1.json`). Compatibility rules are in [events.md](events.md#versioning-rules).
+> Status: planned design. The source is [SignalOps_Implementation_Plan.md](SignalOps_Implementation_Plan.md) §9. The generated OpenAPI document, [`openapi.v1.json`](../backend/signalops/contracts/schemas/openapi.v1.json), is authoritative for implemented routes (health, ingestion, evidence queries, incidents, service graphs, investigation requests, reads, cancellation, and progress history); body schemas for planned routes are exported alongside it (for example `investigations/investigation.v1.json`). Compatibility rules are in [events.md](events.md#versioning-rules).
 
 All endpoints are versioned under `/v1`. Request and response bodies are Pydantic models. Timestamps are UTC (RFC 3339) and IDs are UUIDs.
 
@@ -19,6 +19,7 @@ All endpoints are versioned under `/v1`. Request and response bodies are Pydanti
 | `POST /v1/incidents/{id}/investigations` | Requires `Idempotency-Key`. Returns **202** with the investigation ID | P06-T01 |
 | `GET /v1/investigations/{id}` | State, finding, evidence, usage, limitations | P06-T04, P07 |
 | `POST /v1/investigations/{id}/cancel` | Persists a cancellation request | P06-T04 |
+| `GET /v1/investigations/{id}/progress` | Durable progress history after an integer cursor | P06-T05 |
 | `GET /v1/investigations/{id}/events` | SSE progress stream with a durable reconnect cursor | P08-T03 |
 | `GET /v1/services/{id}/graph` | Bounded neighborhood as of a timestamp | P05-T05 |
 | `POST /v1/evaluation-runs` | Starts an isolated scenario run | P10-T06 |
@@ -155,6 +156,18 @@ There is no body and no `Idempotency-Key`, because repeating the request changes
 - With no worker holding the job, the response already shows `cancelled`.
 - With a running job, it shows `running` and `cancel_requested_at`. The worker stops within about a third of a lease; read the investigation to see the terminal state.
 - An investigation that ended another way is `409`. Live scope only; a replay investigation is `404`.
+
+## Progress history
+
+```http
+GET /v1/investigations/{id}/progress?after=1042&limit=50
+```
+
+- The body is `ProgressPage` ([`progress-page.v1.json`](../backend/signalops/contracts/schemas/investigations/progress-page.v1.json)), oldest event first. `after` is the last event ID already read, default 0. `next_after` is set when more events exist.
+- Event types: `step.started`, `step.completed`, `step.failed` (with `error_category`; `abandoned` means the investigation ended around a running step), and `investigation.ended` (terminal status and diagnosis status). There is exactly one `investigation.ended`, and it comes last.
+- A retried or taken-over step has one set of events per attempt. Take a step's latest attempt. A reused step adds nothing.
+- Events hold identifiers and categories. Read the outcome from `GET /v1/investigations/{id}`.
+- Scoped like the investigation read: `replay_scope` defaults to live, and an investigation outside it is `404`.
 
 ## Progress stream (SSE)
 

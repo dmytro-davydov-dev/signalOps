@@ -3,6 +3,7 @@
 import uuid
 from datetime import UTC, datetime, timedelta
 
+from signalops.contracts.diagnosis import Diagnosis, DiagnosisStatus
 from signalops.contracts.workflow import IncidentSeverity
 from signalops.detection.rules import Window
 from signalops.persistence import database as db
@@ -16,6 +17,13 @@ from signalops.persistence.seed import DEMO_WORKSPACE_ID
 
 LIVE = EvidenceScope(DEMO_WORKSPACE_ID)
 T0 = datetime(2026, 11, 1, 12, 0, tzinfo=UTC)
+ABSTENTION = Diagnosis(
+    status=DiagnosisStatus.INSUFFICIENT_EVIDENCE,
+    summary="No diagnosis",
+    root_cause=None,
+    missing_evidence=("Nothing found",),
+    workflow_version="v1",
+)
 
 
 async def add_job(

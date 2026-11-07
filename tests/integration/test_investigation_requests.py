@@ -39,6 +39,7 @@ from signalops.api.app import create_app
 from signalops.api.investigations import REQUEST_ROUTE
 from signalops.config import Settings
 from signalops.contracts.common import ContractError, replay_scope_for
+from signalops.contracts.diagnosis import Diagnosis
 from signalops.contracts.events import (
     EventEnvelope,
     EventPayload,
@@ -48,7 +49,13 @@ from signalops.contracts.events import (
     decode_event,
 )
 from signalops.contracts.investigations import InvestigationRequest
-from signalops.contracts.workflow import IncidentSeverity, InvestigationStatus, JobStatus
+from signalops.contracts.progress import ProgressEventType, ProgressPage, StepProgress
+from signalops.contracts.workflow import (
+    AgentRole,
+    IncidentSeverity,
+    InvestigationStatus,
+    JobStatus,
+)
 from signalops.dependencies import Resources
 from signalops.detection.incidents import Breach, IncidentPolicy, record_breach
 from signalops.detection.rules import DEFAULT_RULES, Window
@@ -67,6 +74,8 @@ from signalops.persistence.repositories.investigations import (
     InvestigationRepository,
     NewInvestigation,
 )
+from signalops.persistence.repositories.jobs import JobRepository
+from signalops.persistence.repositories.progress import ProgressRepository
 from signalops.persistence.repositories.scope import EvidenceScope
 from signalops.persistence.seed import DEMO_WORKSPACE_ID
 from signalops.streaming.consumer import (
@@ -78,6 +87,7 @@ from signalops.streaming.consumer import (
 from signalops.streaming.producer import EventProducer, OutgoingMessage
 from signalops.streaming.retry import RetryPolicy
 from signalops.streaming.topics import TopicSpec, ensure_topics, message_key
+from tests.integration.job_support import ABSTENTION
 
 pytestmark = pytest.mark.integration
 
@@ -430,6 +440,67 @@ def test_a_finished_investigation_cannot_be_cancelled(api: Api) -> None:
     assert api.client.get(view_path(investigation_id), headers=bearer()).json()["status"] == (
         "failed"
     )
+
+
+def test_progress_reads_after_a_cursor_and_stays_in_scope(api: Api) -> None:
+    created = api.post(api.incident(), "progress").json()
+    investigation_id = uuid.UUID(created["id"])
+    url = view_path(investigation_id, "/progress")
+
+    async def fail(database: db.Database) -> None:
+        async with database.transaction() as session:
+            for key in ("first", "second", "third"):
+                await ProgressRepository(session).add(
+                    investigation_id,
+                    ProgressEventType.STEP_STARTED,
+                    StepProgress(step_key=key, agent_role=AgentRole.INVESTIGATOR, attempt=1),
+                )
+            await end_investigation(session, investigation_id, InvestigationStatus.FAILED)
+
+    assert api.client.get(url, headers=bearer()).json()["items"] == []
+    api.run(fail)
+
+    page = api.client.get(url, params={"limit": 2}, headers=bearer())
+    assert page.status_code == 200
+    body = page.json()
+    assert ProgressPage.model_validate(body).next_after == body["items"][1]["id"]
+    assert [item["payload"]["step_key"] for item in body["items"]] == ["first", "second"]
+
+    rest = api.client.get(url, params={"after": body["next_after"]}, headers=bearer()).json()
+    assert rest["next_after"] is None
+    assert [item["event_type"] for item in rest["items"]] == [
+        "step.started",
+        "investigation.ended",
+    ]
+    assert rest["items"][1]["payload"] == {"status": "failed", "diagnosis_status": None}
+
+    assert api.client.get(url).status_code == 401
+    assert api.client.get(url, headers=bearer(OTHER_TOKEN)).status_code == 404
+    assert api.client.get(url, params={"replay_scope": REPLAY}, headers=bearer()).status_code == 404
+    missing = view_path(uuid.uuid4(), "/progress")
+    assert api.client.get(missing, headers=bearer()).status_code == 404
+    assert api.client.get(url, params={"after": -1}, headers=bearer()).status_code == 422
+    assert api.client.get(url, params={"limit": 100_000}, headers=bearer()).status_code == 422
+
+
+def test_an_abstention_reads_back_with_its_diagnosis_and_cannot_be_cancelled(api: Api) -> None:
+    created = api.post(api.incident(), "abstained").json()
+    investigation_id = uuid.UUID(created["id"])
+
+    async def abstain(database: db.Database) -> None:
+        async with database.transaction() as session:
+            await JobRepository(session).start_investigation(investigation_id)
+            await end_investigation(
+                session, investigation_id, InvestigationStatus.INSUFFICIENT_EVIDENCE, ABSTENTION
+            )
+
+    api.run(abstain)
+
+    body = api.client.get(view_path(investigation_id), headers=bearer()).json()
+    assert body["status"] == "insufficient_evidence"
+    assert Diagnosis.model_validate(body["diagnosis"]) == ABSTENTION
+    response = api.client.post(view_path(investigation_id, "/cancel"), headers=bearer())
+    assert response.status_code == 409
 
 
 def test_cancelling_outside_the_live_scope_of_the_workspace_is_404(api: Api) -> None:

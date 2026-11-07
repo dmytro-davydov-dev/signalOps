@@ -122,6 +122,9 @@ async def test_the_sequence_runs_each_node_in_order_and_stores_validated_output(
     assert diagnosis.status is DiagnosisStatus.INSUFFICIENT_EVIDENCE
     assert diagnosis.summary == "No diagnosis for: High error rate"
     assert (await job_of(database, investigation_id)).status == JobStatus.SUCCEEDED
+    investigation = await investigation_of(database, investigation_id)
+    assert investigation.status == InvestigationStatus.INSUFFICIENT_EVIDENCE
+    assert investigation.diagnosis == steps["conclude"].output
 
 
 async def test_a_transient_failure_retries_only_the_unfinished_nodes(
@@ -131,7 +134,7 @@ async def test_a_transient_failure_retries_only_the_unfinished_nodes(
     second, second_body = counted(INVESTIGATE)
     third, third_body = counted(CONCLUDE)
     second_body.failures.append(TransientJobError("throttled"))
-    engine = WorkflowEngine(database, {"v1": Workflow("v1", (first, second, third))})
+    engine = WorkflowEngine(database, {"v1": Workflow("v1", (first, second), third)})
     investigation_id = await add_job(database)
 
     await run_once(database, engine)
@@ -166,7 +169,7 @@ async def test_a_transient_failure_retries_only_the_unfinished_nodes(
 async def test_a_retried_failure_does_not_leak_the_exception_text(database: db.Database) -> None:
     node, body = counted(INVESTIGATE)
     body.failures.append(RuntimeError("log line with a secret"))
-    engine = WorkflowEngine(database, {"v1": Workflow("v1", (LOAD_CONTEXT, node))})
+    engine = WorkflowEngine(database, {"v1": Workflow("v1", (LOAD_CONTEXT, node), CONCLUDE)})
     investigation_id = await add_job(database)
 
     await run_once(database, engine)
@@ -184,7 +187,7 @@ async def test_a_permanent_failure_fails_the_step_job_and_investigation(
 ) -> None:
     node, body = counted(INVESTIGATE)
     body.failures.append(PermanentJobError("no such tool"))
-    engine = WorkflowEngine(database, {"v1": Workflow("v1", (LOAD_CONTEXT, node, CONCLUDE))})
+    engine = WorkflowEngine(database, {"v1": Workflow("v1", (LOAD_CONTEXT, node), CONCLUDE)})
     investigation_id = await add_job(database)
 
     await run_once(database, engine)
@@ -202,7 +205,7 @@ async def test_a_job_with_every_step_complete_runs_nothing(database: db.Database
     first, first_body = counted(LOAD_CONTEXT)
     second, second_body = counted(INVESTIGATE)
     third, third_body = counted(CONCLUDE)
-    engine = WorkflowEngine(database, {"v1": Workflow("v1", (first, second, third))})
+    engine = WorkflowEngine(database, {"v1": Workflow("v1", (first, second), third)})
     investigation_id = await add_job(database)
 
     await engine(await claim(database))
@@ -212,6 +215,11 @@ async def test_a_job_with_every_step_complete_runs_nothing(database: db.Database
     assert (first_body.runs, second_body.runs, third_body.runs) == (1, 1, 1)
     job = await job_of(database, investigation_id)
     assert (job.status, job.attempts) == (JobStatus.SUCCEEDED, 2)
+    investigation = await investigation_of(database, investigation_id)
+    assert investigation.status == InvestigationStatus.INSUFFICIENT_EVIDENCE
+    assert (
+        investigation.diagnosis == (await steps_of(database, investigation_id))["conclude"].output
+    )
 
 
 @pytest.mark.parametrize(
@@ -226,7 +234,7 @@ async def test_unusable_completed_output_fails_instead_of_running_again(
     database: db.Database, changes: dict[str, object], message: str
 ) -> None:
     node, body = counted(LOAD_CONTEXT)
-    engine = WorkflowEngine(database, {"v1": Workflow("v1", (node, INVESTIGATE))})
+    engine = WorkflowEngine(database, {"v1": Workflow("v1", (node, INVESTIGATE), CONCLUDE)})
     investigation_id = await add_job(database)
     await engine(await claim(database))
     async with database.transaction() as session:
@@ -273,7 +281,7 @@ async def test_an_unknown_workflow_version_fails_the_job(database: db.Database) 
 
 async def test_max_steps_stops_before_the_next_node_runs(database: db.Database) -> None:
     node, body = counted(CONCLUDE)
-    engine = WorkflowEngine(database, {"v1": Workflow("v1", (LOAD_CONTEXT, INVESTIGATE, node))})
+    engine = WorkflowEngine(database, {"v1": Workflow("v1", (LOAD_CONTEXT, INVESTIGATE), node)})
     investigation_id = await add_job(database, max_steps=2)
 
     await run_once(database, engine)
@@ -298,7 +306,7 @@ async def test_a_stale_worker_cannot_complete_a_step_after_a_takeover(
         return InvestigatorFindings(missing_evidence=("From the stale worker",))
 
     stale_engine = WorkflowEngine(
-        database, {"v1": Workflow("v1", (LOAD_CONTEXT, replace(INVESTIGATE, run=slow)))}
+        database, {"v1": Workflow("v1", (LOAD_CONTEXT, replace(INVESTIGATE, run=slow)), CONCLUDE)}
     )
     investigation_id = await add_job(database)
     stale = asyncio.create_task(stale_engine(await claim(database)))
@@ -337,7 +345,8 @@ async def test_a_stale_failure_is_rejected_too(database: db.Database) -> None:
         raise TransientJobError("too late")
 
     engine = WorkflowEngine(
-        database, {"v1": Workflow("v1", (LOAD_CONTEXT, replace(INVESTIGATE, run=failing)))}
+        database,
+        {"v1": Workflow("v1", (LOAD_CONTEXT, replace(INVESTIGATE, run=failing)), CONCLUDE)},
     )
     investigation_id = await add_job(database)
     stale = asyncio.create_task(engine(await claim(database)))
@@ -363,7 +372,7 @@ async def test_a_stopped_worker_leaves_the_step_for_the_next_one(database: db.Da
 
     hanging = WorkflowEngine(
         database,
-        {"v1": Workflow("v1", (LOAD_CONTEXT, replace(INVESTIGATE, run=hang), CONCLUDE))},
+        {"v1": Workflow("v1", (LOAD_CONTEXT, replace(INVESTIGATE, run=hang)), CONCLUDE)},
     )
     investigation_id = await add_job(database)
     stop = asyncio.Event()
@@ -394,7 +403,7 @@ async def test_completed_output_cannot_be_overwritten(database: db.Database) -> 
     async with database.transaction() as session:
         jobs = JobRepository(session)
         assert not await jobs.complete_step(lease, "conclude", {"other": 1}, {})
-        assert not await jobs.fail_step(lease, "conclude", {})
+        assert not await jobs.fail_step(lease, "conclude", {}, "permanent")
         assert not await jobs.complete_step(lease, "never_opened", {"other": 1}, {})
 
     after = (await steps_of(database, investigation_id))["conclude"]

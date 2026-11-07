@@ -84,6 +84,14 @@ on ack: UPDATE published_at
 - Completed output that fails validation, or that another workflow version wrote, fails the job. A completed step never runs again.
 - Verified by `tests/integration/test_workflow_recovery.py`: a real process is sent SIGKILL inside the second node, and `signalops worker` resumes it after the lease expires, keeping the first step's row unchanged.
 
+## Investigation outcomes
+
+- A workflow's last step stores the `Diagnosis`. `complete_job` ends the job and investigation in one fenced transaction, with the `investigation.completed` outbox row and the `investigation.ended` progress event ([ADR-024](decisions.md#adr-024-one-transaction-ends-the-job-and-the-investigation)).
+- A crash after the last step and before that write leaves the job `running`. The next attempt reuses every step and writes the stored outcome. If the job is then out of attempts or past its deadline, the claim fails it instead and the stored diagnosis stays only in `agent_steps`.
+- A stale worker's conclusion is rejected by the fence, a finished job cannot be claimed, and `end_investigation` leaves a terminal investigation as it is. The status trigger and `uq_progress_events_investigation_ended` back this in the database.
+- Progress events commit with the change they record, so a rollback removes both. They live in PostgreSQL, so a restart of any process loses none.
+- Verified by `tests/integration/test_investigation_outcomes.py` and by the real killed worker in `tests/integration/test_workflow_recovery.py`.
+
 ## Detector state
 
 - The receipt insert and the aggregate update share one transaction, so a Redis-only window would not survive a restart.
@@ -119,6 +127,7 @@ Consumers and the outbox publisher log one structured line every `SIGNALOPS_STRE
 | Crash after DB commit, before offset commit | Redelivery, receipt hit, one logical effect |
 | Outbox crash after broker ack | Duplicate publish, deduplicated downstream |
 | Worker killed after a completed step | Lease expires, another worker resumes at the next unfinished step, stale writes rejected |
+| Worker killed after the last step, before the terminal write | The next attempt reuses every step and ends the investigation with the stored diagnosis |
 | Redis restart or empty volume | Cache misses and briefly paused model calls. Investigations, windows, and SSE history intact |
 | Provider ambiguous timeout | Unknown cost recorded, reservation retained, retry reserved separately |
 | Kafka outage during ingest | No record reported accepted; 503 with per-record `failed` (`ambiguous_timeout` when the broker may have written it). Client retries with the same `source_event_id`s and gets the same event IDs. Verified against a stopped Compose broker (P04-T02) |

@@ -241,7 +241,7 @@ A failed node marks its step `failed` and a retry reopens it; a step left `runni
 
 ## ADR-023: Cancellation is a durable request; workers end the job
 
-**Decision:** `POST /v1/investigations/{id}/cancel` sets `investigations.cancel_requested_at`. With no job, a queued job, or a job that already succeeded, it ends the investigation in that transaction. With a running job it only records the request, and the job's lease holder ends both, because only that worker knows what is in flight. A repeat changes nothing; an investigation that ended another way is `409`.
+**Decision:** `POST /v1/investigations/{id}/cancel` sets `investigations.cancel_requested_at`. With no job or a queued job, it ends the investigation in that transaction. With a running job it only records the request, and the job's lease holder ends both, because only that worker knows what is in flight. A repeat changes nothing; an investigation that ended another way is `409`.
 
 `JobRepository.stop_reason` is the one check, for cancellation and for `deadline_at` by PostgreSQL's clock. Four places read it: the claim, which also finishes the job of a dead worker; each heartbeat, which interrupts the handler; the transaction that opens a step; and each settling write. A passed deadline ends the job and its investigation `failed`, with `deadline_exceeded` in `last_error`. Writers lock the job row before the investigation row.
 
@@ -249,7 +249,19 @@ A failed node marks its step `failed` and a retry reopens it; a step left `runni
 
 **Trade-off:** Stopping can take up to a third of a lease (10 s by default). An interrupted call may still be charged, so Phase 7 keeps its reservation. A cancellation beats any outcome that has not committed, including finished work. Work finished past the deadline keeps its result, since no new call was made. With no worker running, nothing ends a running or overdue job until one starts.
 
-**Revisit when:** Phase 7 adds calls inside a node, which must check `stop_reason` first; or P06-T05's terminal write changes the path where a cancellation meets a succeeded job.
+**Revisit when:** Phase 7 adds calls inside a node, which must check `stop_reason` first.
+
+## ADR-024: One transaction ends the job and the investigation
+
+**Decision:** A workflow ends in a `Diagnosis` node, `Workflow.conclusion`. `WorkflowEngine` returns that diagnosis, and `complete_job` ends the job and the investigation in one transaction under the lease fence: status from `terminal_status_for`, the diagnosis, `investigation.completed` with its `diagnosis_status`, and an `investigation.ended` progress event. A step's progress event commits with the step's transition. Events hold identifiers and categories, never output or error text. `GET /v1/investigations/{id}/progress` reads them after an integer cursor.
+
+Revision `0015_investigation_outcomes` adds a partial unique index allowing one `investigation.ended` per investigation. It also settles investigations left `running` by a `succeeded` job, using their `conclude` output.
+
+**Reason:** Writing both statuses together removes the state where a job has succeeded and its investigation has not ended, which every reader would otherwise need to handle. A replay of a finished workflow reuses the stored `conclude` step, so it reaches the stored outcome even if a model would now answer differently. Sharing the transaction means progress cannot claim a change that rolled back. Reused steps write nothing, so a replay does not repeat history. A cancellation that finds a succeeded job now finds an ended investigation, which is `409`. A migration fits the repair because no code path can create those rows again, so no permanent sweep is needed.
+
+**Trade-off:** The history has no event for a reused step or for a cancellation request, and one attempt's `step.started` can follow another's with no ending between them when a worker died. Readers take the latest attempt of a step. The migration hardcodes the event envelope, because it must not change with the code. It settles live rows only, since requests are live only, and its downgrade keeps the outcomes. A crash after `conclude` commits still loses that diagnosis if the job is then out of attempts or past its deadline, because the claim ends such jobs without running them.
+
+**Revisit when:** P08-T03 serves this history over SSE; or Phase 7 wants a job with a finished conclusion to settle at the claim.
 
 ## Open questions
 

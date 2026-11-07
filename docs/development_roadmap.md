@@ -25,13 +25,13 @@ PostgreSQL owns evidence, workflow progress, budgets, and the initial knowledge 
 
 | Field | Current value |
 | --- | --- |
-| Active phase | Phase 6 Durable jobs and workflow runtime; Phase 5 gate passed |
+| Active phase | Phase 7 LLM gateway and first investigator; Phase 6 gate passed |
 | Active task | None |
-| Last completed task | P06-T04 |
-| Latest verified commit | `8887386` (P06-T03); P06-T04 pending commit, validated against the working tree |
-| Validation evidence | P06-T04: `SIGNALOPS_INTEGRATION=1 uv run pytest` 978 passed. A real worker process hung inside `investigate` was cancelled from the built UI through nginx, the API, and Compose PostgreSQL: the page went from Running to Cancelled without a reload, and `conclude` never ran. The workflow runs only the fake sequence, and no model was called. Earlier evidence is in the work log |
+| Last completed task | P06-T05 |
+| Latest verified commit | `5d89874` (P06-T04); P06-T05 pending commit, validated against the working tree |
+| Validation evidence | P06-T05 and the Phase 6 gate: `SIGNALOPS_INTEGRATION=1 uv run pytest` 1021 passed. Against Compose services, a real worker received SIGKILL inside `investigate`, a second worker resumed it after the lease expired and reused `load_context`, and after restarting the `api` and worker containers the API returned the `insufficient_evidence` outcome and all eight progress events. A stale worker's step and terminal writes are rejected in `tests/integration/test_investigation_outcomes.py`. The workflow runs only the fake sequence, and no model was called. Earlier evidence is in the work log |
 | Blockers | None recorded |
-| Next task | P06-T05 |
+| Next task | P07-T01 |
 
 ### Scope and release boundaries
 
@@ -610,11 +610,19 @@ Start the React shell in Phase 1 and add API-backed incident views in Phase 5; P
 
 ### P06-T05 Persist workflow progress and completion
 
-- [ ] Complete this task.
+- [x] Complete this task.
 
 **Implementation:** Write progress_events with step commits and terminal completion with its outbox event. Store structured findings and operational metadata rather than unrestricted private reasoning.
 
 **Acceptance:** Progress remains queryable after restart; replaying job execution cannot produce contradictory terminal states.
+
+**Notes (2026-11-07):**
+- **Decision (ADR-024):** `Workflow` gained a typed `conclusion: Node[Diagnosis]`, and `WorkflowEngine` returns it. `complete_job` takes the diagnosis and ends the job and investigation in one fenced transaction, with `investigation.completed` and an `investigation.ended` progress event. `save_checkpoint`, `complete_step`, `fail_step`, and `abandon_steps` write their progress in the transaction of the step change. `contracts/progress.py` types the events.
+- **Stranded rows:** migration `0015` settles investigations left `running` by a `succeeded` job, as P06-T03 required, using the stored `conclude` output and a hardcoded `investigation.completed` envelope. It leaves a `running` job alone, because that job's next attempt settles it. The one dev row, `f8fb3276`, became `insufficient_evidence` and its event was published.
+- **Choices the task did not state:** events hold identifiers and categories, never output or error text; reused steps write no event; a step abandoned by an ending gets `step.failed` with `abandoned`, so the history agrees with `agent_steps`; a cancellation request writes no event, because the task names only step commits and completion; a partial unique index backs the one ending.
+- **Deviation:** "queryable" needed a read, and SSE is P08-T03, so this task adds `GET /v1/investigations/{id}/progress` with an integer `after` cursor (the same value as a future `Last-Event-ID`). `/events` stays reserved for SSE. No frontend change: the page already shows the status and diagnosis summary, and P08-T02 shows steps.
+- **Changed behavior:** a cancellation racing a completion can now lose, as `InvestigationFinishedError`, `409`. Before this task it always won, because the investigation stayed `running` after its job succeeded. `test_a_cancellation_racing_completion_has_one_outcome` covers both orders.
+- Left: a crash after `conclude` commits loses that diagnosis if the job is then out of attempts or past its deadline, because the claim ends those jobs without running them, so the investigation ends `failed` with the diagnosis only in `agent_steps`; `max_steps` still fails rather than abstains (Phase 7); `InvestigationView` carries no reason for a `failed` outcome; the detector-triggered path to a job still ran only in integration tests, as noted under P06-T01.
 
 **Phase gate:** All tasks above are checked, acceptance evidence is recorded in the ledger, and the phase outcome is demonstrated against real infrastructure where relevant.
 
@@ -1241,13 +1249,23 @@ Keep these outside the release critical path unless measurements justify promoti
 
 ### 2026-11-07 — P06-T04
 - Status: completed
-- Commit: pending commit; validated against the current working tree.
+- Commit: `5d89874`.
 - Implemented: migration `0014_investigation_cancellation`; `cancel_investigation` and `end_investigation` in `agents/investigations.py`; `JobStop`, `stop_reason`, `locked_for`, `abandon_steps` in `JobRepository`; `JobStoppedError`, `stop_job`, and stop handling in `agents/jobs.py`; the pre-step check in `agents/workflow.py`; `GET /v1/investigations/{id}` and `POST /v1/investigations/{id}/cancel`; `InvestigationView.cancel_requested_at` with regenerated schemas and fixtures; `apps/web/src/pages/InvestigationPage.tsx`, `api/investigations.ts`, `postJson`; ADR-023; docs (agents-and-workflow, api, data-model, decisions, development, events, reliability).
 - Validation commands and results: `uv run ruff check .`, `uv run ruff format --check .`, `uv run mypy` (137 files), `uv run signalops export-schemas --check` pass; `uv run pytest` 514 passed, 464 skipped; `SIGNALOPS_INTEGRATION=1 uv run pytest` 978 passed; `tests/integration/test_cancellation.py` with `test_workflow_recovery.py` repeated 5 times, 48 passed each; `docker compose config --quiet` passes; `pnpm lint`, `pnpm typecheck`, `pnpm build` pass; `pnpm test` 42 passed. Of 17 deliberate mutations, all fail the tests. `test_migrations_match_models` and `test_downgrade_to_baseline_and_upgrade_again` pass with `0014`.
 - Evidence or artifact references: `tests/integration/test_cancellation.py`, `tests/integration/test_workflow_recovery.py`, `tests/integration/test_investigation_requests.py`, `apps/web/src/pages/InvestigationPage.test.tsx`. Compose run, rebuilt and migrated to `0014`, with `investigation-worker` stopped: a request through the API was dispatched, the cancel answered `202 cancelled`, a repeat `202`, the job ended `cancelled` with 0 attempts, `investigations.completed.v1` was published at aggregate version 3, and the restarted worker ran no step. Headless Chrome against the built frontend on port 8090, with `tests/integration/hanging_worker.py` on the host (6-second lease) hung in `investigate`: the page showed Running, then the requested notice, then Cancelled 3.3 s later without a reload. The job ended `cancelled` with 1 attempt, `load_context` stayed `completed`, `investigate` became `failed`, `conclude` had no row, and the worker process stayed alive. A throwaway operator token was set on the `api` container for these runs and removed after them. They left two cancelled investigations in the dev database.
 - Deviations and reasons: see task notes (read route and minimal page added ahead of P08-T02, because the acceptance needs them).
 - Remaining issues: see task notes.
 - Next task: P06-T05.
+
+### 2026-11-07 — P06-T05
+- Status: completed
+- Commit: pending commit; validated against the current working tree.
+- Implemented: `contracts/progress.py` and `investigations/progress-page.v1.json`; `persistence/repositories/progress.py`; migration `0015_investigation_outcomes`; `Workflow.conclusion`, `JobHandler` returning `Diagnosis`, `complete_job(database, lease, diagnosis)`, `end_investigation(..., diagnosis)`; progress writes in `JobRepository`; `GET /v1/investigations/{id}/progress`; `fixtures/contracts/v1/progress/page.json`; ADR-024; docs (agents-and-workflow, api, data-model, decisions, development, events, reliability, README).
+- Validation commands and results: `uv run ruff check .`, `uv run ruff format --check .`, `uv run mypy` (141 files), `uv run signalops export-schemas --check` pass; `uv run pytest` 530 passed, 491 skipped; `SIGNALOPS_INTEGRATION=1 uv run pytest` 1021 passed; `tests/integration/test_investigation_outcomes.py`, `test_cancellation.py`, and `test_workflow_recovery.py` repeated 5 times, 73 passed each; `docker compose config --quiet` passes. Of 20 deliberate mutations, all fail the tests, the migration's job-status check only after the fixture gained a `running` job with a completed `conclude`. `test_migrations_match_models` and `test_downgrade_to_baseline_and_upgrade_again` pass with `0015`. Frontend checks not run: no frontend change.
+- Evidence or artifact references: `tests/integration/test_investigation_outcomes.py`, `tests/integration/test_workflow_recovery.py`, `tests/integration/test_investigation_requests.py`, `tests/contract/test_progress_contract.py`. Compose run, rebuilt and migrated to `0015`: the stranded dev investigation `f8fb3276` became `insufficient_evidence`, version 3, with `investigations.completed.v1` published. With `investigation-worker` stopped, a request through the API (investigation `02cd6bfd-24aa-42fa-90fc-49b350d918ab`) was dispatched; `tests/integration/hanging_worker.py` on the host (6-second lease) took it, hung in `investigate`, and received SIGKILL. The Compose worker resumed after the lease expired. With the `api` and worker containers then restarted, `GET /v1/investigations/{id}` returned `insufficient_evidence` with its diagnosis, and `/progress` returned eight events: `load_context` attempt 1, `investigate` attempt 1 then 2, `conclude` attempt 2, and the ending. The job ended `succeeded`, 2 attempts, generation 2, `last_error` `lease_expired`; `investigations.completed.v1` was published with `diagnosis_status`. A throwaway operator token was set for this run and the configured one restored after it. The run left two more ended investigations in the dev database. No model was called.
+- Deviations and reasons: see task notes (a JSON progress read ahead of the SSE route, because the acceptance needs a query).
+- Remaining issues: see task notes.
+- Next task: P07-T01.
 
 ## Work log template
 

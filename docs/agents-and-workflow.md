@@ -30,7 +30,7 @@ flowchart TD
 - The verifier may request **one** bounded follow-up round, and only within the remaining budget and deadline.
 - Downstream capacity for synthesis and verification is reserved up front, so specialists cannot exhaust the budget first.
 
-The engine exists (P06-T03, ADR-022) with a three-node fake sequence: `load_context`, `investigate`, `conclude`. `investigate` makes no model call and always abstains. Phase 7 replaces it, and Phase 9 adds the branches above.
+The engine exists (P06-T03, ADR-022) with a three-node fake sequence: `load_context`, `investigate`, `conclude`. `investigate` makes no model call and always abstains, so every finished investigation ends `insufficient_evidence`. Phase 7 replaces it, and Phase 9 adds the branches above.
 
 ## Roles
 
@@ -125,5 +125,7 @@ Validation checks that:
 - Completed steps (`UNIQUE(investigation_id, step_key)`) are reused after a restart once their schema and version are validated. Only unfinished nodes run again.
 - Cancellation and deadline are checked before every node and on every heartbeat, which interrupts a running node. Phase 7 adds the check before each model call inside a node ([ADR-023](decisions.md#adr-023-cancellation-is-a-durable-request-workers-end-the-job)).
 - The system guarantees **checkpoint reuse**, not exactly-once external model execution.
+- A workflow ends in a `Diagnosis` node. One fenced transaction ends the job and investigation with it, so a replay reaches the stored outcome ([ADR-024](decisions.md#adr-024-one-transaction-ends-the-job-and-the-investigation)).
+- Each step transition and the ending write a `progress_events` row in the same transaction. Rows hold identifiers and categories. Findings stay in `agent_steps.output` and `investigations.diagnosis`.
 
 See [reliability.md](reliability.md) for the full set of recovery guarantees and tests.
