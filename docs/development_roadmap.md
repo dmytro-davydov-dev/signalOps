@@ -26,12 +26,12 @@ PostgreSQL owns evidence, workflow progress, budgets, and the initial knowledge 
 | Field | Current value |
 | --- | --- |
 | Active phase | Phase 7 LLM gateway and first investigator |
-| Active task | P07-T05 (in progress) |
-| Last completed task | P07-T04 |
+| Active task | P07-T06 (in progress) |
+| Last completed task | P07-T05 |
 | Latest verified commit | `16e12da` (P07-T04) |
-| Validation evidence | P07-T04: `SIGNALOPS_INTEGRATION=1 uv run pytest` 1112 passed. On a real detector replay, the fake investigator names `bank-gateway` with existing evidence IDs, and underdetermined input abstains. No model was called. Earlier evidence is in the work log |
+| Validation evidence | P07-T05: stale or cross-run cache content cannot reach the agent, and missing or unsupported citations are refused and end in abstention (`tests/integration/test_investigator.py`, `tests/integration/test_agent_tools.py`). Earlier evidence is in the work log |
 | Blockers | None recorded |
-| Next task | P07-T05 |
+| Next task | P07-T06 |
 
 ### Scope and release boundaries
 
@@ -693,11 +693,16 @@ Start the React shell in Phase 1 and add API-backed incident views in Phase 5; P
 
 ### P07-T05 Validate findings and cache safe reads
 
-- [ ] Complete this task.
+- [x] Complete this task.
 
 **Implementation:** Verify cited evidence IDs, scope, cutoff, confidence bounds, and output shape. Cache read-only context in Redis with keys including replay scope, cutoff, and data version.
 
 **Acceptance:** Stale or cross-run cache content cannot alter evidence scope; missing citations fail validation.
+
+**Notes (2026-11-07):**
+- **Decision (ADR-029):** `agents/findings.py` checks the named service and every citation against PostgreSQL, on submission, so the model can correct itself, and again in `conclude`, where a failure abstains. `agents/read_cache.py` caches tool results for 60 seconds under keys holding workspace, replay scope, cutoff, data version, tool, and arguments. A stored value repeats its identity and is revalidated as a contract, so a stale or foreign one is a miss.
+- **Choices the task did not state:** a citation must be known by the cutoff on both clocks; the data version is the count and latest `ingested_at` of signals of the last hour, because the case that matters at a fixed cutoff is a late commit under lag; citations never use the cache; an unreachable Redis is a miss; `ToolScope` moved to `read_cache.py`.
+- Left: citations are checked for existence and scope, not for whether they support the claim (Phase 9, P10); hits are rare, since each investigation has its own cutoff, so the cache mainly serves retries; the version does not see graph or runbook changes, which show within the TTL.
 
 ### P07-T06 Verify gateway failure behavior
 
@@ -1331,6 +1336,16 @@ Keep these outside the release critical path unless measurements justify promoti
 - Deviations and reasons: none.
 - Remaining issues: see task notes.
 - Next task: P07-T05.
+
+### 2026-11-07 — P07-T05
+- Status: completed
+- Commit: pending
+- Implemented: `agents/findings.py`, `agents/read_cache.py`; `EvidenceRepository.missing_or_future` and `data_version`; the cache in `ToolExecutor`; verification in `investigate_with_agent` and `conclude_findings`; `SIGNALOPS_TOOL_CACHE_SECONDS`; ADR-029; docs (agents-and-workflow, decisions, development).
+- Validation commands and results: `uv run ruff check .`, `uv run ruff format --check .`, `uv run mypy` (161 files), `uv run signalops export-schemas --check` pass; `tests/integration/test_investigator.py` and `tests/integration/test_agent_tools.py` 65 passed on real PostgreSQL and Redis; `uv run pytest` passes.
+- Evidence or artifact references: absent, other-run, after-cutoff, and late-arriving citations are refused, sent back, and end in abstention; empty citations and out-of-range confidence fail validation; a forged stored proposal abstains at `conclude`. Planted cache values for another run, with a future entry, for another tool, and as garbage do not reach the agent, while a valid entry for the exact read does.
+- Deviations and reasons: none.
+- Remaining issues: see task notes.
+- Next task: P07-T06.
 
 ## Work log template
 

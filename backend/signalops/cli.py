@@ -354,7 +354,7 @@ def run_worker() -> int:
         redis = Redis.from_url(str(settings.redis_url))
         gateway = build_gateway(database, redis, settings)
         workflow = WorkflowEngine(
-            database, runtime=AgentRuntime.from_settings(database, gateway, settings)
+            database, runtime=AgentRuntime.from_settings(database, gateway, redis, settings)
         )
         runner = JobRunner(database, workflow, JobPolicy.from_settings(settings))
         try:

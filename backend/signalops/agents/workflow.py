@@ -41,10 +41,11 @@ from typing import Any, Final, cast
 
 from pydantic import ValidationError
 
+from signalops.agents.findings import verify_findings
 from signalops.agents.investigations import WORKFLOW_VERSION
 from signalops.agents.investigator import AgentRuntime, investigate_incident
 from signalops.agents.jobs import JobStoppedError, PermanentJobError, error_record
-from signalops.agents.tools import ToolScope
+from signalops.agents.read_cache import ToolScope
 from signalops.contracts.checkpoints import StepCheckpoint, decode_checkpoint
 from signalops.contracts.common import ContractError, ContractModel
 from signalops.contracts.diagnosis import Diagnosis, DiagnosisStatus, RootCause
@@ -216,13 +217,19 @@ async def investigate_with_agent(context: NodeContext) -> ProposedDiagnosis:
     if runtime is None:
         raise PermanentJobError("this worker has no model runtime")
     run = context.run
+    scope = ToolScope(run.scope, run.evidence_cutoff_at)
+
+    async def check(proposal: ProposedDiagnosis) -> str | None:
+        return await verify_findings(context.database, scope, proposal)
+
     return await investigate_incident(
         runtime,
         context.lease,
         context.step_key,
-        ToolScope(run.scope, run.evidence_cutoff_at),
+        scope,
         context.output(LOAD_INCIDENT),
         max_turns=run.max_steps - context.step_count,
+        check=check,
     )
 
 
@@ -230,14 +237,17 @@ async def conclude_findings(context: NodeContext) -> Diagnosis:
     run = context.run
     proposal = context.output(INVESTIGATE_AGENT)
     cause = proposal.root_cause
+    # Checked again here, because this is the last step before the outcome is stored.
+    scope = ToolScope(run.scope, run.evidence_cutoff_at)
+    problem = await verify_findings(context.database, scope, proposal)
+    if problem is not None:
+        return _unsupported(proposal, run, "The cited evidence could not be verified")
     root_cause = None
     if cause is not None:
         async with context.database.transaction() as session:
             services = await CatalogRepository(session).get_services(
                 run.scope.workspace_id, [cause.service_id]
             )
-        if not services:
-            return _unsupported(proposal, run, "The named service is not in this workspace")
         root_cause = RootCause(**cause.model_dump(mode="python"), service_name=services[0].name)
     return Diagnosis(
         status=proposal.status,

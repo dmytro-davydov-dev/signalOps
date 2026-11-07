@@ -7,8 +7,8 @@ bounded by a time window and a row limit the caller supplies.
 import uuid
 from collections.abc import Collection
 from dataclasses import dataclass
-from datetime import datetime
-from typing import Any
+from datetime import datetime, timedelta
+from typing import Any, Final
 
 from sqlalchemy import func, select, true, tuple_
 from sqlalchemy.dialects.postgresql import insert
@@ -17,6 +17,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from signalops.contracts.evidence import NormalizedSignal, QualityStatus, Severity, SignalKind
 from signalops.persistence.models import Deployment, Service, Signal
 from signalops.persistence.repositories.scope import EvidenceScope
+
+DATA_VERSION_HORIZON: Final = timedelta(hours=1)
+
+
+def to_timestamp_micros(value: datetime | None) -> int:
+    return 0 if value is None else round(value.timestamp() * 1_000_000)
 
 
 @dataclass(frozen=True)
@@ -141,6 +147,37 @@ class EvidenceRepository:
             statement.order_by(Signal.occurred_at.desc(), Signal.id.desc()).limit(limit)
         )
         return list(result)
+
+    async def missing_or_future(
+        self, scope: EvidenceScope, signal_ids: Collection[uuid.UUID], *, known_by: datetime
+    ) -> set[uuid.UUID]:
+        """Those of these signals that are not in scope, or not yet known at a time."""
+        known = await self._session.scalars(
+            select(Signal.id).where(
+                scope.clause(Signal),
+                Signal.id.in_(signal_ids),
+                Signal.occurred_at <= known_by,
+                Signal.ingested_at <= known_by,
+            )
+        )
+        return set(signal_ids) - set(known)
+
+    async def data_version(self, scope: EvidenceScope, *, known_by: datetime) -> str:
+        """Changes when recent evidence commits late, as under consumer lag.
+
+        It scans recent `occurred_at`, which the scope's index serves. Older evidence
+        stopped changing long ago, and cached reads last about a minute.
+        """
+        count, latest = (
+            await self._session.execute(
+                select(func.count(), func.max(Signal.ingested_at)).where(
+                    scope.clause(Signal),
+                    Signal.occurred_at > known_by - DATA_VERSION_HORIZON,
+                    Signal.ingested_at <= known_by,
+                )
+            )
+        ).one()
+        return f"{count}.{to_timestamp_micros(latest)}"
 
     async def has_service(self, workspace_id: uuid.UUID, service_id: uuid.UUID) -> bool:
         found = await self._session.scalar(

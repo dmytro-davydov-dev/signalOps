@@ -98,6 +98,8 @@ class Settings(BaseSettings):
     agent_max_tool_calls: int = Field(default=10, ge=1, le=64)
     # One evidence tool read; a slower one returns a timeout to the agent.
     tool_timeout_seconds: float = Field(default=5.0, gt=0, le=60)
+    # How long Redis keeps a tool result.
+    tool_cache_seconds: int = Field(default=60, ge=30, le=120)
     # A worker that stops heartbeating loses its job this long after the last beat.
     job_lease_seconds: int = Field(default=30, ge=3, le=600)
     # Worker wait after finding no claimable job.

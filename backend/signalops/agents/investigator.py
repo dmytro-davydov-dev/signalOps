@@ -19,12 +19,13 @@ from dataclasses import dataclass
 from typing import Final, Self
 
 from pydantic import ValidationError
+from redis.asyncio import Redis
 
+from signalops.agents.read_cache import RedisReadCache, ToolScope
 from signalops.agents.tools import (
     TextRedactor,
     ToolExecutor,
     ToolLimits,
-    ToolScope,
     tool_definitions,
 )
 from signalops.config import Settings
@@ -114,20 +115,15 @@ class AgentRuntime:
 
     @classmethod
     def from_settings(
-        cls,
-        database: Database,
-        gateway: ModelGateway,
-        settings: Settings,
-        *,
-        tools: ToolExecutor | None = None,
+        cls, database: Database, gateway: ModelGateway, redis: "Redis", settings: Settings
     ) -> Self:
         return cls(
             gateway=gateway,
-            tools=tools
-            or ToolExecutor(
+            tools=ToolExecutor(
                 database,
                 TextRedactor(tuple(settings.ingest_redact_fields)),
                 ToolLimits.from_settings(settings),
+                RedisReadCache(redis, settings.tool_cache_seconds),
             ),
             model=settings.resolved_model(),
             limits=AgentLimits.from_settings(settings),

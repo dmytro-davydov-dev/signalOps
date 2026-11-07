@@ -305,6 +305,16 @@ Revision `0015_investigation_outcomes` adds a partial unique index allowing one 
 
 **Revisit when:** Phase 9 splits the agent into specialists, or a paid run measures reservations against real usage.
 
+## ADR-029: Citations are verified in PostgreSQL, and cached reads prove their identity
+
+**Decision:** `verify_findings` checks that a diagnosed result's service is in the workspace and that every cited signal is in the investigation's scope and known by its cutoff. It runs on submission, so the model gets a chance to correct itself, and again in `conclude`, where a failure abstains. It always reads PostgreSQL. Tool results may come from Redis under `cache:query:{format}:{workspace}:{replay scope}:{cutoff}:{data version}:{tool}:{argument hash}` for 60 seconds. The value repeats its identity, and a read compares that and revalidates the result as a contract, so a mismatch is a miss. The data version is the count and latest `ingested_at` of signals of the last hour known by the cutoff. An unreachable Redis is a miss.
+
+**Reason:** Code, not the model, decides whether a citation holds. Checking twice covers a stored proposal being reused after a restart, and abstaining beats storing an unverifiable cause. A key alone protects against collisions by construction, and the stored identity plus revalidation also handle a value written by a bug or by another format. The data version covers the case that matters at a fixed cutoff: a signal ingested before the cutoff that commits after it because the normalizer lagged.
+
+**Trade-off:** The version is a query per tool call, so a hit saves little work on a small read, and hits are rare because each investigation has its own cutoff; the cache mainly serves retries and repeats within a minute. The version does not see evidence older than an hour committing late, graph edges, or runbook changes, so such a change can take up to the TTL to show. It reports only that citations exist in scope, not that they support the claim, which is the verifier's job in Phase 9 and evaluation's in P10.
+
+**Revisit when:** Phase 9 adds claim-level verification, or measurements show the cache does not earn its query.
+
 ## Open questions
 
 | # | Question | Decide by |

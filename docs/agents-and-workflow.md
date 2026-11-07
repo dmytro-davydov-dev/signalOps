@@ -61,7 +61,7 @@ All tools are **read-only** and typed. Each call enforces workspace scope, repla
 
 Implemented in `agents/tools.py` ([ADR-027](decisions.md#adr-027-tools-take-typed-arguments-and-code-alone-supplies-scope-and-cutoff)): at most 6 hours, 50 rows, and 16 KiB per call. A signal is visible only when it both happened and arrived by the cutoff, so a late arrival stays future evidence. A failed call returns a `ToolFailure` to the agent. `signalops seed` adds two synthetic demo runbooks.
 
-No tool exposes SQL, shell access, future evidence, or evaluation labels. Read-only results may be cached in Redis under keys that include replay scope, cutoff, and data version.
+No tool exposes SQL, shell access, future evidence, or evaluation labels. Read-only results are cached in Redis for `SIGNALOPS_TOOL_CACHE_SECONDS` under keys that include workspace, replay scope, cutoff, and data version, and a stored value must prove the same identity to be read.
 
 ## LLM gateway
 
@@ -115,9 +115,9 @@ Implemented as `Diagnosis` in `backend/signalops/contracts/diagnosis.py` (P02-T0
 
 The contract rejects unknown fields (no free-form reasoning field), caps list lengths and text sizes, requires 1–50 unique evidence UUIDs for a diagnosed result, and requires `missing_evidence` for an abstention.
 
-Validation checks that:
+Validation checks ([ADR-029](decisions.md#adr-029-citations-are-verified-in-postgresql-and-cached-reads-prove-their-identity)), on submission and again in `conclude`, that:
 
-- Every cited ID is a UUID that exists within scope and before the cutoff.
+- Every cited ID is a UUID that exists within scope and was known by the cutoff.
 - `confidence` lies in [0, 1] and is described as a model assessment until evaluation calibrates it.
 - Unsupported conclusions come back as `status: "insufficient_evidence"` with a null `root_cause` and the missing evidence listed.
 - Suggested actions always require human approval. SignalOps never remediates on its own.

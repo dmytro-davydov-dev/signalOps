@@ -14,6 +14,8 @@ see.
 **Bounds.** Every call has a time window, a row limit, a byte cap, a timeout, and
 redaction. `truncated` tells the agent that more matched.
 
+**Cache.** A result may come from Redis (see `read_cache`). Citations never do.
+
 **Failures.** A rejected or failed call returns a `ToolFailure` for the agent to read.
 It records a failed `tool_calls` row and never ends the job.
 """
@@ -34,6 +36,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from signalops.adapters.ingestion import REDACTED
+from signalops.agents.read_cache import ReadCache, ReadKey, ToolScope
 from signalops.config import Settings
 from signalops.contracts.common import ContractModel, TraceId, UtcDatetime, json_size
 from signalops.contracts.evidence import QualityStatus, Severity, SignalKind
@@ -59,7 +62,6 @@ from signalops.persistence.models import Signal
 from signalops.persistence.repositories.evidence import EvidenceRepository, SignalFilter
 from signalops.persistence.repositories.graph import GraphDirection, GraphRepository
 from signalops.persistence.repositories.jobs import JobLease, JobRepository
-from signalops.persistence.repositories.scope import EvidenceScope
 from signalops.persistence.repositories.tool_calls import ToolCallRepository
 
 logger = logging.getLogger(__name__)
@@ -108,14 +110,6 @@ class DependenciesArguments(ContractModel):
 class RunbooksArguments(ContractModel):
     service_id: uuid.UUID | None = None
     limit: int = Field(default=5, ge=1, le=MAX_TOOL_LIMIT)
-
-
-@dataclass(frozen=True)
-class ToolScope:
-    """What a call may see, set from the investigation and never from the model."""
-
-    evidence: EvidenceScope
-    cutoff: datetime
 
 
 @dataclass(frozen=True)
@@ -427,11 +421,16 @@ def _canonical(document: ContractModel) -> str:
 
 class ToolExecutor:
     def __init__(
-        self, database: Database, redactor: TextRedactor, limits: ToolLimits | None = None
+        self,
+        database: Database,
+        redactor: TextRedactor,
+        limits: ToolLimits | None = None,
+        cache: ReadCache | None = None,
     ) -> None:
         self._database = database
         self._redactor = redactor
         self._limits = limits or ToolLimits()
+        self._cache = cache
 
     async def run(
         self,
@@ -498,7 +497,26 @@ class ToolExecutor:
                 asyncio.timeout(self._limits.timeout_seconds),
                 self._database.transaction() as session,
             ):
-                result = await spec.read(_Reads(session, scope, self._redactor), arguments)
+                reads = _Reads(session, scope, self._redactor)
+                if self._cache is None:
+                    return _bounded(
+                        await spec.read(reads, arguments), self._limits.max_result_bytes
+                    )
+                key = ReadKey(
+                    scope,
+                    await EvidenceRepository(session).data_version(
+                        scope.evidence, known_by=scope.cutoff
+                    ),
+                    spec.name,
+                    arguments.model_dump_json(),
+                )
+                cached = await self._cache.get(key)
+                if cached is not None:
+                    logger.info("tool read cached", extra={"tool": str(spec.name)})
+                    return cached
+                result = _bounded(await spec.read(reads, arguments), self._limits.max_result_bytes)
+            await self._cache.put(key, result)
+            return result
         except TimeoutError:
             raise ToolRejectedError(ToolErrorCategory.TIMEOUT, "the read took too long") from None
         except SQLAlchemyError as error:
@@ -506,4 +524,3 @@ class ToolExecutor:
             raise ToolRejectedError(
                 ToolErrorCategory.UNAVAILABLE, "evidence is unavailable"
             ) from None
-        return _bounded(result, self._limits.max_result_bytes)

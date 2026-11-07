@@ -184,6 +184,7 @@ Backend processes read `SIGNALOPS_`-prefixed variables (`backend/signalops/confi
 | `SIGNALOPS_INVESTIGATION_BUDGET_MICROUSD` / `SIGNALOPS_INVESTIGATION_MAX_STEPS` / `SIGNALOPS_INVESTIGATION_DEADLINE_SECONDS` | `1000000` / `20` / `600` | The most one investigation may use (1–1000000000, 1–200, 60–86400); a request can only lower them |
 | `SIGNALOPS_INVESTIGATION_AUTO_REQUEST` | `true` | A new live incident requests one investigation |
 | `SIGNALOPS_TOOL_TIMEOUT_SECONDS` | `5` | One evidence tool read (up to 60); a slower one returns a timeout to the agent |
+| `SIGNALOPS_TOOL_CACHE_SECONDS` | `60` | How long Redis keeps a tool result (30–120) |
 | `SIGNALOPS_JOB_LEASE_SECONDS` | `30` | A worker that stops heartbeating loses its job this long after the last beat (3–600). Job retries use `SIGNALOPS_RETRY_BASE_DELAY_MS` and `SIGNALOPS_RETRY_MAX_DELAY_MS` |
 | `SIGNALOPS_JOB_POLL_INTERVAL_MS` | `1000` | Worker wait after finding no claimable job (50–60000) |
 | `SIGNALOPS_GRAPH_DEPENDENCY_TTL_SECONDS` | `604800` | An observed dependency stays valid this long after each observation (60–31536000) |

@@ -2,21 +2,23 @@
 
 import json
 import uuid
-from collections.abc import Sequence
+from collections.abc import AsyncIterator, Sequence
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import pytest
+from redis.asyncio import Redis
 from sqlalchemy import delete, select
 
 from signalops.agents.jobs import JobPolicy, claim_job
+from signalops.agents.read_cache import ReadKey, RedisReadCache, ToolScope
 from signalops.agents.tools import (
     MAX_TOOL_LIMIT,
+    QueryLogsArguments,
     TextRedactor,
     ToolExecutor,
     ToolLimits,
     ToolOutcome,
-    ToolScope,
     tool_definitions,
 )
 from signalops.config import Settings
@@ -143,8 +145,9 @@ async def call(
     scope: EvidenceScope = LIVE,
     cutoff: datetime = CUTOFF,
     limits: ToolLimits | None = None,
+    cache: RedisReadCache | None = None,
 ) -> ToolOutcome:
-    executor = ToolExecutor(database, REDACTOR, limits)
+    executor = ToolExecutor(database, REDACTOR, limits, cache)
     return await executor.run(lease, STEP, ToolScope(scope, cutoff), tool, arguments)
 
 
@@ -543,3 +546,168 @@ def test_the_redactor_uses_the_configured_fields() -> None:
     settings = Settings(database_url="postgresql+psycopg://u:p@h/d")  # type: ignore[arg-type]
     redactor = TextRedactor(tuple(settings.ingest_redact_fields))
     assert redactor.redact("secret=abc plain=visible") == "secret=[REDACTED] plain=visible"
+
+
+@pytest.fixture
+async def redis(infra_settings: Settings) -> AsyncIterator["Redis"]:
+    client = Redis.from_url(str(infra_settings.redis_url))
+    yield client
+    await client.aclose()
+
+
+@pytest.fixture
+def cutoff() -> datetime:
+    """Unique per test, so entries of earlier runs cannot be read back."""
+    return CUTOFF + timedelta(seconds=uuid.uuid4().int % 100_000)
+
+
+async def key_of(
+    database: db.Database, scope: EvidenceScope, cutoff: datetime, tool: ToolName, arguments: str
+) -> str:
+    async with database.transaction() as session:
+        version = await EvidenceRepository(session).data_version(scope, known_by=cutoff)
+    return ReadKey(ToolScope(scope, cutoff), version, tool, arguments).redis_key()
+
+
+ARGUMENTS = QueryLogsArguments(limit=5).model_dump_json()
+
+
+async def test_a_repeated_read_comes_from_the_cache(
+    database: db.Database, lease: JobLease, redis: "Redis", cutoff: datetime
+) -> None:
+    cache = RedisReadCache(redis, 60)
+    arguments = {"limit": 5, "since": (cutoff - timedelta(hours=2)).isoformat()}
+    first = await call(database, lease, ToolName.QUERY_LOGS, arguments, cutoff=cutoff, cache=cache)
+    # Too old to move the data version, so only a real read would see it.
+    await store(database, [signal("unseen", at=cutoff - timedelta(minutes=90))])
+
+    second = await call(database, lease, ToolName.QUERY_LOGS, arguments, cutoff=cutoff, cache=cache)
+
+    assert second.content == first.content
+    assert "unseen" not in second.content
+
+
+async def test_new_evidence_changes_the_key(
+    database: db.Database, lease: JobLease, redis: "Redis", cutoff: datetime
+) -> None:
+    before = await key_of(database, LIVE, cutoff, ToolName.QUERY_LOGS, ARGUMENTS)
+    await store(database, [signal("recent", at=cutoff - timedelta(seconds=30))])
+
+    after = await key_of(database, LIVE, cutoff, ToolName.QUERY_LOGS, ARGUMENTS)
+
+    assert before != after
+
+
+async def test_keys_separate_workspace_replay_run_cutoff_and_arguments(
+    database: db.Database, lease: JobLease, cutoff: datetime
+) -> None:
+    replay = EvidenceScope(DEMO_WORKSPACE_ID, REPLAY)
+    other = EvidenceScope(OTHER_WORKSPACE)
+    keys = {
+        await key_of(database, LIVE, cutoff, ToolName.QUERY_LOGS, ARGUMENTS),
+        await key_of(database, replay, cutoff, ToolName.QUERY_LOGS, ARGUMENTS),
+        await key_of(database, other, cutoff, ToolName.QUERY_LOGS, ARGUMENTS),
+        await key_of(database, LIVE, cutoff + timedelta(seconds=1), ToolName.QUERY_LOGS, ARGUMENTS),
+        await key_of(database, LIVE, cutoff, ToolName.GET_TRACE_SUMMARY, ARGUMENTS),
+        await key_of(database, LIVE, cutoff, ToolName.QUERY_LOGS, "{}"),
+    }
+    assert len(keys) == 6
+
+
+def planted_result(cutoff: datetime, *, at: datetime) -> dict[str, Any]:
+    return {
+        "tool": "query_logs",
+        "evidence_cutoff_at": cutoff.isoformat(),
+        "items": [
+            {
+                "signal_id": str(uuid.uuid4()),
+                "service_id": str(CHECKOUT),
+                "occurred_at": at.isoformat(),
+                "severity": "error",
+                "message": "planted",
+                "quality_status": "accepted",
+            }
+        ],
+    }
+
+
+@pytest.mark.parametrize("attack", ["foreign_run", "future_entry", "wrong_tool", "garbage"])
+async def test_stale_or_foreign_cache_content_cannot_reach_the_agent(
+    database: db.Database, lease: JobLease, redis: "Redis", cutoff: datetime, attack: str
+) -> None:
+    arguments = {"limit": 5}
+    canonical = QueryLogsArguments(limit=5).model_dump_json()
+    key = await key_of(database, LIVE, cutoff, ToolName.QUERY_LOGS, canonical)
+    async with database.transaction() as session:
+        version = await EvidenceRepository(session).data_version(LIVE, known_by=cutoff)
+    identity = ReadKey(ToolScope(LIVE, cutoff), version, ToolName.QUERY_LOGS, canonical).identity()
+    result = planted_result(cutoff, at=cutoff - timedelta(minutes=1))
+    if attack == "foreign_run":
+        identity = identity | {"replay_scope": REPLAY}
+    elif attack == "future_entry":
+        result = planted_result(cutoff, at=cutoff + timedelta(hours=1))
+    elif attack == "wrong_tool":
+        result["tool"] = "get_deployments"
+    value = (
+        "not json" if attack == "garbage" else json.dumps({"identity": identity, "result": result})
+    )
+    await redis.set(key, value, ex=60)
+
+    outcome = await call(
+        database,
+        lease,
+        ToolName.QUERY_LOGS,
+        arguments,
+        cutoff=cutoff,
+        cache=RedisReadCache(redis, 60),
+    )
+
+    assert "planted" not in outcome.content
+
+
+async def test_a_valid_entry_for_this_exact_read_is_used(
+    database: db.Database, lease: JobLease, redis: "Redis", cutoff: datetime
+) -> None:
+    canonical = QueryLogsArguments(limit=5).model_dump_json()
+    async with database.transaction() as session:
+        version = await EvidenceRepository(session).data_version(LIVE, known_by=cutoff)
+    key = ReadKey(ToolScope(LIVE, cutoff), version, ToolName.QUERY_LOGS, canonical)
+    await redis.set(
+        key.redis_key(),
+        json.dumps(
+            {
+                "identity": key.identity(),
+                "result": planted_result(cutoff, at=cutoff - timedelta(minutes=1)),
+            }
+        ),
+        ex=60,
+    )
+
+    outcome = await call(
+        database,
+        lease,
+        ToolName.QUERY_LOGS,
+        {"limit": 5},
+        cutoff=cutoff,
+        cache=RedisReadCache(redis, 60),
+    )
+
+    assert "planted" in outcome.content
+
+
+async def test_an_unreachable_cache_falls_back_to_postgresql(
+    database: db.Database, lease: JobLease, cutoff: datetime
+) -> None:
+    unreachable = Redis.from_url("redis://127.0.0.1:1/0", socket_connect_timeout=0.1)
+
+    outcome = await call(
+        database,
+        lease,
+        ToolName.QUERY_LOGS,
+        {"limit": 1},
+        cutoff=cutoff,
+        cache=RedisReadCache(unreachable, 60),
+    )
+
+    assert not outcome.is_error
+    await unreachable.aclose()

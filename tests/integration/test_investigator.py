@@ -12,10 +12,17 @@ from signalops.agents.investigations import cancel_investigation
 from signalops.agents.investigator import AgentLimits, AgentRuntime
 from signalops.agents.jobs import JobPolicy, JobRunner, claim_job
 from signalops.agents.tools import TextRedactor, ToolExecutor
-from signalops.agents.workflow import WorkflowEngine
+from signalops.agents.workflow import (
+    INVESTIGATE_AGENT,
+    NodeContext,
+    WorkflowEngine,
+    WorkflowRun,
+    conclude_findings,
+)
 from signalops.contracts.common import replay_scope_for
 from signalops.contracts.diagnosis import Diagnosis, DiagnosisStatus
-from signalops.contracts.steps import SUBMIT_TOOL
+from signalops.contracts.evidence import NormalizedSignal, QualityStatus, Severity, SignalKind
+from signalops.contracts.steps import SUBMIT_TOOL, ProposedDiagnosis
 from signalops.contracts.workflow import (
     CostBasis,
     IncidentSeverity,
@@ -43,13 +50,14 @@ from signalops.persistence.models import (
     Signal,
     ToolCall,
 )
+from signalops.persistence.repositories.evidence import EvidenceRepository
 from signalops.persistence.repositories.incidents import IncidentRepository, NewIncident
 from signalops.persistence.repositories.investigations import (
     InvestigationRepository,
     NewInvestigation,
 )
 from signalops.persistence.repositories.scope import EvidenceScope
-from signalops.persistence.seed import DEMO_SERVICES, DEMO_WORKSPACE_ID
+from signalops.persistence.seed import DEMO_SERVICES, DEMO_SOURCES, DEMO_WORKSPACE_ID
 from signalops.streaming.retry import RetryPolicy
 from tests.integration.job_support import LIVE, add_job
 from tests.integration.test_detector import _flush, _normalized_demo, _process
@@ -498,6 +506,143 @@ async def test_a_failed_turn_retries_the_node_and_reuses_load_context(
     assert steps_stored["load_context"].attempt == 1
     assert steps_stored["investigate"].attempt == 2
     assert steps_stored["investigate"].status == StepStatus.COMPLETED
+
+
+def cited(*signal_ids: uuid.UUID, service: uuid.UUID = SERVICE_IDS["payment"]) -> dict[str, Any]:
+    return {
+        "status": "diagnosed",
+        "summary": "Payment failed.",
+        "root_cause": {
+            "service_id": str(service),
+            "failure_type": "elevated_errors",
+            "confidence": 0.6,
+            "evidence_signal_ids": [str(signal_id) for signal_id in signal_ids],
+        },
+    }
+
+
+async def evidence(
+    database: db.Database,
+    *,
+    at: datetime,
+    scope: EvidenceScope = LIVE,
+    ingested: datetime | None = None,
+) -> uuid.UUID:
+    source = DEMO_SOURCES[0].id
+    signal = NormalizedSignal(
+        id=uuid.uuid4(),
+        workspace_id=scope.workspace_id,
+        source_id=source,
+        service_id=SERVICE_IDS["payment"],
+        source_event_id=f"finding-{uuid.uuid4()}",
+        replay_scope=scope.replay_scope,
+        kind=SignalKind.LOG,
+        occurred_at=at,
+        ingested_at=ingested or at,
+        severity=Severity.ERROR,
+        message="charge failed",
+        attributes={},
+        quality_status=QualityStatus.ACCEPTED,
+        quality_flags=(),
+    )
+    async with database.transaction() as session:
+        assert await EvidenceRepository(session).insert_signal(signal)
+    return signal.id
+
+
+async def test_a_supported_citation_becomes_a_diagnosis(database: db.Database) -> None:
+    signal_id = await evidence(database, at=datetime.now(UTC) - timedelta(minutes=1))
+    investigation_id = await new_job(database)
+    provider = FakeProvider.scripted([turn(use(SUBMIT_TOOL, cited(signal_id)))])
+
+    await run_once(database, engine_with(database, provider))
+
+    diagnosis = await diagnosis_of(database, investigation_id)
+    assert diagnosis.root_cause is not None
+    assert diagnosis.root_cause.service_name == "payment"
+    assert diagnosis.root_cause.evidence_signal_ids == (signal_id,)
+
+
+@pytest.mark.parametrize("problem", ["absent", "other_run", "after_cutoff", "arrived_late"])
+async def test_an_unsupported_citation_is_refused_then_abstains(
+    database: db.Database, problem: str
+) -> None:
+    now = datetime.now(UTC)
+    if problem == "absent":
+        signal_id = uuid.uuid4()
+    elif problem == "other_run":
+        replay = EvidenceScope(DEMO_WORKSPACE_ID, replay_scope_for(uuid.uuid4()))
+        signal_id = await evidence(database, at=now - timedelta(minutes=1), scope=replay)
+    elif problem == "after_cutoff":
+        signal_id = await evidence(database, at=now + timedelta(minutes=5))
+    else:
+        signal_id = await evidence(
+            database, at=now - timedelta(minutes=1), ingested=now + timedelta(minutes=5)
+        )
+    investigation_id = await new_job(database)
+    provider = FakeProvider.scripted([turn(use(SUBMIT_TOOL, cited(signal_id)))])
+
+    await run_once(database, engine_with(database, provider))
+
+    assert len(provider.requests) == LIMITS.max_repairs + 1
+    assert "not signals known by the cutoff" in str(provider.requests[1].messages[-1].content)
+    row = await row_of(database, investigation_id)
+    assert row.status == InvestigationStatus.INSUFFICIENT_EVIDENCE
+
+
+async def test_a_service_outside_the_workspace_is_refused(database: db.Database) -> None:
+    signal_id = await evidence(database, at=datetime.now(UTC) - timedelta(minutes=1))
+    investigation_id = await new_job(database)
+    provider = FakeProvider.scripted(
+        [turn(use(SUBMIT_TOOL, cited(signal_id, service=uuid.uuid4())))]
+    )
+
+    await run_once(database, engine_with(database, provider))
+
+    row = await row_of(database, investigation_id)
+    assert row.status == InvestigationStatus.INSUFFICIENT_EVIDENCE
+
+
+@pytest.mark.parametrize(
+    "change",
+    [
+        {"evidence_signal_ids": []},
+        {"confidence": 1.5},
+        {"confidence": -0.1},
+    ],
+)
+async def test_missing_citations_and_bad_confidence_fail_validation(
+    database: db.Database, change: dict[str, Any]
+) -> None:
+    signal_id = await evidence(database, at=datetime.now(UTC) - timedelta(minutes=1))
+    investigation_id = await new_job(database)
+    proposal = cited(signal_id)
+    proposal["root_cause"] |= change
+    provider = FakeProvider.scripted([turn(use(SUBMIT_TOOL, proposal))])
+
+    await run_once(database, engine_with(database, provider))
+
+    assert "Invalid findings" in str(provider.requests[1].messages[-1].content)
+    row = await row_of(database, investigation_id)
+    assert row.status == InvestigationStatus.INSUFFICIENT_EVIDENCE
+
+
+async def test_a_stored_proposal_is_verified_again_at_the_conclusion(
+    database: db.Database,
+) -> None:
+    investigation_id = await new_job(database)
+    forged = ProposedDiagnosis.model_validate(cited(uuid.uuid4()))
+    context = NodeContext(database, await run_of(database, investigation_id))
+    context.keep(INVESTIGATE_AGENT, forged)
+
+    diagnosis = await conclude_findings(context)
+
+    assert diagnosis.status is DiagnosisStatus.INSUFFICIENT_EVIDENCE
+    assert diagnosis.root_cause is None
+
+
+async def run_of(database: db.Database, investigation_id: uuid.UUID) -> WorkflowRun:
+    return WorkflowRun.of(await row_of(database, investigation_id))
 
 
 async def test_a_worker_with_no_runtime_fails_rather_than_guessing(database: db.Database) -> None:
