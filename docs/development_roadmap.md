@@ -28,7 +28,7 @@ PostgreSQL owns evidence, workflow progress, budgets, and the initial knowledge 
 | Active phase | Phase 7 LLM gateway and first investigator |
 | Active task | P07-T05 (in progress) |
 | Last completed task | P07-T04 |
-| Latest verified commit | `242d7bb` (P07-T03) |
+| Latest verified commit | `16e12da` (P07-T04) |
 | Validation evidence | P07-T04: `SIGNALOPS_INTEGRATION=1 uv run pytest` 1112 passed. On a real detector replay, the fake investigator names `bank-gateway` with existing evidence IDs, and underdetermined input abstains. No model was called. Earlier evidence is in the work log |
 | Blockers | None recorded |
 | Next task | P07-T05 |
@@ -1324,7 +1324,7 @@ Keep these outside the release critical path unless measurements justify promoti
 
 ### 2026-11-07 — P07-T04
 - Status: completed
-- Commit: pending
+- Commit: `16e12da`
 - Implemented: `agents/investigator.py`; `gateway/fake_investigator.py`; responders in `FakeProvider`; `ProposedDiagnosis`, `ServiceBrief`, and the brief's new fields in `contracts/steps.py`; `load_incident`, `investigate_with_agent`, `conclude_findings`, and workflow `v2`; `NodeContext.at`; `build_gateway`; worker wiring; `CatalogRepository.list_services`; `IncidentRepository.evidence_known_by`; agent settings; ADR-028; docs (agents-and-workflow, decisions, development).
 - Validation commands and results: `uv run ruff check .`, `uv run ruff format --check .`, `uv run mypy` (159 files), `uv run signalops export-schemas --check` pass; `SIGNALOPS_INTEGRATION=1 uv run pytest` 1112 passed.
 - Evidence or artifact references: `tests/integration/test_investigator.py`. A generated `downstream-timeout` dataset passed through the real normalizer and detector into a replay scope; the workflow on the fake investigator names `bank-gateway` with cited signals that exist in scope, 3 settled calls, and zero reserved. An incident with no evidence and a healthy dataset both abstain. Repair, its bound, cut-off replies, refusals, step and tool limits, a cancellation between turns, budget exhaustion between turns, and a node retry reusing `load_context` are covered. No model was called.
