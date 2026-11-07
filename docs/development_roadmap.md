@@ -28,7 +28,7 @@ PostgreSQL owns evidence, workflow progress, budgets, and the initial knowledge 
 | Active phase | Phase 7 LLM gateway and first investigator |
 | Active task | P07-T04 (in progress) |
 | Last completed task | P07-T03 |
-| Latest verified commit | `b3c7a42` (P07-T02) |
+| Latest verified commit | `242d7bb` (P07-T03) |
 | Validation evidence | P07-T03: `tests/integration/test_agent_tools.py` shows tools reject out-of-scope and future evidence and that inputs cannot widen a call or carry SQL or shell commands. Earlier evidence is in the work log |
 | Blockers | None recorded |
 | Next task | P07-T04 |
@@ -1308,7 +1308,7 @@ Keep these outside the release critical path unless measurements justify promoti
 
 ### 2026-11-07 — P07-T03
 - Status: completed
-- Commit: pending
+- Commit: `242d7bb`
 - Implemented: `agents/tools.py`; `persistence/repositories/tool_calls.py`; `SignalFilter` severity, trace, and `known_by` filters; `EvidenceRepository.has_service` and `list_deployments`; `GraphRepository.ensure_runbook` and `runbooks`, `RunbookVersion`; demo runbooks in the seed; `TraceSummaryEntry.downstream_services` with regenerated schema; ADR-027; docs (agents-and-workflow, decisions, development).
 - Validation commands and results: `uv run ruff check .`, `uv run ruff format --check .`, `uv run mypy` pass; `tests/integration/test_agent_tools.py` 29 passed on real PostgreSQL, with the graph, evidence API, and repository integration tests, contract, and unit tests also passing.
 - Evidence or artifact references: `tests/integration/test_agent_tools.py` covers future and late signals, out-of-scope services and replay runs, nine widening inputs including SQL and a shell command, row and byte caps, the timeout, masking, as-of graph reads, runbook versions, and fencing.
