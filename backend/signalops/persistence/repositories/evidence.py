@@ -14,8 +14,8 @@ from sqlalchemy import func, select, true, tuple_
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from signalops.contracts.evidence import NormalizedSignal, QualityStatus, SignalKind
-from signalops.persistence.models import Deployment, Signal
+from signalops.contracts.evidence import NormalizedSignal, QualityStatus, Severity, SignalKind
+from signalops.persistence.models import Deployment, Service, Signal
 from signalops.persistence.repositories.scope import EvidenceScope
 
 
@@ -29,6 +29,10 @@ class SignalFilter:
     service_id: uuid.UUID | None = None
     kind: SignalKind | None = None
     quality_status: QualityStatus | None = None
+    severities: tuple[Severity, ...] | None = None
+    trace_id: str | None = None
+    # Hides signals that happened or arrived after this instant.
+    known_by: datetime | None = None
 
 
 @dataclass(frozen=True)
@@ -121,12 +125,55 @@ class EvidenceRepository:
             statement = statement.where(Signal.kind == criteria.kind)
         if criteria.quality_status is not None:
             statement = statement.where(Signal.quality_status == criteria.quality_status)
+        if criteria.severities is not None:
+            statement = statement.where(Signal.severity.in_(criteria.severities))
+        if criteria.trace_id is not None:
+            statement = statement.where(Signal.trace_id == criteria.trace_id)
+        if criteria.known_by is not None:
+            statement = statement.where(
+                Signal.occurred_at <= criteria.known_by, Signal.ingested_at <= criteria.known_by
+            )
         if after is not None:
             statement = statement.where(
                 tuple_(Signal.occurred_at, Signal.id) < tuple_(after.occurred_at, after.id)
             )
         result = await self._session.scalars(
             statement.order_by(Signal.occurred_at.desc(), Signal.id.desc()).limit(limit)
+        )
+        return list(result)
+
+    async def has_service(self, workspace_id: uuid.UUID, service_id: uuid.UUID) -> bool:
+        found = await self._session.scalar(
+            select(Service.id).where(Service.workspace_id == workspace_id, Service.id == service_id)
+        )
+        return found is not None
+
+    async def list_deployments(
+        self,
+        scope: EvidenceScope,
+        *,
+        service_id: uuid.UUID | None,
+        since: datetime,
+        until: datetime,
+        known_by: datetime,
+        limit: int,
+    ) -> list[Deployment]:
+        """Up to `limit` deployments in the window, newest first, whose signals had arrived."""
+        statement = (
+            select(Deployment)
+            .join(Signal, Signal.id == Deployment.signal_id)
+            .where(
+                scope.clause(Deployment),
+                Deployment.deployed_at >= since,
+                Deployment.deployed_at < until,
+                Deployment.deployed_at <= known_by,
+                Signal.ingested_at <= known_by,
+            )
+        )
+        if service_id is not None:
+            statement = statement.where(Deployment.service_id == service_id)
+        result = await self._session.scalars(
+            statement.order_by(Deployment.deployed_at.desc(), Deployment.id.desc()).limit(limit)
         )
         return list(result)
 

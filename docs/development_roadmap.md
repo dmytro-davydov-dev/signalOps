@@ -26,12 +26,12 @@ PostgreSQL owns evidence, workflow progress, budgets, and the initial knowledge 
 | Field | Current value |
 | --- | --- |
 | Active phase | Phase 7 LLM gateway and first investigator |
-| Active task | P07-T03 (in progress) |
-| Last completed task | P07-T02 |
+| Active task | P07-T04 (in progress) |
+| Last completed task | P07-T03 |
 | Latest verified commit | `b3c7a42` (P07-T02) |
-| Validation evidence | P07-T02: `tests/integration/test_model_gateway.py` on real PostgreSQL and Redis shows parallel calls cannot oversubscribe a budget, and an ambiguous timeout keeps its reservation while a retry reserves separately. Earlier evidence is in the work log |
+| Validation evidence | P07-T03: `tests/integration/test_agent_tools.py` shows tools reject out-of-scope and future evidence and that inputs cannot widen a call or carry SQL or shell commands. Earlier evidence is in the work log |
 | Blockers | None recorded |
-| Next task | P07-T03 |
+| Next task | P07-T04 |
 
 ### Scope and release boundaries
 
@@ -665,11 +665,17 @@ Start the React shell in Phase 1 and add API-backed incident views in Phase 5; P
 
 ### P07-T03 Implement constrained evidence tools
 
-- [ ] Complete this task.
+- [x] Complete this task.
 
 **Implementation:** Build query_logs, get_trace_summary, get_deployments, get_service_dependencies, and retrieve_runbooks. Store versioned runbook content with provenance in graph node properties initially. Enforce evidence cutoff, workspace/replay scope, row/byte caps, and timeouts.
 
 **Acceptance:** Tools reject out-of-scope and future evidence; requests cannot turn tool access into unrestricted SQL or shell execution.
+
+**Notes (2026-11-07):**
+- **Decision (ADR-027):** `agents/tools.py` holds the five tools, with one typed argument model each and unknown fields forbidden. `ToolScope` comes from the investigation, so input cannot name a workspace, replay run, or cutoff. `ToolExecutor.run` records `tool_calls` under the lease fence, keeping a result hash and never the rows.
+- **Choices the task did not state:** the cutoff applies to `ingested_at` as well as `occurred_at`, because a late signal carries an old `occurred_at`; a window past the cutoff is rejected, not clamped; limits are 6 hours, 50 rows, 32 KiB, and a 5-second read; `TextRedactor` masks sensitive `key=value` pairs and bearer tokens in free text; `TraceSummaryEntry` gained optional `downstream_services`, an additive contract change; a repeated call in a step reuses its row; a quarantined trace record is skipped.
+- **Runbooks:** one graph node per version, keyed `{key}@{version}`, with `DOCUMENTED_BY` edges from `published_at`. `signalops seed` adds two synthetic runbooks in the live scope.
+- Left: free-text masking is a pattern match, and source-specific redaction fields do not reach it; the replay scope has no runbooks until P10; nothing calls the tools until P07-T04; the read cache is P07-T05.
 
 ### P07-T04 Implement the first investigation workflow
 
@@ -1299,6 +1305,16 @@ Keep these outside the release critical path unless measurements justify promoti
 - Deviations and reasons: none.
 - Remaining issues: see task notes.
 - Next task: P07-T03.
+
+### 2026-11-07 — P07-T03
+- Status: completed
+- Commit: pending
+- Implemented: `agents/tools.py`; `persistence/repositories/tool_calls.py`; `SignalFilter` severity, trace, and `known_by` filters; `EvidenceRepository.has_service` and `list_deployments`; `GraphRepository.ensure_runbook` and `runbooks`, `RunbookVersion`; demo runbooks in the seed; `TraceSummaryEntry.downstream_services` with regenerated schema; ADR-027; docs (agents-and-workflow, decisions, development).
+- Validation commands and results: `uv run ruff check .`, `uv run ruff format --check .`, `uv run mypy` pass; `tests/integration/test_agent_tools.py` 29 passed on real PostgreSQL, with the graph, evidence API, and repository integration tests, contract, and unit tests also passing.
+- Evidence or artifact references: `tests/integration/test_agent_tools.py` covers future and late signals, out-of-scope services and replay runs, nine widening inputs including SQL and a shell command, row and byte caps, the timeout, masking, as-of graph reads, runbook versions, and fencing.
+- Deviations and reasons: none.
+- Remaining issues: see task notes.
+- Next task: P07-T04.
 
 ## Work log template
 

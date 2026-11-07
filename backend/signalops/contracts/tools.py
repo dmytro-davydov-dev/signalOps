@@ -51,6 +51,7 @@ class TraceSummaryEntry(ContractModel):
     status: Literal["ok", "error"]
     span_count: int = Field(ge=1)
     error_span_count: NonNegativeInt
+    downstream_services: tuple[Name, ...] = Field(default=(), max_length=MAX_TOOL_ROWS)
 
 
 class DeploymentEntry(ContractModel):

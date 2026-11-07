@@ -130,6 +130,38 @@ class Observed:
         }
 
 
+@dataclass(frozen=True)
+class RunbookVersion:
+    """One version of a runbook. Its text is untrusted data, like any evidence."""
+
+    key: str
+    version: str
+    title: str
+    content: str
+    provenance: str
+    published_at: datetime
+
+    @property
+    def external_key(self) -> str:
+        return f"{self.key}@{self.version}"
+
+    def properties(self) -> dict[str, Any]:
+        return {
+            "key": self.key,
+            "version": self.version,
+            "title": self.title,
+            "content": self.content,
+            "provenance": self.provenance,
+            "published_at": self.published_at.isoformat(),
+        }
+
+    @classmethod
+    def of_node(cls, node: GraphNode) -> "RunbookVersion":
+        values = dict(node.properties)
+        values["published_at"] = datetime.fromisoformat(values["published_at"])
+        return cls(**values)
+
+
 def _valid_at(as_of: datetime) -> ColumnElement[bool]:
     return and_(
         GraphEdge.valid_from <= as_of,
@@ -379,6 +411,93 @@ class GraphRepository:
                 )
             )
         return tuple(entries)
+
+    async def ensure_runbook(
+        self, scope: EvidenceScope, runbook: RunbookVersion, service_ids: Collection[uuid.UUID]
+    ) -> None:
+        """Store a runbook version, documenting these services from its publication.
+
+        A version's node is its identity, so an existing one keeps its content.
+        """
+        await self._session.execute(
+            insert(GraphNode)
+            .values(
+                workspace_id=scope.workspace_id,
+                replay_scope=scope.replay_scope,
+                node_type=GraphNodeType.RUNBOOK,
+                external_key=runbook.external_key,
+                properties=runbook.properties(),
+            )
+            .on_conflict_do_nothing(constraint="uq_graph_nodes_identity")
+        )
+        node_id = (
+            await self._session.execute(
+                select(GraphNode.id).where(
+                    scope.clause(GraphNode),
+                    GraphNode.node_type == GraphNodeType.RUNBOOK,
+                    GraphNode.external_key == runbook.external_key,
+                )
+            )
+        ).scalar_one()
+        nodes = await self.ensure_service_nodes(scope, service_ids)
+        existing = set(
+            await self._session.scalars(
+                select(GraphEdge.from_node_id).where(
+                    scope.clause(GraphEdge),
+                    GraphEdge.to_node_id == node_id,
+                    GraphEdge.relation == GraphRelation.DOCUMENTED_BY,
+                )
+            )
+        )
+        self._session.add_all(
+            GraphEdge(
+                workspace_id=scope.workspace_id,
+                replay_scope=scope.replay_scope,
+                from_node_id=service_node,
+                to_node_id=node_id,
+                relation=GraphRelation.DOCUMENTED_BY,
+                valid_from=runbook.published_at,
+                confidence=1.0,
+            )
+            for service_node in nodes.values()
+            if service_node not in existing
+        )
+        await self._session.flush()
+
+    async def runbooks(
+        self,
+        scope: EvidenceScope,
+        *,
+        service_id: uuid.UUID | None,
+        as_of: datetime,
+        limit: int,
+    ) -> list[RunbookVersion]:
+        """The latest version of each runbook published by a time, by key."""
+        statement = select(GraphNode).where(
+            scope.clause(GraphNode), GraphNode.node_type == GraphNodeType.RUNBOOK
+        )
+        if service_id is not None:
+            service_node = GraphNode.__table__.alias("service_node")
+            statement = (
+                statement.join(GraphEdge, GraphEdge.to_node_id == GraphNode.id)
+                .join(service_node, service_node.c.id == GraphEdge.from_node_id)
+                .where(
+                    scope.clause(GraphEdge),
+                    GraphEdge.relation == GraphRelation.DOCUMENTED_BY,
+                    _valid_at(as_of),
+                    service_node.c.service_id == service_id,
+                )
+            )
+        rows = await self._session.scalars(statement)
+        latest: dict[str, RunbookVersion] = {}
+        for node in rows:
+            runbook = RunbookVersion.of_node(node)
+            if runbook.published_at > as_of:
+                continue
+            kept = latest.get(runbook.key)
+            if kept is None or runbook.published_at > kept.published_at:
+                latest[runbook.key] = runbook
+        return [latest[key] for key in sorted(latest)][:limit]
 
     async def deployments_as_of(
         self, scope: EvidenceScope, service_ids: Collection[uuid.UUID], *, as_of: datetime

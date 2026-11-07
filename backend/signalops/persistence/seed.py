@@ -6,10 +6,13 @@ rows that exist after seeding. Seeding is idempotent and runs in one transaction
 
 import uuid
 from dataclasses import dataclass
+from datetime import UTC, datetime
 
 from signalops.contracts.evidence import SourceKind
 from signalops.persistence.database import Database
 from signalops.persistence.repositories.catalog import CatalogRepository
+from signalops.persistence.repositories.graph import GraphRepository, RunbookVersion
+from signalops.persistence.repositories.scope import EvidenceScope
 
 
 @dataclass(frozen=True)
@@ -59,6 +62,41 @@ DEMO_SERVICES = (
 )
 
 
+RUNBOOK_PUBLISHED_AT = datetime(2026, 10, 1, tzinfo=UTC)
+DEMO_RUNBOOKS = (
+    (
+        RunbookVersion(
+            key="downstream-timeouts",
+            version="v1",
+            title="Payment calls to a downstream gateway time out",
+            content=(
+                "Compare the latency of the downstream service with the caller's timeout. "
+                "If the downstream trace durations rise first, the caller's errors are a "
+                "symptom. Check recent deployments of the downstream service before "
+                "changing the caller."
+            ),
+            provenance="demo runbook, synthetic",
+            published_at=RUNBOOK_PUBLISHED_AT,
+        ),
+        ("payment", "bank-gateway"),
+    ),
+    (
+        RunbookVersion(
+            key="slow-order-queries",
+            version="v1",
+            title="Slow queries on the orders database",
+            content=(
+                "Occasional slow queries are ordinary. Treat them as a cause only when "
+                "their rate rises with the incident and the callers' durations rise with them."
+            ),
+            provenance="demo runbook, synthetic",
+            published_at=RUNBOOK_PUBLISHED_AT,
+        ),
+        ("orders-db", "checkout"),
+    ),
+)
+
+
 async def seed_demo(database: Database) -> None:
     """Create the demo catalog, or verify that an existing one matches it."""
     async with database.transaction() as session:
@@ -78,3 +116,8 @@ async def seed_demo(database: Database) -> None:
                 name=service.name,
                 environment=service.environment,
             )
+        graph = GraphRepository(session)
+        scope = EvidenceScope(DEMO_WORKSPACE_ID)
+        ids = {service.name: service.id for service in DEMO_SERVICES}
+        for runbook, services in DEMO_RUNBOOKS:
+            await graph.ensure_runbook(scope, runbook, [ids[name] for name in services])

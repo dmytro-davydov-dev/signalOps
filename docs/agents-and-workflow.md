@@ -57,6 +57,8 @@ All tools are **read-only** and typed. Each call enforces workspace scope, repla
 | `get_service_dependencies` | Bounded graph neighborhood (≤ 3 hops) as of incident time |
 | `retrieve_runbooks` | Versioned runbook content with provenance |
 
+Implemented in `agents/tools.py` ([ADR-027](decisions.md#adr-027-tools-take-typed-arguments-and-code-alone-supplies-scope-and-cutoff)): at most 6 hours, 50 rows, and 32 KiB per call. A signal is visible only when it both happened and arrived by the cutoff, so a late arrival stays future evidence. A failed call returns a `ToolFailure` to the agent. `signalops seed` adds two synthetic demo runbooks.
+
 No tool exposes SQL, shell access, future evidence, or evaluation labels. Read-only results may be cached in Redis under keys that include replay scope, cutoff, and data version.
 
 ## LLM gateway

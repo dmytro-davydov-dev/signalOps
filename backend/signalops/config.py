@@ -92,6 +92,8 @@ class Settings(BaseSettings):
     investigation_deadline_seconds: int = Field(default=600, ge=60, le=24 * 60 * 60)
     # A new live incident requests one investigation.
     investigation_auto_request: bool = True
+    # One evidence tool read; a slower one returns a timeout to the agent.
+    tool_timeout_seconds: float = Field(default=5.0, gt=0, le=60)
     # A worker that stops heartbeating loses its job this long after the last beat.
     job_lease_seconds: int = Field(default=30, ge=3, le=600)
     # Worker wait after finding no claimable job.

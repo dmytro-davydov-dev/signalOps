@@ -283,6 +283,16 @@ Revision `0015_investigation_outcomes` adds a partial unique index allowing one 
 
 **Revisit when:** Measured reservation error ends investigations early (use `count_tokens`, which needs an authorized call), a second worker region shares the limits, or Phase 9 reserves downstream capacity.
 
+## ADR-027: Tools take typed arguments, and code alone supplies scope and cutoff
+
+**Decision:** `agents/tools.py` defines one argument model per tool with unknown fields forbidden. `ToolScope` carries the workspace, replay scope, and cutoff, and only the workflow builds it, from the investigation row. A signal is visible when both `occurred_at` and `ingested_at` are at or before the cutoff. A window past the cutoff is rejected, never clamped. Windows are at most 6 hours, a call returns at most 50 rows and 32 KiB, and a read has a timeout. Failures return a `ToolFailure` to the agent and record a failed `tool_calls` row, whose result is only a hash. Free text passes through `TextRedactor`, which masks `key=value` pairs of the configured sensitive fields and bearer tokens. Runbooks are graph nodes keyed `{key}@{version}`, with their content in `properties` and `DOCUMENTED_BY` edges from `published_at`.
+
+**Reason:** A model cannot name what it has no field for, so authorization needs no prompt to hold. `ingested_at` matters because a late signal carries an old `occurred_at`, which would let a replay see evidence that had not arrived. A rejection teaches the agent its limit, while a silent clamp would let it believe it had seen a window it had not. Keeping results out of `tool_calls` leaves one copy of evidence, under retention rules.
+
+**Trade-off:** Masking free text is a pattern match, so a secret in an unusual form still reaches the provider. Source-specific redaction fields do not apply to text. Runbooks are copied per replay scope, so a replay has none until P10 seeds them. Resolving the latest version happens in Python over every runbook node, which is fine for a handful.
+
+**Revisit when:** Evaluation shows the caps causing abstentions, or runbook counts grow past a few dozen.
+
 ## Open questions
 
 | # | Question | Decide by |
