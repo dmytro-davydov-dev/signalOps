@@ -1310,7 +1310,7 @@ Keep these outside the release critical path unless measurements justify promoti
 - Status: completed
 - Commit: `242d7bb`
 - Implemented: `agents/tools.py`; `persistence/repositories/tool_calls.py`; `SignalFilter` severity, trace, and `known_by` filters; `EvidenceRepository.has_service` and `list_deployments`; `GraphRepository.ensure_runbook` and `runbooks`, `RunbookVersion`; demo runbooks in the seed; `TraceSummaryEntry.downstream_services` with regenerated schema; ADR-027; docs (agents-and-workflow, decisions, development).
-- Validation commands and results: `uv run ruff check .`, `uv run ruff format --check .`, `uv run mypy` pass; `tests/integration/test_agent_tools.py` 29 passed on real PostgreSQL, with the graph, evidence API, and repository integration tests, contract, and unit tests also passing.
+- Validation commands and results: `uv run ruff check .`, `uv run ruff format --check .`, `uv run mypy` pass; `tests/integration/test_agent_tools.py` 29 passed on real PostgreSQL. The commit below went in with one contract test failing, `test_fixture_round_trips[tool_results/get_trace_summary.json]`, because the fixture lacked the new field. A follow-up commit fixed the fixture; after it, the graph, evidence API, repository, contract, and unit tests pass.
 - Evidence or artifact references: `tests/integration/test_agent_tools.py` covers future and late signals, out-of-scope services and replay runs, nine widening inputs including SQL and a shell command, row and byte caps, the timeout, masking, as-of graph reads, runbook versions, and fencing.
 - Deviations and reasons: none.
 - Remaining issues: see task notes.
