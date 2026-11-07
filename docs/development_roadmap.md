@@ -28,7 +28,7 @@ PostgreSQL owns evidence, workflow progress, budgets, and the initial knowledge 
 | Active phase | Phase 7 LLM gateway and first investigator |
 | Active task | P07-T02 (in progress) |
 | Last completed task | P07-T01 |
-| Latest verified commit | `988f7e0` (P06-T05) |
+| Latest verified commit | `7dc0fdb` (P07-T01) |
 | Validation evidence | P07-T01: unit tests reproduce fake success, timeout, throttling, and invalid output offline; `uv run pytest` 548 passed, 491 skipped. The Anthropic adapter ran only against a stub transport. Earlier evidence is in the work log |
 | Blockers | None recorded |
 | Next task | P07-T02 |
@@ -1276,7 +1276,7 @@ Keep these outside the release critical path unless measurements justify promoti
 
 ### 2026-11-07 — P07-T01
 - Status: completed
-- Commit: pending
+- Commit: `7dc0fdb`
 - Implemented: `gateway/types.py`, `gateway/errors.py`, `gateway/provider.py`, `gateway/fake.py`, `gateway/anthropic_provider.py`; `fixtures/gateway/v1/*.json`; model settings and `resolved_model`; `anthropic` dependency; Compose key passing; `.env.example`; ADR-025 (resolves Q8); docs (decisions, development).
 - Validation commands and results: `uv run ruff check .`, `uv run ruff format --check .`, `uv run mypy` (147 files) pass; `uv run pytest` 548 passed, 491 skipped; `docker compose config --quiet` passes.
 - Evidence or artifact references: `tests/unit/test_gateway_providers.py` covers fake success, timeout, throttling, and invalid output with no network, and the adapter's request shape, thinking round trip, status categories, and refusal over a stub transport.
