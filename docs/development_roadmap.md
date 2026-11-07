@@ -28,7 +28,7 @@ PostgreSQL owns evidence, workflow progress, budgets, and the initial knowledge 
 | Active phase | Phase 7 LLM gateway and first investigator |
 | Active task | P07-T03 (in progress) |
 | Last completed task | P07-T02 |
-| Latest verified commit | `7dc0fdb` (P07-T01) |
+| Latest verified commit | `b3c7a42` (P07-T02) |
 | Validation evidence | P07-T02: `tests/integration/test_model_gateway.py` on real PostgreSQL and Redis shows parallel calls cannot oversubscribe a budget, and an ambiguous timeout keeps its reservation while a retry reserves separately. Earlier evidence is in the work log |
 | Blockers | None recorded |
 | Next task | P07-T03 |
@@ -1292,7 +1292,7 @@ Keep these outside the release critical path unless measurements justify promoti
 
 ### 2026-11-07 — P07-T02
 - Status: completed
-- Commit: pending
+- Commit: `b3c7a42`
 - Implemented: `gateway/pricing.py`, `gateway/limits.py`, `gateway/gateway.py`, `BudgetExceededError`; `persistence/repositories/llm_calls.py`; migration `0016_llm_call_accounting`; `exhaust_budget` in `agents/jobs.py`; pending calls closed in `end_investigation`; model limit settings; ADR-026; docs (agents-and-workflow, data-model, decisions, development).
 - Validation commands and results: `uv run ruff check .`, `uv run ruff format --check .`, `uv run mypy` (153 files) pass; `SIGNALOPS_INTEGRATION=1 uv run pytest` passes after the schema fixture fix (the full run had 1 fixture failure, fixed, then `tests/integration/test_workflow_schema.py` passed). `test_migrations_match_models` and `test_downgrade_to_baseline_and_upgrade_again` pass with `0016`.
 - Evidence or artifact references: `tests/integration/test_model_gateway.py` on real PostgreSQL and Redis: 12 parallel calls on a 5-call budget make exactly 5 provider calls; 8 concurrent holds stop at the budget with no job lock; an ambiguous timeout keeps its reservation while the retry reserves separately; a retry that no longer fits ends with the reservation held; a cancellation or stale lease prevents the call. `tests/unit/test_gateway_pricing.py`.
