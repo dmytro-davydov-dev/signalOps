@@ -541,6 +541,11 @@ async def test_a_stale_worker_cannot_read_through_a_lost_lease(
     with pytest.raises(LeaseLostError):
         await call(database, stale, ToolName.QUERY_LOGS, {})
 
+    async with database.transaction() as session:
+        step_id = await LlmCallRepository(session).step_id(lease.investigation_id, STEP)
+        calls = await session.scalars(select(ToolCall).where(ToolCall.agent_step_id == step_id))
+        assert list(calls) == []
+
 
 def test_the_redactor_uses_the_configured_fields() -> None:
     settings = Settings(database_url="postgresql+psycopg://u:p@h/d")  # type: ignore[arg-type]
@@ -631,7 +636,9 @@ def planted_result(cutoff: datetime, *, at: datetime) -> dict[str, Any]:
     }
 
 
-@pytest.mark.parametrize("attack", ["foreign_run", "future_entry", "wrong_tool", "garbage"])
+@pytest.mark.parametrize(
+    "attack", ["foreign_run", "future_entry", "wrong_tool", "later_cutoff", "garbage"]
+)
 async def test_stale_or_foreign_cache_content_cannot_reach_the_agent(
     database: db.Database, lease: JobLease, redis: "Redis", cutoff: datetime, attack: str
 ) -> None:
@@ -647,7 +654,22 @@ async def test_stale_or_foreign_cache_content_cannot_reach_the_agent(
     elif attack == "future_entry":
         result = planted_result(cutoff, at=cutoff + timedelta(hours=1))
     elif attack == "wrong_tool":
-        result["tool"] = "get_deployments"
+        result = {
+            "tool": "get_deployments",
+            "evidence_cutoff_at": cutoff.isoformat(),
+            "items": [
+                {
+                    "deployment_id": str(uuid.uuid4()),
+                    "signal_id": str(uuid.uuid4()),
+                    "service_id": str(CHECKOUT),
+                    "revision": "planted",
+                    "deployed_at": (cutoff - timedelta(minutes=1)).isoformat(),
+                }
+            ],
+        }
+    elif attack == "later_cutoff":
+        # Valid by its own claimed cutoff, which is past this investigation's.
+        result = planted_result(cutoff + timedelta(hours=2), at=cutoff + timedelta(hours=1))
     value = (
         "not json" if attack == "garbage" else json.dumps({"identity": identity, "result": result})
     )
