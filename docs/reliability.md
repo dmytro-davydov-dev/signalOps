@@ -61,8 +61,17 @@ on ack: UPDATE published_at
 - A worker that cannot reach PostgreSQL keeps trying until its last renewal runs out, then cancels the handler.
 - Writers lock the job row before the investigation row, so they cannot deadlock.
 - Each claim spends an attempt, so a crash loop stops at `max_attempts` (default 3). The next claim fails that job and its investigation, with the `investigation.completed` outbox row in one transaction. A retry waits out a capped, jittered delay in `available_at`. A stopping worker releases its job and refunds the attempt.
-- `last_error` holds a category and the exception type. Only `TransientJobError` and `PermanentJobError` store a message, because other exception text can quote logs or evidence.
+- `last_error` holds a category and the exception type, and logs do the same. Only `TransientJobError` and `PermanentJobError` store a message, because other exception text can quote logs or evidence.
 - After losing its lease, a worker may still have a model call in flight. Provider deadlines and conservative budget reservations bound the damage.
+
+## Model calls
+
+- A call that times out, loses its connection, or gets a server error may have run and been billed. Nothing here can rule that out, so it is recorded `unknown` with no cost, and its reservation stays ([ADR-026](decisions.md#adr-026-the-gateway-reserves-each-calls-maximum-and-redis-only-meters-the-provider)). The tests in `tests/integration/test_gateway_failures.py` assert these records; they do not show a call did not happen.
+- Only the gateway retries a call, with capped, jittered backoff, and a provider's `retry-after` is honored up to 60 seconds. Each retry reserves separately and may be billed. After `SIGNALOPS_MODEL_MAX_ATTEMPTS`, the job retries, reusing completed steps and restarting the unfinished node's conversation.
+- A rejected or unauthorized call fails the job at once, and a throttle costs nothing.
+- A later lease closes a dead worker's pending calls as `unknown`, and so does ending an investigation. A closed call stays closed if a late answer arrives.
+- With Redis unavailable, calls pause for up to `SIGNALOPS_MODEL_LIMIT_WAIT_SECONDS`, then the job retries. Cached reads fall back to PostgreSQL.
+- Logs hold identifiers, categories, counts, and exception types. Exception text and tracebacks can quote evidence, so they are not logged. The provider client's loggers stay at `WARNING`, because at `DEBUG` they log request bodies.
 
 ## Cancellation and deadlines
 
@@ -146,7 +155,7 @@ These come from the plan's §13. Each needs a meaningful automated or scripted c
 - [x] A consumer stopped mid-stream resumes after its last committed record with nothing skipped or repeated; a revoke drops a pending retry and the reassigned partition is fetched again (P03-T05).
 - [x] Permanent failures are quarantined to `processing.failed.v1`; an unacknowledged failure event never commits the original; transient failures retry in place; a redriven record is applied once (P03-T04).
 - [x] Worker killed after one step: lease expiry, checkpoint reuse, stale-writer rejection (P06-T03).
-- [ ] Provider throttling, ambiguous timeout, malformed output, parallel budget exhaustion.
+- [x] Provider throttling, ambiguous timeout, malformed output, parallel budget exhaustion, on the fake provider (P07-T02, P07-T04, P07-T06).
 - [ ] Redis restart mid-investigation: durable work survives and SSE catches up.
 - [ ] Late and out-of-order signals, plus replay isolation. No access to future evidence or ground truth.
 - [ ] Reconciliation: every accepted in-retention record ends processed or explicitly quarantined.

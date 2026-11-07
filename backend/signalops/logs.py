@@ -16,6 +16,9 @@ _RESERVED = frozenset(vars(logging.makeLogRecord({}))) | {
 }
 
 
+PROVIDER_CLIENT_LOGGERS = ("anthropic", "httpx2", "httpcore", "httpcore2")
+
+
 class JsonFormatter(logging.Formatter):
     def format(self, record: logging.LogRecord) -> str:
         payload: dict[str, Any] = {
@@ -38,6 +41,9 @@ def configure_logging(level: str) -> None:
     root = logging.getLogger()
     root.handlers[:] = [handler]
     root.setLevel(level)
+    # At DEBUG these log request bodies, which hold evidence sent to the provider.
+    for name in PROVIDER_CLIENT_LOGGERS:
+        logging.getLogger(name).setLevel(logging.WARNING)
     # Route uvicorn through the same handler instead of its own formatters.
     for name in ("uvicorn", "uvicorn.error", "uvicorn.access"):
         uvicorn_logger = logging.getLogger(name)

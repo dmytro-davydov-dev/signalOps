@@ -26,12 +26,12 @@ PostgreSQL owns evidence, workflow progress, budgets, and the initial knowledge 
 | Field | Current value |
 | --- | --- |
 | Active phase | Phase 7 LLM gateway and first investigator |
-| Active task | P07-T06 (in progress) |
-| Last completed task | P07-T05 |
+| Active task | None |
+| Last completed task | P07-T06 |
 | Latest verified commit | `1b35914` (P07-T05) |
-| Validation evidence | P07-T05: stale or cross-run cache content cannot reach the agent, and missing or unsupported citations are refused and end in abstention (`tests/integration/test_investigator.py`, `tests/integration/test_agent_tools.py`). Earlier evidence is in the work log |
+| Validation evidence | P07-T06: `SIGNALOPS_INTEGRATION=1 uv run pytest` 1151 passed. Logs and stored records hold no credentials or evidence at DEBUG on the fake provider and the stubbed adapter. Tests state that timed-out calls may have run. Earlier evidence is in the work log |
 | Blockers | None recorded |
-| Next task | P07-T06 |
+| Next task | P08-T01 |
 
 ### Scope and release boundaries
 
@@ -706,11 +706,18 @@ Start the React shell in Phase 1 and add API-backed incident views in Phase 5; P
 
 ### P07-T06 Verify gateway failure behavior
 
-- [ ] Complete this task.
+- [x] Complete this task.
 
 **Implementation:** Check permanent versus retryable errors, capped backoff, conservative unknown-cost accounting, and resume after model timeout. Log sanitized operational metadata.
 
 **Acceptance:** No provider credentials or raw sensitive payloads appear in UI/logs; tests explicitly acknowledge external calls may have executed before timeout.
+
+**Notes (2026-11-07):**
+- **Found and fixed:** two leaks. A failed job attempt logged `exc_info`, and a traceback can quote evidence, since pydantic messages include `input_value`; it now logs the exception type. At `SIGNALOPS_LOG_LEVEL=DEBUG`, the SDK and HTTP client loggers would log request bodies; `configure_logging` now keeps them at `WARNING`. Both tests failed before the fixes.
+- **Timeouts:** the tests name it directly: a timed-out call reached the provider and may have run and been billed, so the record stays `unknown` with its reservation held. They assert conservative records, not that no call happened.
+- **Resume:** a job whose calls all time out requeues, reuses `load_context`, restarts `investigate`, and finishes, with both unknown reservations still held. A job that never succeeds fails after three attempts with every reservation held.
+- **Stale workers:** a worker's late answer cannot reopen a call a later lease closed, and it cannot continue past the fence.
+- Left: a model could quote text that masking missed into its diagnosis, because diagnosis strings are not redacted again; `AnthropicProvider` still has not run against the live API; no real-browser check of the investigation page was made in this phase, since the UI did not change.
 
 **Phase gate:** All tasks above are checked, acceptance evidence is recorded in the ledger, and the phase outcome is demonstrated against real infrastructure where relevant.
 
@@ -1346,6 +1353,16 @@ Keep these outside the release critical path unless measurements justify promoti
 - Deviations and reasons: none.
 - Remaining issues: see task notes.
 - Next task: P07-T06.
+
+### 2026-11-07 — P07-T06
+- Status: completed
+- Commit: pending
+- Implemented: exception type only in the failed-attempt log; `PROVIDER_CLIENT_LOGGERS` held at `WARNING`; `tests/integration/test_gateway_failures.py`, `tests/unit/test_gateway_policy.py`; `docs/reliability.md` model call section, ADR-021 note.
+- Validation commands and results: `uv run ruff check .`, `uv run ruff format --check .`, `uv run mypy` (163 files), `uv run signalops export-schemas --check` pass; `SIGNALOPS_INTEGRATION=1 uv run pytest` 1151 passed; `tests/integration/test_gateway_failures.py` with `test_model_gateway.py` repeated 3 times, 32 passed each.
+- Evidence or artifact references: with a sensitive log line stored and every logger at DEBUG, timeouts, a rejection, and a success leave no evidence, secret, or prompt in logs or in the stored diagnosis, job error, steps, progress, and call rows. `AnthropicProvider` over a stub transport returning a 500 that quotes evidence leaves no key or payload. Permanent and retryable categories, capped backoff, a capped `retry-after`, unknown-cost accounting, resume after a model timeout, a cancellation during a hung call, and a stale worker's late answer are covered.
+- Deviations and reasons: none.
+- Remaining issues: see task notes.
+- Next task: Phase 7 gate.
 
 ## Work log template
 

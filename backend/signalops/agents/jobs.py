@@ -328,10 +328,14 @@ class JobRunner:
         elif isinstance(error, PermanentJobError):
             await fail_job(self._database, lease, error)
         else:
+            # Exception text and tracebacks can quote evidence, so only the type is logged.
             logger.warning(
                 "job attempt failed",
-                exc_info=error,
-                extra={"job_id": str(lease.job_id), "attempt": lease.attempt},
+                extra={
+                    "job_id": str(lease.job_id),
+                    "attempt": lease.attempt,
+                    "error": type(error).__name__,
+                },
             )
             await retry_job(self._database, lease, error, self._policy)
 

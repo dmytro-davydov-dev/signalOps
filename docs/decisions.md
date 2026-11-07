@@ -223,6 +223,8 @@ Every claim spends an attempt, including a takeover, and a job out of attempts f
 
 **Reason:** PostgreSQL's clock is the one all workers share, so skew cannot extend or cut a lease. A conditional `UPDATE` alone would leave a gap between checking the lease and writing a step row in another table. The row lock closes it, because a claim skips the locked row until the write commits. Counting claims, not reported failures, is what stops a job that kills its worker, since a killed worker reports nothing. Refunding on shutdown keeps a rolling restart from failing a job. Letting an unclaimed expired lease continue loses nothing: its generation is still current, and it saves repeating paid work.
 
+The log line for a failed attempt holds the exception type only (P07-T06), because a traceback can quote evidence.
+
 **Trade-off:** A deployment with crashing workers can fail a healthy job after three claims. Fenced writes and heartbeats on one job serialize on its row, which is short because they commit at once. The job's attempt count and the shared `SIGNALOPS_RETRY_MAX_ATTEMPTS` are unrelated: jobs use their `max_attempts` column. `JobRunner` runs one job at a time per process, so concurrency means more processes.
 
 **Revisit when:** Phase 7 measures real call lengths against the 30-second lease; or workers need more than one job per process.
