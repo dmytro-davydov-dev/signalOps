@@ -90,6 +90,10 @@ class Settings(BaseSettings):
     investigation_deadline_seconds: int = Field(default=600, ge=60, le=24 * 60 * 60)
     # A new live incident requests one investigation.
     investigation_auto_request: bool = True
+    # A worker that stops heartbeating loses its job this long after the last beat.
+    job_lease_seconds: int = Field(default=30, ge=3, le=600)
+    # Worker wait after finding no claimable job.
+    job_poll_interval_ms: int = Field(default=1000, ge=50, le=60_000)
     # An observed dependency stays valid this long after each observation.
     graph_dependency_ttl_seconds: int = Field(
         default=7 * 24 * 60 * 60, ge=60, le=365 * 24 * 60 * 60

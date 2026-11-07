@@ -27,11 +27,11 @@ PostgreSQL owns evidence, workflow progress, budgets, and the initial knowledge 
 | --- | --- |
 | Active phase | Phase 6 Durable jobs and workflow runtime; Phase 5 gate passed |
 | Active task | None |
-| Last completed task | P06-T01 |
-| Latest verified commit | `8a27f66` (P05-T05); P06-T01 pending commit, validated against the working tree |
-| Validation evidence | P06-T01: `SIGNALOPS_INTEGRATION=1 uv run pytest` 848 passed; `alembic check` clean at `0013_idempotency_keys`. Real Compose services and a host API: a repeated `POST` returned investigation `f8fb3276` with 202, another body returned 409, and the request reached `dispatcher-v1` through Kafka and left one queued job. The detector-triggered path ran only in integration tests. Earlier evidence is in the work log |
+| Last completed task | P06-T02 |
+| Latest verified commit | `1fa2d42` (P06-T01); P06-T02 pending commit, validated against the working tree |
+| Validation evidence | P06-T02: `SIGNALOPS_INTEGRATION=1 uv run pytest` 900 passed; `alembic check` clean at `0013_idempotency_keys`; the 45 lease tests on Compose PostgreSQL repeated 5 times. Eight concurrent claims gave one owner, stale writers were rejected, and a crash loop stopped at `max_attempts`. Lease expiry was simulated; no real process was killed, which P06-T03 covers. Earlier evidence is in the work log |
 | Blockers | None recorded |
-| Next task | P06-T02 |
+| Next task | P06-T03 |
 
 ### Scope and release boundaries
 
@@ -565,11 +565,18 @@ Start the React shell in Phase 1 and add API-backed incident views in Phase 5; P
 
 ### P06-T02 Implement job claiming and recovery
 
-- [ ] Complete this task.
+- [x] Complete this task.
 
 **Implementation:** Claim queued or expired jobs with short SELECT FOR UPDATE SKIP LOCKED transactions. Increment lease_generation, heartbeat, and reclaim expired work. Bound retries and set available_at for delayed attempts.
 
 **Acceptance:** Two workers cannot own the same current lease; expired workers cannot checkpoint or complete after another worker takes over.
+
+**Notes (2026-11-07):**
+- **Decision (ADR-021):** `claim_job` and `JobRepository` use `SKIP LOCKED` and PostgreSQL's clock. `JobRepository.hold` is the fence: a row lock after checking status, owner, and generation, in the writer's own transaction. `JobRunner` adds heartbeats and settles the job. Each claim spends an attempt, so a crash loop stops at `max_attempts`.
+- **Choices the task did not state:** an exhausted or permanently failed job fails its investigation and writes `investigation.completed` in that transaction, because otherwise an investigation stays `running` forever; `save_checkpoint` writes running steps only, and P06-T03 adds step completion and output; a stopping worker releases its job and refunds the attempt; an expired lease nobody took stays valid; `last_error` keeps only the type of an unexpected exception, because its text can quote logs.
+- **Deliberately not added:** a `signalops worker` command or Compose `investigation-worker`. No workflow exists to run, and a worker now could only fail real jobs or mark them succeeded with no diagnosis. P06-T03 adds both with the first handler.
+- Left: `complete_job` finishes only the job, so the investigation stays `running` until P06-T05 writes its terminal state; claiming does not yet check deadlines or cancellation (P06-T04), so a job whose investigation is already terminal would still be claimed; nothing yet reports queued or failed job counts (P11).
+- **Not exercised:** a real killed process. Lease expiry was simulated by moving `lease_until` in PostgreSQL or by short real leases in one test process. P06-T03's acceptance kills a real worker.
 
 ### P06-T03 Implement the persisted workflow engine
 
@@ -1190,13 +1197,23 @@ Keep these outside the release critical path unless measurements justify promoti
 
 ### 2026-11-06 — P06-T01
 - Status: completed
-- Commit: pending commit; validated against the current working tree.
+- Commit: `1fa2d42`
 - Implemented: `agents/investigations.py` (`request_by_operator`, `request_by_detector`, `Dispatcher`, `InvestigationPolicy`); `api/investigations.py`; `persistence/repositories/investigations.py`; `IdempotencyKey` model and migration `0013_idempotency_keys`; contracts `InvestigationRequest`, `InvestigationAccepted`, and schemas; `signalops dispatcher` and Compose `dispatcher`; four `SIGNALOPS_INVESTIGATION_*` settings; ADR-020; docs (api, data-model, decisions, development, events).
 - Validation commands and results: `uv run ruff check .`, `uv run ruff format --check .`, `uv run mypy` (125 files), `uv run signalops export-schemas --check` pass; `uv run pytest` 499 passed, 349 skipped; `SIGNALOPS_INTEGRATION=1 uv run pytest` 848 passed, including the downgrade/upgrade schema test; the two concurrency tests repeated 5 times, 2 passed each; `docker compose config --quiet` passes; `alembic check` reports no new operations. Fourteen deliberate mutations each failed the tests: no hash check, hash without the incident, request key without the workspace, no repeat lookup, no read after a lost race, no limit check, no incident check, no outbox row for either trigger, a job for a finished investigation, dispatcher ignoring scope, non-idempotent job insert, replay requesting investigations, and the disabled policy ignored. Frontend checks not run: no frontend change.
 - Evidence or artifact references: `tests/integration/test_investigation_requests.py`, `tests/unit/test_investigation_requests.py`. Rebuilt Compose image, migrated to `0013_idempotency_keys`, host API on 8012 with a throwaway operator token: two identical `POST`s on incident `5a5b37da-6ac4-49f6-a8d5-cd75426975d5` returned 202 with investigation `f8fb3276-6d3e-4369-bcdb-f87a46077018`; the same key with another body returned 409. The outbox row was published, `dispatcher-v1` recorded its receipt, and one queued job exists with 0 attempts. That queued investigation stays in the dev database; no worker exists to run it.
 - Deviations and reasons: the plan requests an investigation when a rule crosses its threshold; here it is once per new live incident, because later crossings extend the same incident. Replay incidents request nothing (ADR-020).
 - Remaining issues: see task notes.
 - Next task: P06-T02.
+
+### 2026-11-07 — P06-T02
+- Status: completed
+- Commit: pending commit; validated against the current working tree.
+- Implemented: `persistence/repositories/jobs.py` (`JobRepository`, `JobLease`, `LeaseLostError`); `agents/jobs.py` (`claim_job`, `complete_job`, `retry_job`, `fail_job`, `release_job`, `JobRunner`, `JobPolicy`); `fail_investigation` in `agents/investigations.py`; `SIGNALOPS_JOB_LEASE_SECONDS` and `SIGNALOPS_JOB_POLL_INTERVAL_MS`; ADR-021; docs (data-model, decisions, development, events, reliability). No migration: the columns and indexes date from `0003_incident_workflow`.
+- Validation commands and results: `uv run ruff check .`, `uv run ruff format --check .`, `uv run mypy` (129 files), `uv run signalops export-schemas --check` pass; `uv run pytest` 506 passed, 394 skipped; `SIGNALOPS_INTEGRATION=1 uv run pytest` 900 passed; `tests/integration/test_job_leases.py` repeated 5 times, 45 passed each; `docker compose config --quiet` passes; `alembic check` reports no new operations. Of 29 deliberate mutations, 28 fail the tests, three of them only after adding the same-owner and wrong-owner cases. The survivor, a lost lease attempting to settle, is rejected by the fence with the same outcome. Frontend checks not run: no frontend change.
+- Evidence or artifact references: `tests/integration/test_job_leases.py`, `tests/unit/test_jobs.py`. The tests ran against Compose PostgreSQL with up to eight concurrent claims on separate connections.
+- Deviations and reasons: none from the task. No worker command yet; see task notes.
+- Remaining issues: see task notes.
+- Next task: P06-T03.
 
 ## Work log template
 

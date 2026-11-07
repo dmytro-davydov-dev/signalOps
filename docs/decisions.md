@@ -215,6 +215,18 @@ Key rows have no expiry: there is one per operator investigation, and it lives a
 
 **Revisit when:** P11-T02 gives operators identities, which adds a caller to the key; or spend from automatic requests justifies a severity threshold.
 
+## ADR-021: Job leases use PostgreSQL's clock and a row-lock fence
+
+**Decision:** `claim_job` selects a queued, due job or a running job past `lease_until`, with `FOR UPDATE SKIP LOCKED`, and commits the lease before any work. A fenced write calls `JobRepository.hold`, which locks the job row after checking status, owner, and generation, and commits in the same transaction. Lease times come from `clock_timestamp()`.
+
+Every claim spends an attempt, including a takeover, and a job out of attempts fails with its investigation and writes `investigation.completed`. A handler's `PermanentJobError` fails the job. Any other exception retries it after the shared capped, jittered backoff, stored in `available_at`. A stopping worker requeues its job and refunds the attempt. An expired lease nobody took can still heartbeat and write.
+
+**Reason:** PostgreSQL's clock is the one all workers share, so skew cannot extend or cut a lease. A conditional `UPDATE` alone would leave a gap between checking the lease and writing a step row in another table. The row lock closes it, because a claim skips the locked row until the write commits. Counting claims, not reported failures, is what stops a job that kills its worker, since a killed worker reports nothing. Refunding on shutdown keeps a rolling restart from failing a job. Letting an unclaimed expired lease continue loses nothing: its generation is still current, and it saves repeating paid work.
+
+**Trade-off:** A deployment with crashing workers can fail a healthy job after three claims. Fenced writes and heartbeats on one job serialize on its row, which is short because they commit at once. The job's attempt count and the shared `SIGNALOPS_RETRY_MAX_ATTEMPTS` are unrelated: jobs use their `max_attempts` column. `JobRunner` runs one job at a time per process, so concurrency means more processes.
+
+**Revisit when:** Phase 7 measures real call lengths against the 30-second lease; or workers need more than one job per process.
+
 ## Open questions
 
 | # | Question | Decide by |

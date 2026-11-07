@@ -55,9 +55,12 @@ on ack: UPDATE published_at
 
 ## Job leases
 
-- The claim is a short transaction: `SELECT … FOR UPDATE SKIP LOCKED`. It sets `lease_owner` and `lease_until`, increments `lease_generation`, and commits.
-- The worker heartbeats while running. Expired leases can be reclaimed by another worker.
-- Every checkpoint and completion write is conditional on owner and generation.
+- The claim is a short transaction: `SELECT … FOR UPDATE SKIP LOCKED`. It sets `lease_owner` and `lease_until`, increments `lease_generation` and `attempts`, and commits. Lease times come from PostgreSQL's clock.
+- The worker heartbeats three times per lease (`SIGNALOPS_JOB_LEASE_SECONDS`, default 30). Expired leases can be reclaimed by another worker, which records `lease_expired` in `last_error`.
+- Every checkpoint and completion write goes through `JobRepository.hold`, which locks the job row after checking owner and generation. The write commits in that transaction, and a claim skips the locked row, so a takeover cannot fall between the check and the write. An expired lease nobody took stays valid.
+- A worker that cannot reach PostgreSQL keeps trying until its last renewal runs out, then cancels the handler.
+- Each claim spends an attempt, so a crash loop stops at `max_attempts` (default 3). The next claim fails that job and its investigation, with the `investigation.completed` outbox row in one transaction. A retry waits out a capped, jittered delay in `available_at`. A stopping worker releases its job and refunds the attempt.
+- `last_error` holds a category and the exception type. Only `TransientJobError` and `PermanentJobError` store a message, because other exception text can quote logs or evidence.
 - After losing its lease, a worker may still have a model call in flight. Provider deadlines and conservative budget reservations bound the damage.
 
 ## Detector state

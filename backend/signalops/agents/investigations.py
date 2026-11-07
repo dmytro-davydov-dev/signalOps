@@ -29,6 +29,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Final
 
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from signalops.config import Settings
@@ -37,6 +38,7 @@ from signalops.contracts.events import (
     EventEnvelope,
     EventPayload,
     EventType,
+    InvestigationCompletedPayload,
     InvestigationRequestedPayload,
     InvestigationTrigger,
 )
@@ -209,6 +211,41 @@ async def request_by_detector(
     )
     if created is not None:
         await _publish(session, created, InvestigationTrigger.DETECTOR, now)
+
+
+async def fail_investigation(session: AsyncSession, investigation_id: uuid.UUID) -> None:
+    """Fail the investigation and stage `investigation.completed`; a terminal one stays as it is.
+
+    The aggregate version is the investigation's `version`, which claiming has
+    already moved past the request's version 1, so the events publish in order.
+    """
+    investigation = await session.get_one(Investigation, investigation_id, with_for_update=True)
+    if InvestigationStatus(investigation.status) in TERMINAL_INVESTIGATION_STATUSES:
+        return
+    at = await session.scalar(select(func.clock_timestamp()))
+    assert at is not None  # noqa: S101 - a scalar function always returns a row
+    investigation.status = InvestigationStatus.FAILED
+    investigation.completed_at = at
+    investigation.version += 1
+    await session.flush()
+    envelope = EventEnvelope[EventPayload](
+        event_id=uuid.uuid5(INVESTIGATION_EVENT_NAMESPACE, f"{investigation.id}:completed"),
+        event_type=EventType.INVESTIGATION_COMPLETED,
+        schema_version=1,
+        workspace_id=investigation.workspace_id,
+        occurred_at=at,
+        ingested_at=at,
+        replay_run_id=replay_run_id_of(investigation.replay_scope),
+        payload=InvestigationCompletedPayload(
+            investigation_id=investigation.id,
+            incident_id=investigation.incident_id,
+            status=InvestigationStatus.FAILED,
+            workflow_version=investigation.workflow_version,
+        ),
+    )
+    await OutboxRepository(session).add(
+        envelope, aggregate_id=investigation.id, aggregate_version=investigation.version
+    )
 
 
 class Dispatcher:
