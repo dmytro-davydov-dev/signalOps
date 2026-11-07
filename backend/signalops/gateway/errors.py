@@ -58,3 +58,7 @@ class ProviderError(Exception):
     @property
     def retryable(self) -> bool:
         return self.category not in PERMANENT_CATEGORIES
+
+
+class BudgetExceededError(Exception):
+    """The next call's maximum cost does not fit the budget; the investigation ends on it."""

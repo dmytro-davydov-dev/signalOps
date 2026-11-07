@@ -141,10 +141,17 @@ class Settings(BaseSettings):
     # makes paid calls and needs a key.
     model_provider: Literal["fake", "anthropic"] = "fake"
     model_api_key: SecretStr | None = None
-    # None selects the provider's default model.
+    # Unset or empty selects the provider's default model.
     model_name: str | None = None
     # One provider call, whatever it is doing; a later retry is a new call.
     model_request_timeout_seconds: float = Field(default=60.0, gt=0, le=600)
+    # Calls per request, including the first; each is reserved and possibly billed.
+    model_max_attempts: int = Field(default=3, ge=1, le=10)
+    # Provider limits per process group, enforced in Redis.
+    model_requests_per_minute: int = Field(default=50, ge=1, le=100_000)
+    model_tokens_per_minute: int = Field(default=200_000, ge=1, le=100_000_000)
+    # The longest a call pauses for a full window or an unreachable Redis.
+    model_limit_wait_seconds: float = Field(default=120.0, gt=0, le=600)
 
     @model_validator(mode="after")
     def _check_query_bounds(self) -> Self:
@@ -186,7 +193,7 @@ class Settings(BaseSettings):
         return self
 
     def resolved_model(self) -> str:
-        if self.model_name is not None:
+        if self.model_name:
             return self.model_name
         return DEFAULT_MODELS[self.model_provider]
 

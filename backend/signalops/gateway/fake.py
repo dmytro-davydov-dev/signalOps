@@ -10,7 +10,6 @@ tokenizer, and a fake result says nothing about how a real model would answer.
 
 import asyncio
 import hashlib
-import math
 from collections.abc import Sequence
 from pathlib import Path
 from typing import Self
@@ -19,6 +18,7 @@ from pydantic import Field, NonNegativeFloat, TypeAdapter
 
 from signalops.contracts.common import ContractModel
 from signalops.gateway.errors import ProviderError, ProviderErrorCategory
+from signalops.gateway.pricing import estimated_tokens
 from signalops.gateway.types import (
     ContentBlock,
     ModelRequest,
@@ -28,7 +28,6 @@ from signalops.gateway.types import (
 )
 
 FAKE_MODEL = "fake-1"
-BYTES_PER_TOKEN = 4
 
 
 class FakeAnswer(ContractModel):
@@ -52,10 +51,6 @@ class FakeScript(ContractModel):
 
 
 SCRIPT_ADAPTER = TypeAdapter(FakeScript)
-
-
-def _tokens(size: int) -> int:
-    return math.ceil(size / BYTES_PER_TOKEN)
 
 
 class FakeProvider:
@@ -98,8 +93,8 @@ class FakeProvider:
             content=step.content,
             stop_reason=step.stop_reason,
             usage=ModelUsage(
-                input_tokens=_tokens(len(request.canonical())),
-                output_tokens=min(_tokens(output), request.max_output_tokens),
+                input_tokens=estimated_tokens(len(request.canonical())),
+                output_tokens=min(estimated_tokens(output), request.max_output_tokens),
             ),
             provider_request_id=request_id,
         )

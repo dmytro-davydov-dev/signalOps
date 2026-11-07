@@ -66,6 +66,7 @@ from signalops.persistence.repositories.investigations import (
     NewInvestigation,
 )
 from signalops.persistence.repositories.jobs import JobRepository
+from signalops.persistence.repositories.llm_calls import LlmCallRepository
 from signalops.persistence.repositories.progress import ProgressRepository
 from signalops.persistence.repositories.reliability import OutboxRepository
 from signalops.persistence.repositories.scope import EvidenceScope
@@ -285,6 +286,7 @@ async def end_investigation(
     investigation.version += 1
     await session.flush()
     await JobRepository(session).abandon_steps(investigation_id)
+    await LlmCallRepository(session).close_abandoned(investigation_id)
     diagnosis_status = None if diagnosis is None else diagnosis.status
     await ProgressRepository(session).add(
         investigation_id,

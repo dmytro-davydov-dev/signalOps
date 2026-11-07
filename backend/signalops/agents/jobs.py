@@ -17,6 +17,9 @@ races the takeover is rejected by the fence in `JobRepository.hold`.
 **Shutdown.** A stopping worker releases its job with the attempt refunded, since
 a restart says nothing about the job.
 
+**Budget.** A model call that no longer fits ends the job `failed` and its
+investigation `budget_exceeded`.
+
 **Stops.** A cancellation or a passed deadline ends the job (ADR-023). A cancelled
 one ends `cancelled`; a deadline ends it and its investigation `failed`. The claim,
 each heartbeat, and each settling write check, and the engine checks before each
@@ -44,6 +47,7 @@ from signalops.contracts.common import MAX_ERROR_DETAIL_LENGTH
 from signalops.contracts.diagnosis import Diagnosis
 from signalops.contracts.investigations import terminal_status_for
 from signalops.contracts.workflow import InvestigationStatus, JobStatus
+from signalops.gateway.errors import BudgetExceededError
 from signalops.persistence.database import Database
 from signalops.persistence.models import Job
 from signalops.persistence.repositories.jobs import (
@@ -67,6 +71,7 @@ class JobErrorCategory(StrEnum):
     ATTEMPTS_EXHAUSTED = "attempts_exhausted"
     CANCELLED = "cancelled"
     DEADLINE_EXCEEDED = "deadline_exceeded"
+    BUDGET_EXCEEDED = "budget_exceeded"
 
 
 class TransientJobError(Exception):
@@ -108,6 +113,8 @@ def worker_owner() -> str:
 
 def error_record(error: Exception) -> dict[str, Any]:
     """`last_error` for an exception. An unexpected one's text may quote data: type only."""
+    if isinstance(error, BudgetExceededError):
+        return {"category": JobErrorCategory.BUDGET_EXCEEDED, "type": type(error).__name__}
     if isinstance(error, TransientJobError | PermanentJobError):
         category = (
             JobErrorCategory.TRANSIENT
@@ -219,6 +226,20 @@ async def fail_job(database: Database, lease: JobLease, error: Exception) -> Non
             await end_investigation(session, lease.investigation_id, InvestigationStatus.FAILED)
 
 
+async def exhaust_budget(database: Database, lease: JobLease, error: Exception) -> None:
+    """End a job whose next model call does not fit, unless a cancellation got there first."""
+    async with database.transaction() as session:
+        jobs = JobRepository(session)
+        await jobs.hold(lease)
+        if await jobs.stop_reason(lease.investigation_id) is JobStop.CANCELLED:
+            await _stop(session, lease.job_id, lease.investigation_id, JobStop.CANCELLED)
+        else:
+            await jobs.finish(lease.job_id, JobStatus.FAILED, error_record(error))
+            await end_investigation(
+                session, lease.investigation_id, InvestigationStatus.BUDGET_EXCEEDED
+            )
+
+
 async def stop_job(database: Database, lease: JobLease) -> None:
     """End a job whose handler found a stop."""
     async with database.transaction() as session:
@@ -302,6 +323,8 @@ class JobRunner:
             raise error
         elif isinstance(error, JobStoppedError):
             await stop_job(self._database, lease)
+        elif isinstance(error, BudgetExceededError):
+            await exhaust_budget(self._database, lease, error)
         elif isinstance(error, PermanentJobError):
             await fail_job(self._database, lease, error)
         else:

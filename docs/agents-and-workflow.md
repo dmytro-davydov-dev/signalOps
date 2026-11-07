@@ -77,7 +77,7 @@ A **fake provider** with deterministic fixtures is the default for development a
 3. An ambiguous timeout may already have cost money. Record an unknown outcome and **keep the reservation**. A retry is a new, separately reserved, possibly billable call.
 4. Running out of budget ends the investigation as `budget_exceeded`.
 
-Redis rate limits never replace the durable PostgreSQL budget ledger.
+Redis rate limits never replace the durable PostgreSQL budget ledger. See [ADR-026](decisions.md#adr-026-the-gateway-reserves-each-calls-maximum-and-redis-only-meters-the-provider).
 
 ## Diagnosis contract
 

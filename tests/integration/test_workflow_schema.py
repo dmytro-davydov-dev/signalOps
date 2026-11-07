@@ -2,7 +2,7 @@
 
 import uuid
 from collections.abc import Callable, Mapping
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from enum import StrEnum
 from typing import Any
 
@@ -153,9 +153,12 @@ class Scenario(World):
             "model": "fake-model",
             "prompt_version": "investigator-v1",
             "request_hash": "sha256:0",
+            "pricing_version": "test",
             "reserved_microusd": 20_000,
         }
         values.update(overrides)
+        if values.get("status", "pending") != "pending":
+            values.setdefault("completed_at", datetime.now(UTC))
         return values
 
 
@@ -330,7 +333,9 @@ def test_enumerations_reject_unknown_values(
             "tool_name": ToolName.QUERY_LOGS,
             "status": ToolCallStatus.RUNNING,
         },
-        LlmCall: lambda: scenario.llm_call_values(scenario.step(), cost_basis="unknown"),
+        LlmCall: lambda: scenario.llm_call_values(
+            scenario.step(), cost_basis="unknown", completed_at=datetime.now(UTC)
+        ),
     }
     values = builders[model]() | {column: "bogus"}
     name = violated_constraint(scenario.engine, model, **values)
@@ -488,6 +493,9 @@ def test_step_checks(scenario: Scenario, overrides: dict[str, Any], constraint: 
         ({"reserved_microusd": -1}, "ck_llm_calls_reserved_nonnegative"),
         ({"input_tokens": -1}, "ck_llm_calls_input_tokens_nonnegative"),
         ({"attempt": 0}, "ck_llm_calls_attempt_positive"),
+        ({"completed_at": datetime(2026, 11, 1, tzinfo=UTC)}, "ck_llm_calls_completed_at_status"),
+        ({"lease_generation": -1}, "ck_llm_calls_lease_generation_nonnegative"),
+        ({"pricing_version": ""}, "ck_llm_calls_pricing_version_nonempty"),
     ],
 )
 def test_llm_call_cost_checks(
@@ -510,6 +518,8 @@ def test_llm_call_outcomes_record_cost_basis(scenario: Scenario) -> None:
     for attempt, outcome in enumerate(outcomes, start=1):
         values = scenario.llm_call_values(step_id, attempt=attempt)
         call_id = insert(scenario.engine, LlmCall, **values)
+        if outcome["status"] != LlmCallStatus.PENDING:
+            outcome["completed_at"] = datetime.now(UTC)
         update_status(scenario.engine, LlmCall, call_id, **outcome)
 
 

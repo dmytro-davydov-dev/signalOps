@@ -273,6 +273,16 @@ Revision `0015_investigation_outcomes` adds a partial unique index allowing one 
 
 **Revisit when:** A paid evaluation is authorized (P10), or refusals turn out to matter on incident evidence; then reserve for primary plus fallback and enable fallbacks.
 
+## ADR-026: The gateway reserves each call's maximum, and Redis only meters the provider
+
+**Decision:** `ModelGateway.complete` takes a Redis rate-limit slot, then one transaction checks the lease and `stop_reason`, closes pending calls of older leases as `unknown`, and reserves the call's maximum cost. `hold_budget` is a conditional `UPDATE` on `reserved_microusd + spent_microusd + amount <= budget_microusd`. The maximum assumes every request byte is a token written to the cache and all of `max_output_tokens` is used. A success replaces the reservation with its cost, a definite failure releases it, and an ambiguous failure keeps it and records no cost. Each retry is a new `llm_calls` row. A call that no longer fits raises `BudgetExceededError`, which ends the job `failed` and the investigation `budget_exceeded`. Ending an investigation closes its pending calls as `unknown`. Prices are integer microUSD per million tokens in `gateway/pricing.py`, stored by `PRICING_VERSION`, and a model with no price cannot be called. Revision `0016` adds the version, cache tokens, the lease generation, an error category, and `completed_at`.
+
+**Reason:** A conditional update needs no read and no lock across the call, so in-flight parallel calls count and none can pass the limit. Bytes bound tokens without a tokenizer or a paid count call. A call's reservation is the only record of money a dead worker may have spent, so it stays until something proves otherwise. Reserving after the rate-limit wait means a stop committed during a pause still prevents the call. Rate limits protect the provider's quota, so Redis can lose them without touching money.
+
+**Trade-off:** Reservations run far above typical cost, so a budget can end an investigation while real spend is well under it. Unknown reservations never return, so `reserved_microusd` after an ending is exposure, not spend. Prices are copied by hand and can go stale; `cost_basis` `actual` means provider-reported tokens at those prices, not an invoice. Fake costs are `estimated`. Rate-limit tokens are an estimate made before the call. Settling is not fenced by the lease, because a stale worker's answer is still a fact about money, but a call already closed stays closed.
+
+**Revisit when:** Measured reservation error ends investigations early (use `count_tokens`, which needs an authorized call), a second worker region shares the limits, or Phase 9 reserves downstream capacity.
+
 ## Open questions
 
 | # | Question | Decide by |

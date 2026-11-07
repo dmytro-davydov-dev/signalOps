@@ -26,12 +26,12 @@ PostgreSQL owns evidence, workflow progress, budgets, and the initial knowledge 
 | Field | Current value |
 | --- | --- |
 | Active phase | Phase 7 LLM gateway and first investigator |
-| Active task | P07-T02 (in progress) |
-| Last completed task | P07-T01 |
+| Active task | P07-T03 (in progress) |
+| Last completed task | P07-T02 |
 | Latest verified commit | `7dc0fdb` (P07-T01) |
-| Validation evidence | P07-T01: unit tests reproduce fake success, timeout, throttling, and invalid output offline; `uv run pytest` 548 passed, 491 skipped. The Anthropic adapter ran only against a stub transport. Earlier evidence is in the work log |
+| Validation evidence | P07-T02: `tests/integration/test_model_gateway.py` on real PostgreSQL and Redis shows parallel calls cannot oversubscribe a budget, and an ambiguous timeout keeps its reservation while a retry reserves separately. Earlier evidence is in the work log |
 | Blockers | None recorded |
-| Next task | P07-T02 |
+| Next task | P07-T03 |
 
 ### Scope and release boundaries
 
@@ -651,11 +651,17 @@ Start the React shell in Phase 1 and add API-backed incident views in Phase 5; P
 
 ### P07-T02 Enforce budgets and provider limits
 
-- [ ] Complete this task.
+- [x] Complete this task.
 
 **Implementation:** Reserve conservative per-call maximum cost atomically in PostgreSQL before dispatch; include all in-flight calls. Use Redis for atomic rate/token limits. Persist usage, pricing version, provider request IDs, and actual/estimated/unknown cost classification.
 
 **Acceptance:** Parallel calls cannot oversubscribe budget; an ambiguous timeout retains a conservative reservation and any retry reserves separately.
+
+**Notes (2026-11-07):**
+- **Decision (ADR-026):** `ModelGateway.complete` takes a Redis slot, then one transaction checks the lease and `stop_reason`, closes pending calls of older leases as `unknown`, and reserves the call's maximum cost through the conditional `hold_budget` update. No transaction spans the call. Retries live here, and each one is a new `llm_calls` row with its own reservation.
+- **Migration `0016`:** `pricing_version`, cache tokens, `lease_generation`, `error_category`, `completed_at` on `llm_calls`.
+- **Choices the task did not state:** the maximum treats each request byte as a token written to the cache, because no tokenizer runs offline; `attempt` numbers every call of a step across job attempts; settling is keyed by the call, not fenced, because a stale worker's answer is still a fact about money, while a closed call stays closed; ending an investigation closes its pending calls as `unknown`, so a cancelled call keeps its reservation as ADR-023 required; fake models have prices and their costs are `estimated`; prices cover Opus 5.5 and Sonnet 5.5, and Haiku 5.5 is left out because its rate changes above 100K tokens; running out of budget ends the job `failed` and the investigation `budget_exceeded`.
+- Left: reservations are far above typical cost, so a budget can end an investigation early; prices are copied by hand; the worker does not use the gateway until P07-T04.
 
 ### P07-T03 Implement constrained evidence tools
 
@@ -1283,6 +1289,16 @@ Keep these outside the release critical path unless measurements justify promoti
 - Deviations and reasons: see task notes (no refusal fallback).
 - Remaining issues: `AnthropicProvider` has not run against the live API, and `build_provider` returns an empty fake script until P07-T04 adds the investigator's fake.
 - Next task: P07-T02.
+
+### 2026-11-07 — P07-T02
+- Status: completed
+- Commit: pending
+- Implemented: `gateway/pricing.py`, `gateway/limits.py`, `gateway/gateway.py`, `BudgetExceededError`; `persistence/repositories/llm_calls.py`; migration `0016_llm_call_accounting`; `exhaust_budget` in `agents/jobs.py`; pending calls closed in `end_investigation`; model limit settings; ADR-026; docs (agents-and-workflow, data-model, decisions, development).
+- Validation commands and results: `uv run ruff check .`, `uv run ruff format --check .`, `uv run mypy` (153 files) pass; `SIGNALOPS_INTEGRATION=1 uv run pytest` passes after the schema fixture fix (the full run had 1 fixture failure, fixed, then `tests/integration/test_workflow_schema.py` passed). `test_migrations_match_models` and `test_downgrade_to_baseline_and_upgrade_again` pass with `0016`.
+- Evidence or artifact references: `tests/integration/test_model_gateway.py` on real PostgreSQL and Redis: 12 parallel calls on a 5-call budget make exactly 5 provider calls; 8 concurrent holds stop at the budget with no job lock; an ambiguous timeout keeps its reservation while the retry reserves separately; a retry that no longer fits ends with the reservation held; a cancellation or stale lease prevents the call. `tests/unit/test_gateway_pricing.py`.
+- Deviations and reasons: none.
+- Remaining issues: see task notes.
+- Next task: P07-T03.
 
 ## Work log template
 

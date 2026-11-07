@@ -414,12 +414,23 @@ class LlmCall(Base):
         CheckConstraint(nonempty("model"), name="model_nonempty"),
         CheckConstraint(nonempty("prompt_version"), name="prompt_version_nonempty"),
         CheckConstraint(nonempty("request_hash"), name="request_hash_nonempty"),
+        CheckConstraint(nonempty("pricing_version"), name="pricing_version_nonempty"),
         CheckConstraint(one_of("status", LlmCallStatus), name="status"),
         CheckConstraint(
             f"cost_basis IS NULL OR {one_of('cost_basis', CostBasis)}", name="cost_basis"
         ),
         CheckConstraint(optional_nonnegative("input_tokens"), name="input_tokens_nonnegative"),
         CheckConstraint(optional_nonnegative("output_tokens"), name="output_tokens_nonnegative"),
+        CheckConstraint(
+            optional_nonnegative("cache_read_tokens"), name="cache_read_tokens_nonnegative"
+        ),
+        CheckConstraint(
+            optional_nonnegative("cache_write_tokens"), name="cache_write_tokens_nonnegative"
+        ),
+        CheckConstraint(nonnegative("lease_generation"), name="lease_generation_nonnegative"),
+        CheckConstraint(
+            "(status = 'pending') = (completed_at IS NULL)", name="completed_at_status"
+        ),
         CheckConstraint(nonnegative("reserved_microusd"), name="reserved_nonnegative"),
         CheckConstraint(optional_nonnegative("cost_microusd"), name="cost_nonnegative"),
         CheckConstraint(optional_nonnegative("latency_ms"), name="latency_nonnegative"),
@@ -450,12 +461,20 @@ class LlmCall(Base):
     )
     input_tokens: Mapped[int | None] = mapped_column(Integer)
     output_tokens: Mapped[int | None] = mapped_column(Integer)
+    # Input served from and written to the provider's cache, priced apart from input_tokens.
+    cache_read_tokens: Mapped[int | None] = mapped_column(Integer)
+    cache_write_tokens: Mapped[int | None] = mapped_column(Integer)
+    pricing_version: Mapped[str] = mapped_column(Text)
     reserved_microusd: Mapped[int] = mapped_column(BigInteger)
     cost_microusd: Mapped[int | None] = mapped_column(BigInteger)
     cost_basis: Mapped[str | None] = mapped_column(Text)
     latency_ms: Mapped[int | None] = mapped_column(Integer)
     provider_request_id: Mapped[str | None] = mapped_column(Text)
+    error_category: Mapped[str | None] = mapped_column(Text)
+    # Generation of the lease that made the call; a later lease closes it if still pending.
+    lease_generation: Mapped[int] = big_counter()
     created_at: Mapped[datetime] = created_at()
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class ProgressEvent(Base):
