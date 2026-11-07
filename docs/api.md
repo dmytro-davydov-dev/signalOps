@@ -1,6 +1,6 @@
 # HTTP API
 
-> Status: planned design. The source is [SignalOps_Implementation_Plan.md](SignalOps_Implementation_Plan.md) §9. The generated OpenAPI document, [`openapi.v1.json`](../backend/signalops/contracts/schemas/openapi.v1.json), is authoritative for implemented routes (health, ingestion, evidence queries, incidents, and service graphs); body schemas for planned routes are exported alongside it (for example `investigations/investigation.v1.json`). Compatibility rules are in [events.md](events.md#versioning-rules).
+> Status: planned design. The source is [SignalOps_Implementation_Plan.md](SignalOps_Implementation_Plan.md) §9. The generated OpenAPI document, [`openapi.v1.json`](../backend/signalops/contracts/schemas/openapi.v1.json), is authoritative for implemented routes (health, ingestion, evidence queries, incidents, service graphs, and investigation requests); body schemas for planned routes are exported alongside it (for example `investigations/investigation.v1.json`). Compatibility rules are in [events.md](events.md#versioning-rules).
 
 All endpoints are versioned under `/v1`. Request and response bodies are Pydantic models. Timestamps are UTC (RFC 3339) and IDs are UUIDs.
 
@@ -115,10 +115,14 @@ POST /v1/incidents/{id}/investigations
 Idempotency-Key: 6f1c…
 ```
 
-- The key is scoped to caller plus route. The server stores a canonical hash of the request body with it.
-- The same key and body return the **same** investigation. The same key with a different body returns `409 Conflict`.
+The body is optional. `InvestigationRequest` holds `budget_microusd`, `max_steps`, and `deadline_seconds` (at least 60), each of which may lower the configured limit and not raise it; above it, the response is `422`. The response is `InvestigationAccepted`: `id`, `incident_id`, `status`, `created_at`.
+
+- The key is 1–256 characters and scoped to caller plus route ([ADR-020](decisions.md#adr-020-investigation-requests-are-keyed-durably-and-dispatched-once)). Operator tokens carry no identity, so the workspace is the caller.
+- The server stores a canonical hash of the incident and the body, so field order, spacing, and an explicit `null` change nothing.
+- The same key and request return the **same** investigation, with its current status. The same key with a different body or a different incident returns `409 Conflict`.
 - The response is `202 Accepted` once the investigation and its outbox request are persisted. The API does not wait for the workflow.
-- Detector-triggered requests use stable internal request keys, so duplicates create one job.
+- Live incidents only; a replay incident is `404`.
+- Detector-triggered requests use the stable key `detector:{incident_id}`, so duplicates create one job.
 
 ## Investigation result
 

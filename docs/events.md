@@ -165,7 +165,9 @@ Incidents come from breaches, in the transaction that decides them ([ADR-017](de
 | Every service has a healthy window ending at least `SIGNALOPS_INCIDENT_RECOVERY_SECONDS` (300) after `last_seen_at` | Resolved; `resolved_at` is that window's end | `resolved` |
 | Operator status change at the current version ([ADR-019](decisions.md#adr-019-operators-change-incident-status-at-a-version-and-evidence-still-wins)) | Resolved at the wall clock, or reopened | `resolved` or `reopened` |
 
-The fingerprint is `env:{environment}`. A healthy window had `min_samples` for one of its rules and breached none; a quiet service shows no recovery. Each change bumps `incidents.version`, and the event ID derives from the incident and version. `incidents.changed.v1` has no consumer until `notification-projector-v1`. Investigations are not requested automatically; that follows Phase 6.
+The fingerprint is `env:{environment}`. A healthy window had `min_samples` for one of its rules and breached none; a quiet service shows no recovery. Each change bumps `incidents.version`, and the event ID derives from the incident and version. `incidents.changed.v1` has no consumer until `notification-projector-v1`.
+
+A new live incident also requests one investigation in the same transaction, with the key `detector:{incident_id}`; `SIGNALOPS_INVESTIGATION_AUTO_REQUEST=false` turns this off. Replay incidents and reopened incidents request nothing.
 
 ### Graph projector (`graph-projector-v1`)
 

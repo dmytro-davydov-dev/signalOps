@@ -276,6 +276,25 @@ class Investigation(Base):
     __mapper_args__ = {"version_id_col": version}  # noqa: RUF012 (SQLAlchemy hook)
 
 
+class IdempotencyKey(Base):
+    """An API caller's key: the request it first came with and what that created."""
+
+    __tablename__ = "idempotency_keys"
+    __table_args__ = (
+        CheckConstraint(length_between("key", 1, MAX_KEY_LENGTH), name="key_length"),
+        CheckConstraint(nonempty("route"), name="route_nonempty"),
+        CheckConstraint("char_length(request_hash) = 64", name="request_hash_length"),
+        Index("ix_idempotency_keys_investigation_id", "investigation_id"),
+    )
+
+    workspace_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("workspaces.id"), primary_key=True)
+    route: Mapped[str] = mapped_column(Text, primary_key=True)
+    key: Mapped[str] = mapped_column(Text, primary_key=True)
+    request_hash: Mapped[str] = mapped_column(Text)
+    investigation_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("investigations.id"))
+    created_at: Mapped[datetime] = created_at()
+
+
 class Job(Base):
     __tablename__ = "jobs"
     __table_args__ = (

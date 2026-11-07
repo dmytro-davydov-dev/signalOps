@@ -159,6 +159,17 @@ services:
       migrate: { condition: service_completed_successfully }
       init-topics: { condition: service_completed_successfully }
 
+  # Creates one durable job per investigation request; members share dispatcher-v1.
+  dispatcher:
+    <<: *backend
+    command: ["dispatcher"]
+    restart: unless-stopped
+    # Longer than SIGNALOPS_KAFKA_DELIVERY_TIMEOUT_MS so a quarantine publish can finish.
+    stop_grace_period: 40s
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+      init-topics: { condition: service_completed_successfully }
+
   # Closes live detection windows by wall clock and evaluates their rules.
   detector-closer:
     <<: *backend

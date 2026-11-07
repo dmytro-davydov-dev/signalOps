@@ -846,6 +846,95 @@
         "title": "IngestResponse",
         "type": "object"
       },
+      "InvestigationAccepted": {
+        "additionalProperties": false,
+        "description": "Body of the 202 response.",
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "incident_id": {
+            "format": "uuid",
+            "title": "Incident Id",
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/InvestigationStatus"
+          }
+        },
+        "required": [
+          "id",
+          "incident_id",
+          "status",
+          "created_at"
+        ],
+        "title": "InvestigationAccepted",
+        "type": "object"
+      },
+      "InvestigationRequest": {
+        "additionalProperties": false,
+        "description": "Body of POST /v1/incidents/{id}/investigations; limits only lower the configured ones.",
+        "properties": {
+          "budget_microusd": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Budget Microusd"
+          },
+          "deadline_seconds": {
+            "anyOf": [
+              {
+                "minimum": 60.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Deadline Seconds"
+          },
+          "max_steps": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Steps"
+          }
+        },
+        "title": "InvestigationRequest",
+        "type": "object"
+      },
+      "InvestigationStatus": {
+        "enum": [
+          "queued",
+          "running",
+          "completed",
+          "insufficient_evidence",
+          "failed",
+          "cancelled",
+          "budget_exceeded"
+        ],
+        "title": "InvestigationStatus",
+        "type": "string"
+      },
       "JsonValue": {},
       "LivenessResponse": {
         "properties": {
@@ -1804,6 +1893,89 @@
         "summary": "Incident Evidence",
         "tags": [
           "incidents"
+        ]
+      }
+    },
+    "/v1/incidents/{incident_id}/investigations": {
+      "post": {
+        "description": "Request an investigation of a live incident.\n\nThe same key and body return the same investigation; the same key with\nanother body or incident is 409.",
+        "operationId": "request_investigation_v1_incidents__incident_id__investigations_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "incident_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Incident Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "maxLength": 256,
+              "minLength": 1,
+              "title": "Idempotency-Key",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/InvestigationRequest"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Body"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvestigationAccepted"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "description": "No such live incident in this workspace"
+          },
+          "409": {
+            "description": "`Idempotency-Key` was used with another request"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "OperatorBearer": []
+          }
+        ],
+        "summary": "Request Investigation",
+        "tags": [
+          "investigations"
         ]
       }
     },

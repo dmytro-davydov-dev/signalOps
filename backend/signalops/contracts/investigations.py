@@ -13,7 +13,7 @@ database constraint, and the generated frontend module:
 import uuid
 from typing import Self
 
-from pydantic import Field, NonNegativeInt, model_validator
+from pydantic import Field, NonNegativeInt, PositiveInt, model_validator
 
 from signalops.contracts.common import ContractModel, ReplayScope, UtcDatetime, Version
 from signalops.contracts.diagnosis import Diagnosis, DiagnosisStatus
@@ -48,6 +48,23 @@ def check_diagnosis_status(
     if diagnosis_status != expected:
         wanted = f"a {expected} diagnosis" if expected else "no diagnosis"
         raise ValueError(f"a {status} investigation has {wanted}")
+
+
+class InvestigationRequest(ContractModel):
+    """Body of POST /v1/incidents/{id}/investigations; limits only lower the configured ones."""
+
+    budget_microusd: PositiveInt | None = None
+    max_steps: PositiveInt | None = None
+    deadline_seconds: int | None = Field(default=None, ge=60)
+
+
+class InvestigationAccepted(ContractModel):
+    """Body of the 202 response."""
+
+    id: uuid.UUID
+    incident_id: uuid.UUID
+    status: InvestigationStatus
+    created_at: UtcDatetime
 
 
 class InvestigationUsage(ContractModel):

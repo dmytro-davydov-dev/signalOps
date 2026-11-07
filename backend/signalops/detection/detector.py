@@ -44,6 +44,7 @@ from typing import Final
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from signalops.agents.investigations import InvestigationPolicy
 from signalops.config import Settings
 from signalops.contracts.common import LIVE_REPLAY_SCOPE, ContractError, ContractErrorCategory
 from signalops.contracts.events import (
@@ -103,7 +104,13 @@ class DetectionPolicy:
             settings.detection_rules,
             settings.detection_allowed_lateness_seconds,
             IncidentPolicy(
-                settings.incident_correlation_gap_seconds, settings.incident_recovery_seconds
+                settings.incident_correlation_gap_seconds,
+                settings.incident_recovery_seconds,
+                (
+                    InvestigationPolicy.from_settings(settings)
+                    if settings.investigation_auto_request
+                    else None
+                ),
             ),
         )
 

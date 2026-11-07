@@ -1,0 +1,48 @@
+{
+  "$defs": {
+    "InvestigationStatus": {
+      "enum": [
+        "queued",
+        "running",
+        "completed",
+        "insufficient_evidence",
+        "failed",
+        "cancelled",
+        "budget_exceeded"
+      ],
+      "title": "InvestigationStatus",
+      "type": "string"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "Body of the 202 response.",
+  "properties": {
+    "created_at": {
+      "format": "date-time",
+      "title": "Created At",
+      "type": "string"
+    },
+    "id": {
+      "format": "uuid",
+      "title": "Id",
+      "type": "string"
+    },
+    "incident_id": {
+      "format": "uuid",
+      "title": "Incident Id",
+      "type": "string"
+    },
+    "status": {
+      "$ref": "#/$defs/InvestigationStatus"
+    }
+  },
+  "required": [
+    "id",
+    "incident_id",
+    "status",
+    "created_at"
+  ],
+  "title": "InvestigationAccepted",
+  "type": "object"
+}

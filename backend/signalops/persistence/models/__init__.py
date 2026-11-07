@@ -17,6 +17,7 @@ from signalops.persistence.models.graph import GraphEdge, GraphNode
 from signalops.persistence.models.reliability import ConsumerReceipt, OutboxEvent
 from signalops.persistence.models.workflow import (
     AgentStep,
+    IdempotencyKey,
     Incident,
     IncidentService,
     IncidentSignal,
@@ -36,6 +37,7 @@ __all__ = [
     "DetectionTrigger",
     "GraphEdge",
     "GraphNode",
+    "IdempotencyKey",
     "Incident",
     "IncidentService",
     "IncidentSignal",

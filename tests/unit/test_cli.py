@@ -85,6 +85,20 @@ def test_graph_projector_consumes_normalized_signals(monkeypatch: pytest.MonkeyP
     assert calls == [("graph-projector-v1", "signal.normalized")]
 
 
+def test_dispatcher_consumes_investigation_requests(monkeypatch: pytest.MonkeyPatch) -> None:
+    import signalops.cli as cli
+
+    calls: list[tuple[str, str]] = []
+
+    def fake_run(consumer_group: str, event_type: str, handler: object) -> int:
+        calls.append((consumer_group, event_type))
+        return 0
+
+    monkeypatch.setattr(cli, "_run_consumer", fake_run)
+    assert main(["dispatcher"]) == 0
+    assert calls == [("dispatcher-v1", "investigation.requested")]
+
+
 def test_detector_flush_requires_workspace_and_run() -> None:
     with pytest.raises(SystemExit) as exc:
         main(["detector-flush", "--workspace-id", "not-a-uuid", "--replay-run-id", "x"])

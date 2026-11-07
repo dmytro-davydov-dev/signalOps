@@ -21,6 +21,10 @@ window ending at least `recovery_seconds` after the last breach. All of this is
 event time, so replay agrees with live. Silence proves nothing: a service with
 no traffic keeps its incident open.
 
+A new live incident requests its investigation in the same transaction, so an
+incident without one cannot commit. Replay incidents and reopened incidents
+request nothing (ADR-020).
+
 A breach after an incident resolved, within the gap, reopens it. A breach in a
 window older than the resolution extends it without reopening.
 
@@ -42,6 +46,7 @@ from typing import Any, Final
 from sqlalchemy import ColumnElement
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from signalops.agents.investigations import InvestigationPolicy, request_by_detector
 from signalops.contracts.common import LIVE_REPLAY_SCOPE, replay_run_id_of
 from signalops.contracts.events import (
     EventEnvelope,
@@ -77,6 +82,8 @@ RULE_TITLES: Final = {
 class IncidentPolicy:
     correlation_gap_seconds: int = 600
     recovery_seconds: int = 300
+    # None requests no investigations.
+    investigations: InvestigationPolicy | None = None
 
     @property
     def correlation_gap(self) -> timedelta:
@@ -232,6 +239,10 @@ async def record_breach(session: AsyncSession, policy: IncidentPolicy, breach: B
             severity=rule.severity,
             at=window.end,
         )
+        if policy.investigations is not None and series.replay_scope == LIVE_REPLAY_SCOPE:
+            await request_by_detector(
+                session, scope, incident_id, policy.investigations, now=datetime.now(UTC)
+            )
     else:
         await _extend(session, scope, breach, incident, grew=joined or cited > 0)
 

@@ -84,6 +84,12 @@ class Settings(BaseSettings):
     incident_correlation_gap_seconds: int = Field(default=600, ge=10, le=24 * 60 * 60)
     # Breach-free time, shown by a sufficient window of every service, that resolves an incident.
     incident_recovery_seconds: int = Field(default=300, ge=10, le=24 * 60 * 60)
+    # The most one investigation may use; a request can only lower these.
+    investigation_budget_microusd: int = Field(default=1_000_000, ge=1, le=1_000_000_000)
+    investigation_max_steps: int = Field(default=20, ge=1, le=200)
+    investigation_deadline_seconds: int = Field(default=600, ge=60, le=24 * 60 * 60)
+    # A new live incident requests one investigation.
+    investigation_auto_request: bool = True
     # An observed dependency stays valid this long after each observation.
     graph_dependency_ttl_seconds: int = Field(
         default=7 * 24 * 60 * 60, ge=60, le=365 * 24 * 60 * 60

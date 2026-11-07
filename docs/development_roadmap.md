@@ -27,11 +27,11 @@ PostgreSQL owns evidence, workflow progress, budgets, and the initial knowledge 
 | --- | --- |
 | Active phase | Phase 6 Durable jobs and workflow runtime; Phase 5 gate passed |
 | Active task | None |
-| Last completed task | P05-T05 |
-| Latest verified commit | `651ece8` (P05-T04); P05-T05 pending commit, validated against the working tree |
-| Validation evidence | P05-T05: `SIGNALOPS_INTEGRATION=1 uv run pytest` 815 passed; web 35 passed; `alembic check` clean at `0012_graph_projection`. Chrome against the host API on Compose infrastructure: located incident `5a5b37da`, read its 4 rule firings and evidence, and saw `payment` to `bank-gateway` at 2 hops as of 17:03; as-of 16:00 gave no edges; a stale `PATCH` gave 409 at version 6. Status buttons ran only against stubs, and the Compose images were not rebuilt. Earlier evidence is in the work log |
+| Last completed task | P06-T01 |
+| Latest verified commit | `8a27f66` (P05-T05); P06-T01 pending commit, validated against the working tree |
+| Validation evidence | P06-T01: `SIGNALOPS_INTEGRATION=1 uv run pytest` 848 passed; `alembic check` clean at `0013_idempotency_keys`. Real Compose services and a host API: a repeated `POST` returned investigation `f8fb3276` with 202, another body returned 409, and the request reached `dispatcher-v1` through Kafka and left one queued job. The detector-triggered path ran only in integration tests. Earlier evidence is in the work log |
 | Blockers | None recorded |
-| Next task | P06-T01 |
+| Next task | P06-T02 |
 
 ### Scope and release boundaries
 
@@ -550,11 +550,18 @@ Start the React shell in Phase 1 and add API-backed incident views in Phase 5; P
 
 ### P06-T01 Implement investigation requests and dispatch
 
-- [ ] Complete this task.
+- [x] Complete this task.
 
 **Implementation:** Create a request endpoint with caller/route-scoped Idempotency-Key, canonical request hash, and durable response mapping. Atomically create investigation plus outbox request; dispatcher creates one job before acknowledging. Enable detector-triggered requests using stable request keys.
 
 **Acceptance:** A repeated request returns the same investigation; key reuse with another body returns conflict; duplicate Kafka requests create one job.
+
+**Notes (2026-11-06):**
+- **Decision (ADR-020, resolves Q5):** `POST /v1/incidents/{id}/investigations` writes the investigation, an `idempotency_keys` row, and the outbox request together. The key scope is workspace plus route, because tokens carry no identity. The hash covers the incident and body, so a key reused on another incident is 409. The unique `request_key` decides races. `signalops dispatcher` (group `dispatcher-v1`, new Compose service) creates the job.
+- **Detector requests:** a new live incident requests one investigation in its own transaction, keyed `detector:{incident_id}`. `SIGNALOPS_INVESTIGATION_AUTO_REQUEST=false` turns it off.
+- **Choices the task did not state:** requests are live only, so a replay cannot gain unplanned spend; the body can only lower the configured budget, steps, and deadline; a repeat skips that check, so it still answers after a limit drops; `evidence_cutoff_at` is the request time; the new default limits are 1 USD, 20 steps, and 600 seconds, which are provisional until Phase 7 measures real calls.
+- Left: `GET /v1/investigations/{id}` and any UI for requests (P06-T05, Phase 8); a reopened incident gets no new automatic investigation; nothing limits how many investigations an operator starts for one incident; automatic requests ignore severity; nothing yet reports an investigation left without a job; a request's actor is not recorded (P11-T02).
+- **Not exercised end to end:** the detector-triggered path ran in integration tests only, because `.env` has no demo ingestion tokens to drive a real fault. The operator path ran through real Compose services.
 
 ### P06-T02 Implement job claiming and recovery
 
@@ -1173,13 +1180,23 @@ Keep these outside the release critical path unless measurements justify promoti
 
 ### 2026-11-06 — P05-T05
 - Status: completed
-- Commit: pending commit; validated against the current working tree.
+- Commit: `8a27f66`
 - Implemented: `api/incidents.py` (list, detail, status change, evidence timeline, service graph); `change_status` in `detection/incidents.py`; incident reads in `persistence/repositories/incidents.py`; `CatalogRepository.get_services`; contracts `IncidentTrigger`, `IncidentStatusUpdate`, `IncidentEvidencePage`, `ServiceGraph`, and schemas; PATCH in CORS; ADR-019; docs (api, decisions, development, events). Web: `/incidents` and `/incidents/:incidentId`, `OperatorGate`, `DependencyGraph`, `StaleNotice`, `api/incidents.ts`, `api/operatorToken.ts`, and no retry on 4xx.
 - Validation commands and results: `uv run ruff check .`, `uv run ruff format --check .`, `uv run mypy` (120 files), `uv run signalops export-schemas --check` pass; `uv run pytest` 488 passed, 327 skipped; `SIGNALOPS_INTEGRATION=1 uv run pytest` 815 passed; the concurrency test repeated 5 times, 1 passed each; `docker compose config --quiet` passes; `alembic check` reports no new operations; `pnpm lint`, `pnpm typecheck`, `pnpm build` pass; `pnpm test` 35 passed. Twelve deliberate mutations each failed the tests: no version check, no row lock, no event, detail and list without scope, PATCH on any scope, no contract ceiling, unbound cursor, keyset repeating a row, unredacted evidence, ignored `as_of`, and services from any workspace.
 - Evidence or artifact references: `tests/integration/test_incident_api.py`, `tests/unit/test_incident_api.py`, `apps/web/src/pages/Incident*.test.tsx`. Host API on 8011 against Compose infrastructure with a throwaway operator token, Vite in front, Chrome: signed in, opened incident `5a5b37da-6ac4-49f6-a8d5-cd75426975d5` from the list by a client-side navigation, saw checkout and payment, 4 rule firings, evidence including the `bank-gateway` timeout log, and `payment` to `bank-gateway` at 2 hops as of 17:03; no console errors. As-of 16:00 gave no edges. A stale `PATCH` gave 409 and left version 6.
 - Deviations and reasons: `GET /v1/incidents/{id}/evidence` and `PATCH` are new routes; the plan's detail route holds rule firings and references, with the timeline paged separately, because 200 full signals do not belong in every detail poll.
 - Remaining issues: see task notes.
 - Next task: P06-T01.
+
+### 2026-11-06 — P06-T01
+- Status: completed
+- Commit: pending commit; validated against the current working tree.
+- Implemented: `agents/investigations.py` (`request_by_operator`, `request_by_detector`, `Dispatcher`, `InvestigationPolicy`); `api/investigations.py`; `persistence/repositories/investigations.py`; `IdempotencyKey` model and migration `0013_idempotency_keys`; contracts `InvestigationRequest`, `InvestigationAccepted`, and schemas; `signalops dispatcher` and Compose `dispatcher`; four `SIGNALOPS_INVESTIGATION_*` settings; ADR-020; docs (api, data-model, decisions, development, events).
+- Validation commands and results: `uv run ruff check .`, `uv run ruff format --check .`, `uv run mypy` (125 files), `uv run signalops export-schemas --check` pass; `uv run pytest` 499 passed, 349 skipped; `SIGNALOPS_INTEGRATION=1 uv run pytest` 848 passed, including the downgrade/upgrade schema test; the two concurrency tests repeated 5 times, 2 passed each; `docker compose config --quiet` passes; `alembic check` reports no new operations. Fourteen deliberate mutations each failed the tests: no hash check, hash without the incident, request key without the workspace, no repeat lookup, no read after a lost race, no limit check, no incident check, no outbox row for either trigger, a job for a finished investigation, dispatcher ignoring scope, non-idempotent job insert, replay requesting investigations, and the disabled policy ignored. Frontend checks not run: no frontend change.
+- Evidence or artifact references: `tests/integration/test_investigation_requests.py`, `tests/unit/test_investigation_requests.py`. Rebuilt Compose image, migrated to `0013_idempotency_keys`, host API on 8012 with a throwaway operator token: two identical `POST`s on incident `5a5b37da-6ac4-49f6-a8d5-cd75426975d5` returned 202 with investigation `f8fb3276-6d3e-4369-bcdb-f87a46077018`; the same key with another body returned 409. The outbox row was published, `dispatcher-v1` recorded its receipt, and one queued job exists with 0 attempts. That queued investigation stays in the dev database; no worker exists to run it.
+- Deviations and reasons: the plan requests an investigation when a rule crosses its threshold; here it is once per new live incident, because later crossings extend the same incident. Replay incidents request nothing (ADR-020).
+- Remaining issues: see task notes.
+- Next task: P06-T02.
 
 ## Work log template
 

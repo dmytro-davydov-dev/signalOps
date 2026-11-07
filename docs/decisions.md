@@ -199,6 +199,22 @@ The UI asks for the operator token and keeps it in `sessionStorage`. A `401` dis
 
 **Revisit when:** P11-T02 gives operators identities, or operators need an incident to stay open against recovery.
 
+## ADR-020: Investigation requests are keyed durably and dispatched once
+
+**Decision:** `POST /v1/incidents/{id}/investigations` writes the investigation, an `idempotency_keys` row, and an `investigation.requested` outbox row in one transaction, and returns `202`. A key is scoped to `(workspace_id, route, key)`; operator tokens carry no identity (ADR-014), so the workspace is the caller. `request_hash` is the SHA-256 of the canonical incident ID and body. A repeat with the same hash returns the stored investigation, and another hash is `409`. `investigations.request_key` is `operator:{sha256(workspace, route, key)}` or `detector:{incident_id}`, and its unique constraint decides a race: the loser's insert waits for the winner's commit and then reads the winner's key row.
+
+`signalops dispatcher` (group `dispatcher-v1`) creates the job. The receipt catches a redelivered event, and `UNIQUE(jobs.investigation_id)` catches a second event for one request. An investigation already terminal gets no job.
+
+A new live incident requests one investigation in the transaction that creates it. Settings hold the limits (`SIGNALOPS_INVESTIGATION_BUDGET_MICROUSD`, `_MAX_STEPS`, `_DEADLINE_SECONDS`); a request may lower them, not raise them, and a repeat skips that check. `evidence_cutoff_at` is the request time.
+
+Key rows have no expiry: there is one per operator investigation, and it lives as long as the investigation does. This resolves Q5.
+
+**Reason:** The key row and the unique constraint give a retried or concurrent request the same answer without a held lock. The hash covers the incident because the route template does not, so a client bug reusing a key across incidents fails loudly. Creating the job in the dispatcher, not the API, keeps one path for both triggers and lets the outbox carry the request through a broker outage. Requests are live only because a replay's investigations are evaluation runs with their own budget (P10): an automatic request there would add spend to a benchmark and change what it measures.
+
+**Trade-off:** A request with an unused key always creates a new investigation, so an operator can start several for one incident, each with its own budget. Nothing limits that yet. A reopened incident gets no new automatic investigation, because its key is stable, and an operator must ask. Until the outbox publisher and dispatcher catch up, an investigation has no job, and nothing yet reports one stuck in that state. Automatic requests run for every new live incident regardless of severity. The detector's request is a write in its window-closure transaction, so it adds an insert and an outbox row there.
+
+**Revisit when:** P11-T02 gives operators identities, which adds a caller to the key; or spend from automatic requests justifies a severity threshold.
+
 ## Open questions
 
 | # | Question | Decide by |
@@ -207,7 +223,7 @@ The UI asks for the operator token and keeps it in `sessionStorage`. A `401` dis
 | Q2 | ~~Exact Kafka, PostgreSQL, and Redis image versions after the startup spike~~ **Resolved (P01-T03):** `apache/kafka:4.3.0`, `postgres:17.11-alpine`, `redis:7.4.12-alpine`; see development.md | P01-T03 |
 | Q3 | ~~Frontend query layer and routing libraries~~ **Resolved (P01-T04):** TanStack Query 5 for server data, React Router 7 (data router) for routing | P01-T04 |
 | Q4 | Expired or unknown SSE cursor behavior (full resync vs error) | P08-T03 |
-| Q5 | Idempotency-key storage table and retention window | P06-T01 |
+| Q5 | ~~Idempotency-key storage table and retention window~~ **Resolved (P06-T01):** `idempotency_keys`, retained with the investigation, no expiry; see ADR-020 | P06-T01 |
 | Q6 | ~~Diagnosis status ↔ investigation terminal status mapping~~ **Resolved (P02-T05):** one-to-one. `completed` ⇔ `diagnosed`, `insufficient_evidence` ⇔ `insufficient_evidence`, no diagnosis otherwise; enforced in contracts, a database CHECK, and the generated UI module. See data-model.md | P02-T05 |
 | Q7 | ~~Detector window closure metadata schema~~ **Resolved (P05-T02):** columns on `signal_aggregates` plus `detection_clocks`; see ADR-016 | P05-T02 |
 | Q8 | Which real model provider is implemented first, and its pricing provenance format | P07-T01 / P07-T02 |

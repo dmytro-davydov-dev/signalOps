@@ -9,7 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from signalops import __version__
 from signalops.adapters.ingestion import IngestPolicy, SourceTokens
-from signalops.api import evidence, health, incidents, ingest
+from signalops.api import evidence, health, incidents, ingest, investigations
 from signalops.api.auth import OperatorTokens
 from signalops.config import Settings, get_settings
 from signalops.dependencies import Resources, open_resources
@@ -56,4 +56,5 @@ def create_app(
     app.include_router(ingest.router)
     app.include_router(evidence.router)
     app.include_router(incidents.router)
+    app.include_router(investigations.router)
     return app

@@ -35,6 +35,10 @@ def build_parser() -> argparse.ArgumentParser:
         help="project signals.normalized.v1 into the temporal knowledge graph until stopped",
     )
     commands.add_parser(
+        "dispatcher",
+        help="turn investigations.requested.v1 into durable jobs until stopped",
+    )
+    commands.add_parser(
         "detector-closer", help="close live detection windows by wall clock until stopped"
     )
     flush = commands.add_parser(
@@ -309,6 +313,17 @@ def run_graph_projector() -> int:
     )
 
 
+def run_dispatcher() -> int:
+    from signalops.agents.investigations import DISPATCHER_CONSUMER_GROUP, Dispatcher
+    from signalops.contracts.events import EventType
+
+    return _run_consumer(
+        DISPATCHER_CONSUMER_GROUP,
+        EventType.INVESTIGATION_REQUESTED,
+        lambda _settings: Dispatcher(),
+    )
+
+
 def run_detector_closer() -> int:
     import asyncio
     import signal
@@ -556,6 +571,7 @@ COMMANDS = {
     "normalizer": run_normalizer,
     "detector": run_detector,
     "graph-projector": run_graph_projector,
+    "dispatcher": run_dispatcher,
     "detector-closer": run_detector_closer,
 }
 
