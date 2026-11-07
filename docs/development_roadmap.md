@@ -28,7 +28,7 @@ PostgreSQL owns evidence, workflow progress, budgets, and the initial knowledge 
 | Active phase | Phase 7 LLM gateway and first investigator |
 | Active task | P07-T06 (in progress) |
 | Last completed task | P07-T05 |
-| Latest verified commit | `16e12da` (P07-T04) |
+| Latest verified commit | `1b35914` (P07-T05) |
 | Validation evidence | P07-T05: stale or cross-run cache content cannot reach the agent, and missing or unsupported citations are refused and end in abstention (`tests/integration/test_investigator.py`, `tests/integration/test_agent_tools.py`). Earlier evidence is in the work log |
 | Blockers | None recorded |
 | Next task | P07-T06 |
@@ -1339,7 +1339,7 @@ Keep these outside the release critical path unless measurements justify promoti
 
 ### 2026-11-07 — P07-T05
 - Status: completed
-- Commit: pending
+- Commit: `1b35914`
 - Implemented: `agents/findings.py`, `agents/read_cache.py`; `EvidenceRepository.missing_or_future` and `data_version`; the cache in `ToolExecutor`; verification in `investigate_with_agent` and `conclude_findings`; `SIGNALOPS_TOOL_CACHE_SECONDS`; ADR-029; docs (agents-and-workflow, decisions, development).
 - Validation commands and results: `uv run ruff check .`, `uv run ruff format --check .`, `uv run mypy` (161 files), `uv run signalops export-schemas --check` pass; `tests/integration/test_investigator.py` and `tests/integration/test_agent_tools.py` 65 passed on real PostgreSQL and Redis; `uv run pytest` passes.
 - Evidence or artifact references: absent, other-run, after-cutoff, and late-arriving citations are refused, sent back, and end in abstention; empty citations and out-of-range confidence fail validation; a forged stored proposal abstains at `conclude`. Planted cache values for another run, with a future entry, for another tool, and as garbage do not reach the agent, while a valid entry for the exact read does.
