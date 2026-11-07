@@ -10,7 +10,7 @@ x-backend-env: &backend-env
   SIGNALOPS_DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-signalops}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env (see .env.example)}@postgres:5432/${POSTGRES_DB:-signalops}
   SIGNALOPS_REDIS_URL: redis://redis:6379/0
   SIGNALOPS_KAFKA_BOOTSTRAP_SERVERS: kafka:9092
-  # Only the deterministic fake provider exists; no model key is read.
+  # Every process but the worker stays on the fake provider and never sees a key.
   SIGNALOPS_MODEL_PROVIDER: fake
   # JSON object of source ID to ingestion token; empty means no source can ingest.
   SIGNALOPS_INGEST_TOKENS: ${SIGNALOPS_INGEST_TOKENS:-{}}
@@ -173,6 +173,12 @@ services:
   # Claims jobs and runs their workflow; a stopped worker releases its job.
   investigation-worker:
     <<: *backend
+    environment:
+      <<: *backend-env
+      # `fake` makes no network call. `anthropic` makes paid calls with this key.
+      SIGNALOPS_MODEL_PROVIDER: ${SIGNALOPS_MODEL_PROVIDER:-fake}
+      SIGNALOPS_MODEL_NAME: ${SIGNALOPS_MODEL_NAME:-}
+      SIGNALOPS_MODEL_API_KEY: ${SIGNALOPS_MODEL_API_KEY:-}
     command: ["worker"]
     restart: unless-stopped
     depends_on:

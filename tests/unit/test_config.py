@@ -19,7 +19,7 @@ def test_reads_prefixed_environment(monkeypatch: pytest.MonkeyPatch) -> None:
     assert "p@db" not in repr(settings)
 
 
-def test_only_fake_model_provider_is_accepted() -> None:
+def test_an_unknown_model_provider_is_rejected() -> None:
     with pytest.raises(ValidationError, match="model_provider"):
         Settings(database_url=SecretStr("postgresql+psycopg://u@db/x"), model_provider="paid")  # type: ignore[arg-type]
 

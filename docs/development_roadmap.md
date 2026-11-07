@@ -25,13 +25,13 @@ PostgreSQL owns evidence, workflow progress, budgets, and the initial knowledge 
 
 | Field | Current value |
 | --- | --- |
-| Active phase | Phase 7 LLM gateway and first investigator; Phase 6 gate passed |
-| Active task | None |
-| Last completed task | P06-T05 |
+| Active phase | Phase 7 LLM gateway and first investigator |
+| Active task | P07-T02 (in progress) |
+| Last completed task | P07-T01 |
 | Latest verified commit | `988f7e0` (P06-T05) |
-| Validation evidence | P06-T05 and the Phase 6 gate: `SIGNALOPS_INTEGRATION=1 uv run pytest` 1021 passed. Against Compose services, a real worker received SIGKILL inside `investigate`, a second worker resumed it after the lease expired and reused `load_context`, and after restarting the `api` and worker containers the API returned the `insufficient_evidence` outcome and all eight progress events. A stale worker's step and terminal writes are rejected in `tests/integration/test_investigation_outcomes.py`. The workflow runs only the fake sequence, and no model was called. Earlier evidence is in the work log |
+| Validation evidence | P07-T01: unit tests reproduce fake success, timeout, throttling, and invalid output offline; `uv run pytest` 548 passed, 491 skipped. The Anthropic adapter ran only against a stub transport. Earlier evidence is in the work log |
 | Blockers | None recorded |
-| Next task | P07-T01 |
+| Next task | P07-T02 |
 
 ### Scope and release boundaries
 
@@ -636,11 +636,18 @@ Start the React shell in Phase 1 and add API-backed incident views in Phase 5; P
 
 ### P07-T01 Create a provider abstraction and fake provider
 
-- [ ] Complete this task.
+- [x] Complete this task.
 
 **Implementation:** Define structured request/response types, provider errors, usage metadata, prompt versions, and deterministic fixtures. Implement one real provider adapter behind the same interface.
 
 **Acceptance:** Fake mode reproduces success, timeout, throttling, and invalid-output behavior without network access.
+
+**Notes (2026-11-07):**
+- **Decision (ADR-025, resolves Q8):** `gateway/types.py` holds provider-neutral requests and responses. `ModelProvider.complete` is one call. `AnthropicProvider` uses the official SDK (`anthropic` 2.6, a new dependency the task requires) with `max_retries=0`, because the gateway must reserve for each retry. `FakeProvider` runs step scripts; `fixtures/gateway/v1` holds `success`, `timeout`, `throttled`, and `invalid_output`.
+- **Choices the task did not state:** `ProviderError` keeps a category, status, and request ID, never provider text; 408, 5xx, timeouts, lost connections, and unreadable responses are ambiguous, 429 and 529 are not; the default model is `claude-opus-5-5`; the agent's final answer will be a tool call, because a terminal tool validates and repairs the same way on any provider; `ProviderBlock` carries a provider's thinking back unchanged within a conversation and is never stored.
+- **Deviation from the skill default:** no server-side refusal fallback, because a fallback model can cost more than the reservation (ADR-025).
+- Compose passes the key to `investigation-worker` only. Startup fails on `anthropic` with no key.
+- **Not verified:** `AnthropicProvider` ran against a stub transport with the SDK's real client and response parsing, never against the live API. No paid call was made.
 
 ### P07-T02 Enforce budgets and provider limits
 
@@ -1266,6 +1273,16 @@ Keep these outside the release critical path unless measurements justify promoti
 - Deviations and reasons: see task notes (a JSON progress read ahead of the SSE route, because the acceptance needs a query).
 - Remaining issues: see task notes.
 - Next task: P07-T01.
+
+### 2026-11-07 — P07-T01
+- Status: completed
+- Commit: pending
+- Implemented: `gateway/types.py`, `gateway/errors.py`, `gateway/provider.py`, `gateway/fake.py`, `gateway/anthropic_provider.py`; `fixtures/gateway/v1/*.json`; model settings and `resolved_model`; `anthropic` dependency; Compose key passing; `.env.example`; ADR-025 (resolves Q8); docs (decisions, development).
+- Validation commands and results: `uv run ruff check .`, `uv run ruff format --check .`, `uv run mypy` (147 files) pass; `uv run pytest` 548 passed, 491 skipped; `docker compose config --quiet` passes.
+- Evidence or artifact references: `tests/unit/test_gateway_providers.py` covers fake success, timeout, throttling, and invalid output with no network, and the adapter's request shape, thinking round trip, status categories, and refusal over a stub transport.
+- Deviations and reasons: see task notes (no refusal fallback).
+- Remaining issues: `AnthropicProvider` has not run against the live API, and `build_provider` returns an empty fake script until P07-T04 adds the investigator's fake.
+- Next task: P07-T02.
 
 ## Work log template
 

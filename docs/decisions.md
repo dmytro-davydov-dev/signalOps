@@ -263,6 +263,16 @@ Revision `0015_investigation_outcomes` adds a partial unique index allowing one 
 
 **Revisit when:** P08-T03 serves this history over SSE; or Phase 7 wants a job with a finished conclusion to settle at the claim.
 
+## ADR-025: Provider calls go through one neutral interface, and the Anthropic SDK never retries
+
+**Decision:** `gateway/types.py` defines provider-neutral requests and responses, and `ModelProvider.complete` is one call. `FakeProvider` runs scripts from code or `fixtures/gateway/v1`, and `AnthropicProvider` adapts the Messages API through the official SDK with `max_retries=0`. `ProviderError` keeps a category, status, and request ID, never provider text. Timeouts, lost connections, 5xx, 408, and unreadable responses are ambiguous; 429 and 529 are throttles with no work done; other 4xx are permanent. The default model is `claude-opus-5-5`. The final answer is a tool call rather than a structured output format, and no server-side refusal fallback is set. Compose passes the key to `investigation-worker` only.
+
+**Reason:** Each retry is a possibly billable call, so the gateway has to see and reserve for every one, which SDK retries would hide. An error body can quote a request, and a request carries evidence. A terminal tool keeps validation and repair in one place, on any provider. A fallback model may cost more than the reserved model, and a refused call can bill both, so it would break the rule that a reservation bounds a call's cost.
+
+**Trade-off:** A refusal ends the turn with no answer, so the agent abstains on it. Claude thinking blocks must return unchanged within a conversation, so they stay in memory as `ProviderBlock`s and a restarted node starts its conversation again. Provider behavior is verified against recorded response shapes over a stub transport, not against the live API, because no paid call was authorized.
+
+**Revisit when:** A paid evaluation is authorized (P10), or refusals turn out to matter on incident evidence; then reserve for primary plus fallback and enable fallbacks.
+
 ## Open questions
 
 | # | Question | Decide by |
@@ -274,7 +284,7 @@ Revision `0015_investigation_outcomes` adds a partial unique index allowing one 
 | Q5 | ~~Idempotency-key storage table and retention window~~ **Resolved (P06-T01):** `idempotency_keys`, retained with the investigation, no expiry; see ADR-020 | P06-T01 |
 | Q6 | ~~Diagnosis status ↔ investigation terminal status mapping~~ **Resolved (P02-T05):** one-to-one. `completed` ⇔ `diagnosed`, `insufficient_evidence` ⇔ `insufficient_evidence`, no diagnosis otherwise; enforced in contracts, a database CHECK, and the generated UI module. See data-model.md | P02-T05 |
 | Q7 | ~~Detector window closure metadata schema~~ **Resolved (P05-T02):** columns on `signal_aggregates` plus `detection_clocks`; see ADR-016 | P05-T02 |
-| Q8 | Which real model provider is implemented first, and its pricing provenance format | P07-T01 / P07-T02 |
+| Q8 | ~~Which real model provider is implemented first, and its pricing provenance format~~ **Resolved:** Anthropic (ADR-025); pricing in ADR-026 | P07-T01 / P07-T02 |
 | Q9 | Operator authentication mechanism before public exposure. Interim: static per-workspace tokens (ADR-014) | P11-T02 |
 | Q10 | Whether the OpenTelemetry Demo fits local resources, or a smaller synthetic app suffices for the `demo` profile | P10-T03 |
 | Q11 | Planning files live in `docs/`, but `CLAUDE.md` expects them at the repository root. Move them, or update `CLAUDE.md`? | Before P01-T01 |

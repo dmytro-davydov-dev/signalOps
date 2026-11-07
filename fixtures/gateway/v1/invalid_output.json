@@ -1,0 +1,19 @@
+{
+  "name": "invalid_output",
+  "steps": [
+    {
+      "content": [
+        {
+          "type": "tool_use",
+          "id": "toolu_1",
+          "name": "submit_findings",
+          "input": {
+            "status": "diagnosed",
+            "summary": "no root cause given"
+          }
+        }
+      ],
+      "stop_reason": "tool_use"
+    }
+  ]
+}

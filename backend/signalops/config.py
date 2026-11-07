@@ -9,6 +9,8 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from signalops.detection.rules import DEFAULT_RULES, DetectionRule, check_unique_rule_ids
 
+DEFAULT_MODELS = {"fake": "fake-1", "anthropic": "claude-opus-5-5"}
+
 
 class Settings(BaseSettings):
     """Settings shared by the API and worker processes.
@@ -135,8 +137,14 @@ class Settings(BaseSettings):
     # Relative to the working directory: the repository root locally, /app in the image.
     migrations_path: str = "migrations"
 
-    # Only the deterministic fake provider exists until P07-T01.
-    model_provider: Literal["fake"] = "fake"
+    # `fake` needs no key and no network, and is the default everywhere. `anthropic`
+    # makes paid calls and needs a key.
+    model_provider: Literal["fake", "anthropic"] = "fake"
+    model_api_key: SecretStr | None = None
+    # None selects the provider's default model.
+    model_name: str | None = None
+    # One provider call, whatever it is doing; a later retry is a new call.
+    model_request_timeout_seconds: float = Field(default=60.0, gt=0, le=600)
 
     @model_validator(mode="after")
     def _check_query_bounds(self) -> Self:
@@ -169,6 +177,18 @@ class Settings(BaseSettings):
         if any(token.get_secret_value() in ingest for token in self.operator_tokens.values()):
             raise ValueError("an operator token must not equal an ingest token")
         return self
+
+    @model_validator(mode="after")
+    def _check_model_provider(self) -> Self:
+        key = self.model_api_key
+        if self.model_provider == "anthropic" and (key is None or not key.get_secret_value()):
+            raise ValueError("model_provider anthropic needs model_api_key")
+        return self
+
+    def resolved_model(self) -> str:
+        if self.model_name is not None:
+            return self.model_name
+        return DEFAULT_MODELS[self.model_provider]
 
     def validated_database_url(self) -> str:
         """Return the database URL after checking it is a PostgreSQL DSN."""

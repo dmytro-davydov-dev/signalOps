@@ -1,0 +1,17 @@
+{
+  "name": "timeout",
+  "steps": [
+    {
+      "fail": "timeout"
+    },
+    {
+      "content": [
+        {
+          "type": "text",
+          "text": "done"
+        }
+      ],
+      "stop_reason": "end_turn"
+    }
+  ]
+}

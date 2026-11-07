@@ -30,7 +30,7 @@ signalops/
 - [uv](https://docs.astral.sh/uv/) for Python
 - Node.js with [pnpm](https://pnpm.io/) for the frontend
 
-No model provider key is needed. Fake-provider mode is the default.
+No model provider key is needed. Fake-provider mode is the default, and `fixtures/gateway/v1` holds its failure scripts.
 
 ## Commands
 
@@ -188,7 +188,10 @@ Backend processes read `SIGNALOPS_`-prefixed variables (`backend/signalops/confi
 | `SIGNALOPS_GRAPH_DEPENDENCY_TTL_SECONDS` | `604800` | An observed dependency stays valid this long after each observation (60–31536000) |
 | `SIGNALOPS_DETECTION_RULES` | three rules (`detection/rules.py`) | JSON array of `DetectionRule` objects replacing the defaults: `id`, `version`, `metric` (`trace`, `log`), `kind` (`error_rate`, `latency_quantile`), `threshold`, `quantile`, `min_samples`, `cooldown_seconds`, `severity` (default `medium`). A latency threshold must be a histogram bucket bound. Bump `version` when a rule's settings change (see [events.md](events.md#detector-detector-v1)) |
 | `SIGNALOPS_INGEST_REDACT_FIELDS` | password, token, authorization, cookie, … (`config.py`) | JSON list of payload keys whose values are replaced before publishing; a source's `config.redact_fields` adds more |
-| `SIGNALOPS_MODEL_PROVIDER` | `fake` | only `fake` is accepted until P07-T01; no model key is read |
+| `SIGNALOPS_MODEL_PROVIDER` | `fake` | `fake` needs no key or network. `anthropic` makes paid calls and needs `SIGNALOPS_MODEL_API_KEY`; startup fails without one. Compose passes these to `investigation-worker` only |
+| `SIGNALOPS_MODEL_API_KEY` | unset | Credential, never logged |
+| `SIGNALOPS_MODEL_NAME` | `fake-1` / `claude-opus-5-5` | The provider's default model when unset |
+| `SIGNALOPS_MODEL_REQUEST_TIMEOUT_SECONDS` | `60` | One provider call; the provider client never retries on its own |
 | `SIGNALOPS_MIGRATIONS_PATH` | `migrations` | Alembic environment, relative to the working directory |
 | `SIGNALOPS_DB_POOL_SIZE` / `SIGNALOPS_DB_MAX_OVERFLOW` | `5` / `5` | per process; keep the sum over all processes below PostgreSQL `max_connections` (100 by default) |
 | `SIGNALOPS_DB_POOL_TIMEOUT_SECONDS` | `5.0` | wait for a pooled connection before `sqlalchemy.exc.TimeoutError` |
