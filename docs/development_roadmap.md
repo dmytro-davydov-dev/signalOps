@@ -28,7 +28,7 @@ PostgreSQL owns evidence, workflow progress, budgets, and the initial knowledge 
 | Active phase | Phase 7 LLM gateway and first investigator |
 | Active task | None |
 | Last completed task | P07-T06 |
-| Latest verified commit | `1b35914` (P07-T05) |
+| Latest verified commit | `7f77717` (P07-T06) |
 | Validation evidence | P07-T06: `SIGNALOPS_INTEGRATION=1 uv run pytest` 1151 passed. Logs and stored records hold no credentials or evidence at DEBUG on the fake provider and the stubbed adapter. Tests state that timed-out calls may have run. Earlier evidence is in the work log |
 | Blockers | None recorded |
 | Next task | P08-T01 |
@@ -1356,7 +1356,7 @@ Keep these outside the release critical path unless measurements justify promoti
 
 ### 2026-11-07 — P07-T06
 - Status: completed
-- Commit: pending
+- Commit: `7f77717`
 - Implemented: exception type only in the failed-attempt log; `PROVIDER_CLIENT_LOGGERS` held at `WARNING`; `tests/integration/test_gateway_failures.py`, `tests/unit/test_gateway_policy.py`; `docs/reliability.md` model call section, ADR-021 note.
 - Validation commands and results: `uv run ruff check .`, `uv run ruff format --check .`, `uv run mypy` (163 files), `uv run signalops export-schemas --check` pass; `SIGNALOPS_INTEGRATION=1 uv run pytest` 1151 passed; `tests/integration/test_gateway_failures.py` with `test_model_gateway.py` repeated 3 times, 32 passed each.
 - Evidence or artifact references: with a sensitive log line stored and every logger at DEBUG, timeouts, a rejection, and a success leave no evidence, secret, or prompt in logs or in the stored diagnosis, job error, steps, progress, and call rows. `AnthropicProvider` over a stub transport returning a 500 that quotes evidence leaves no key or payload. Permanent and retryable categories, capped backoff, a capped `retry-after`, unknown-cost accounting, resume after a model timeout, a cancellation during a hung call, and a stale worker's late answer are covered.
