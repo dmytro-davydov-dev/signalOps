@@ -27,11 +27,11 @@ PostgreSQL owns evidence, workflow progress, budgets, and the initial knowledge 
 | --- | --- |
 | Active phase | Phase 6 Durable jobs and workflow runtime; Phase 5 gate passed |
 | Active task | None |
-| Last completed task | P06-T03 |
-| Latest verified commit | `e4a3a36` (P06-T02); P06-T03 pending commit, validated against the working tree |
-| Validation evidence | P06-T03: `SIGNALOPS_INTEGRATION=1 uv run pytest` 926 passed. A real worker process took SIGKILL inside `investigate`; after the lease expired, `signalops worker` resumed there, with the `load_context` row unchanged (run 5 more times, all passed). The workflow runs only the fake sequence, and no model was called. Earlier evidence is in the work log |
+| Last completed task | P06-T04 |
+| Latest verified commit | `8887386` (P06-T03); P06-T04 pending commit, validated against the working tree |
+| Validation evidence | P06-T04: `SIGNALOPS_INTEGRATION=1 uv run pytest` 978 passed. A real worker process hung inside `investigate` was cancelled from the built UI through nginx, the API, and Compose PostgreSQL: the page went from Running to Cancelled without a reload, and `conclude` never ran. The workflow runs only the fake sequence, and no model was called. Earlier evidence is in the work log |
 | Blockers | None recorded |
-| Next task | P06-T04 |
+| Next task | P06-T05 |
 
 ### Scope and release boundaries
 
@@ -595,11 +595,18 @@ Start the React shell in Phase 1 and add API-backed incident views in Phase 5; P
 
 ### P06-T04 Implement cancellation and deadlines
 
-- [ ] Complete this task.
+- [x] Complete this task.
 
 **Implementation:** Persist cancellation requests and terminal transitions with version checks. Check cancellation/deadline before calls and between nodes; fence stale completion.
 
 **Acceptance:** Cancellation during a call does not permit new downstream calls; the UI eventually shows the durable terminal state.
+
+**Notes (2026-11-07):**
+- **Decision (ADR-023):** migration `0014` adds `investigations.cancel_requested_at`. `POST /v1/investigations/{id}/cancel` ends the investigation at once unless a job is running; then the lease holder ends both. `JobRepository.stop_reason` is the one check, read by the claim, each heartbeat, the transaction that opens a step, and each settling write. `fail_investigation` became `end_investigation`, which also marks steps left `running` as `failed`.
+- **Choices the task did not state:** a passed deadline ends the job and investigation `failed`, with `deadline_exceeded` in `last_error`, because `status` has no deadline value; a heartbeat interrupts the running node, because a check only between nodes never fires for a hung call; a cancellation beats any outcome not yet committed, while work finished past the deadline keeps its result; a repeated cancellation is `202`, and an investigation that ended another way is `409`. The API takes no `version`: a cancellation is a one-way request, and heartbeats and claims would make a client's version stale for no benefit. Writes hold the row locks and the ORM's `version_id_col` applies.
+- **Deviation:** the acceptance needs a UI, which is P08-T02, so this task adds `GET /v1/investigations/{id}` (from P06/P07) and a minimal `/investigations/:id` page: status, times, cancel, and 3-second polling that stops at a terminal status. Nothing links to the page, because no route lists an incident's investigations; it is reachable by URL only. P08-T02 adds that path, start controls, and the rest of the results.
+- `test_exhausting_a_job_keeps_a_terminal_investigation` changed: such a job now ends `cancelled`, not `failed`, closing the gap noted under P06-T02.
+- Left: a cancellation of a succeeded job's stranded `running` investigation ends it `cancelled`, which is the only way out of that state until P06-T05, which must also settle how it meets this path; Phase 7 must check `stop_reason` before each model call inside a node, since a node is one call only today; with no worker running, nothing ends a running or overdue job; a cancellation records no actor (P11-T02); `InvestigationView` carries no cancelled-reason or deadline detail, so a deadline failure looks like any other `failed` in the UI.
 
 ### P06-T05 Persist workflow progress and completion
 
@@ -1224,13 +1231,23 @@ Keep these outside the release critical path unless measurements justify promoti
 
 ### 2026-11-07 — P06-T03
 - Status: completed
-- Commit: pending commit; validated against the current working tree.
+- Commit: `8887386`.
 - Implemented: `agents/workflow.py` (`Node`, `Workflow`, `WORKFLOWS`, `NodeContext`, `WorkflowEngine`, `reused_output`); `contracts/steps.py`; `steps_of`, `complete_step`, `fail_step`, and failed-step reopening in `JobRepository`; `signalops worker`; Compose `investigation-worker`; ADR-022; docs (agents-and-workflow, decisions, development, reliability). No migration.
 - Validation commands and results: `uv run ruff check .`, `uv run ruff format --check .`, `uv run mypy` (136 files), `uv run signalops export-schemas --check` pass; `uv run pytest` 514 passed, 412 skipped; `SIGNALOPS_INTEGRATION=1 uv run pytest` 926 passed; `docker compose config --quiet` passes; `tests/integration/test_workflow_recovery.py` repeated 5 times, all passed. Of 16 deliberate mutations, all fail the tests, two only after adding repository-level tests for completed-output protection and the ending lease's generation. `alembic check` was not rerun beyond `test_migrations_match_models`: no model changed. Frontend checks not run: no frontend change.
 - Evidence or artifact references: `tests/integration/test_workflow_recovery.py`, `tests/integration/test_workflow_engine.py`, `tests/unit/test_workflow.py`. `investigation-worker` built and ran in Compose and completed the three steps of the one queued dev job, whose investigation stays `running` as noted under the task.
 - Deviations and reasons: `investigate` is a plain function rather than a fake provider, because the gateway is P07-T01.
 - Remaining issues: see task notes.
 - Next task: P06-T04.
+
+### 2026-11-07 — P06-T04
+- Status: completed
+- Commit: pending commit; validated against the current working tree.
+- Implemented: migration `0014_investigation_cancellation`; `cancel_investigation` and `end_investigation` in `agents/investigations.py`; `JobStop`, `stop_reason`, `locked_for`, `abandon_steps` in `JobRepository`; `JobStoppedError`, `stop_job`, and stop handling in `agents/jobs.py`; the pre-step check in `agents/workflow.py`; `GET /v1/investigations/{id}` and `POST /v1/investigations/{id}/cancel`; `InvestigationView.cancel_requested_at` with regenerated schemas and fixtures; `apps/web/src/pages/InvestigationPage.tsx`, `api/investigations.ts`, `postJson`; ADR-023; docs (agents-and-workflow, api, data-model, decisions, development, events, reliability).
+- Validation commands and results: `uv run ruff check .`, `uv run ruff format --check .`, `uv run mypy` (137 files), `uv run signalops export-schemas --check` pass; `uv run pytest` 514 passed, 464 skipped; `SIGNALOPS_INTEGRATION=1 uv run pytest` 978 passed; `tests/integration/test_cancellation.py` with `test_workflow_recovery.py` repeated 5 times, 48 passed each; `docker compose config --quiet` passes; `pnpm lint`, `pnpm typecheck`, `pnpm build` pass; `pnpm test` 42 passed. Of 17 deliberate mutations, all fail the tests. `test_migrations_match_models` and `test_downgrade_to_baseline_and_upgrade_again` pass with `0014`.
+- Evidence or artifact references: `tests/integration/test_cancellation.py`, `tests/integration/test_workflow_recovery.py`, `tests/integration/test_investigation_requests.py`, `apps/web/src/pages/InvestigationPage.test.tsx`. Compose run, rebuilt and migrated to `0014`, with `investigation-worker` stopped: a request through the API was dispatched, the cancel answered `202 cancelled`, a repeat `202`, the job ended `cancelled` with 0 attempts, `investigations.completed.v1` was published at aggregate version 3, and the restarted worker ran no step. Headless Chrome against the built frontend on port 8090, with `tests/integration/hanging_worker.py` on the host (6-second lease) hung in `investigate`: the page showed Running, then the requested notice, then Cancelled 3.3 s later without a reload. The job ended `cancelled` with 1 attempt, `load_context` stayed `completed`, `investigate` became `failed`, `conclude` had no row, and the worker process stayed alive. A throwaway operator token was set on the `api` container for these runs and removed after them. They left two cancelled investigations in the dev database.
+- Deviations and reasons: see task notes (read route and minimal page added ahead of P08-T02, because the acceptance needs them).
+- Remaining issues: see task notes.
+- Next task: P06-T05.
 
 ## Work log template
 

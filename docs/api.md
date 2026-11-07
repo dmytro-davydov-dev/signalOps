@@ -17,7 +17,7 @@ All endpoints are versioned under `/v1`. Request and response bodies are Pydanti
 | `PATCH /v1/incidents/{id}` | Resolve or reopen a live incident at a version | P05-T05 |
 | `GET /v1/incidents/{id}/evidence` | Evidence timeline: cited signals oldest first, cursor pagination | P05-T05 |
 | `POST /v1/incidents/{id}/investigations` | Requires `Idempotency-Key`. Returns **202** with the investigation ID | P06-T01 |
-| `GET /v1/investigations/{id}` | State, finding, evidence, usage, limitations | P06/P07 |
+| `GET /v1/investigations/{id}` | State, finding, evidence, usage, limitations | P06-T04, P07 |
 | `POST /v1/investigations/{id}/cancel` | Persists a cancellation request | P06-T04 |
 | `GET /v1/investigations/{id}/events` | SSE progress stream with a durable reconnect cursor | P08-T03 |
 | `GET /v1/services/{id}/graph` | Bounded neighborhood as of a timestamp | P05-T05 |
@@ -141,6 +141,20 @@ The body is `InvestigationView` (`contracts/investigations.py`). Its `diagnosis`
 | `completed` | required, `status: "diagnosed"` | Diagnosed |
 | `insufficient_evidence` | required, `status: "insufficient_evidence"`, null `root_cause`, non-empty `missing_evidence` | Insufficient evidence (an abstention, not a failure) |
 | `queued`, `running`, `failed`, `cancelled`, `budget_exceeded` | `null` | Queued, Running, Failed, Cancelled, Budget exceeded |
+
+`replay_scope` selects a replay run, as on the incident routes. Until P07, the body has no evidence or cost basis.
+
+## Cancellation
+
+```http
+POST /v1/investigations/{id}/cancel
+```
+
+There is no body and no `Idempotency-Key`, because repeating the request changes nothing. The response is `202` with `InvestigationView`.
+
+- With no worker holding the job, the response already shows `cancelled`.
+- With a running job, it shows `running` and `cancel_requested_at`. The worker stops within about a third of a lease; read the investigation to see the terminal state.
+- An investigation that ended another way is `409`. Live scope only; a replay investigation is `404`.
 
 ## Progress stream (SSE)
 

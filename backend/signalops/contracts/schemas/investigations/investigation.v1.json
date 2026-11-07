@@ -225,6 +225,19 @@
   "additionalProperties": false,
   "description": "Body of GET /v1/investigations/{id}.",
   "properties": {
+    "cancel_requested_at": {
+      "anyOf": [
+        {
+          "format": "date-time",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Cancel Requested At"
+    },
     "completed_at": {
       "anyOf": [
         {

@@ -4,6 +4,7 @@ import { HealthPage } from "./pages/HealthPage";
 import { HomePage } from "./pages/HomePage";
 import { IncidentDetailPage } from "./pages/IncidentDetailPage";
 import { IncidentsPage } from "./pages/IncidentsPage";
+import { InvestigationPage } from "./pages/InvestigationPage";
 import { NotFoundPage } from "./pages/NotFoundPage";
 import { RouteErrorPage } from "./pages/RouteErrorPage";
 
@@ -16,6 +17,7 @@ export const routes: RouteObject[] = [
       { index: true, element: <HomePage /> },
       { path: "incidents", element: <IncidentsPage /> },
       { path: "incidents/:incidentId", element: <IncidentDetailPage /> },
+      { path: "investigations/:investigationId", element: <InvestigationPage /> },
       { path: "status", element: <HealthPage /> },
       { path: "*", element: <NotFoundPage /> },
     ],

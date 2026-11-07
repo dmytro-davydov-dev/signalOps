@@ -9,6 +9,7 @@
   "max_steps": 12,
   "status": "running",
   "completed_at": null,
+  "cancel_requested_at": null,
   "usage": {
     "budget_microusd": 500000,
     "reserved_microusd": 60000,

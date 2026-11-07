@@ -14,6 +14,10 @@ twice when a worker dies inside it: reuse is durable, execution is at least once
 Completed output that no longer validates, or that another workflow version wrote,
 fails the job, because a completed step can never run again.
 
+**Stops.** Opening a step checks for a cancellation or a passed deadline in the same
+transaction, so no node starts after either commits. Phase 7 must make the same
+check before each model call inside a node (ADR-023).
+
 **Versions.** An investigation runs the workflow version it was requested with. A
 change to the nodes or their output needs a new entry in `WORKFLOWS`.
 
@@ -32,7 +36,7 @@ from typing import Any, Final, cast
 from pydantic import ValidationError
 
 from signalops.agents.investigations import WORKFLOW_VERSION
-from signalops.agents.jobs import PermanentJobError, error_record
+from signalops.agents.jobs import JobStoppedError, PermanentJobError, error_record
 from signalops.contracts.checkpoints import StepCheckpoint, decode_checkpoint
 from signalops.contracts.common import ContractError, ContractModel
 from signalops.contracts.diagnosis import Diagnosis, DiagnosisStatus
@@ -190,7 +194,11 @@ class WorkflowEngine:
         )
         step_input = {"after": context.finished}
         async with self._database.transaction() as session:
-            opened = await JobRepository(session).save_checkpoint(
+            jobs = JobRepository(session)
+            await jobs.hold(lease)
+            if await jobs.stop_reason(lease.investigation_id) is not None:
+                raise JobStoppedError(node.key)
+            opened = await jobs.save_checkpoint(
                 lease, node.key, node.role, step_input, checkpoint.model_dump(mode="json")
             )
         if not opened:

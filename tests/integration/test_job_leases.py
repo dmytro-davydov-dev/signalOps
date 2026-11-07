@@ -458,7 +458,7 @@ async def test_exhausting_a_job_keeps_a_terminal_investigation(database: db.Data
 
     await claim_job(database, B, POLICY)
 
-    assert (await job_of(database, investigation_id)).status == JobStatus.FAILED
+    assert (await job_of(database, investigation_id)).status == JobStatus.CANCELLED
     investigation = await investigation_of(database, investigation_id)
     assert investigation.status == InvestigationStatus.CANCELLED
     assert await completed_events(database, investigation_id) == []

@@ -66,6 +66,17 @@ class InvestigationRepository:
             )
         )
 
+    async def locked(
+        self, scope: EvidenceScope, investigation_id: uuid.UUID
+    ) -> Investigation | None:
+        """The row, freshly read and locked. Lock its job first, as workers do."""
+        return await self._session.scalar(
+            select(Investigation)
+            .where(scope.clause(Investigation), Investigation.id == investigation_id)
+            .with_for_update()
+            .execution_options(populate_existing=True)
+        )
+
     async def find_key(
         self, workspace_id: uuid.UUID, route: str, key: str
     ) -> IdempotencyKey | None:

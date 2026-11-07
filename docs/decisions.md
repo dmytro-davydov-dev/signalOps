@@ -239,6 +239,18 @@ A failed node marks its step `failed` and a retry reopens it; a step left `runni
 
 **Revisit when:** Phase 9 adds parallel branches or the verifier's follow-up round, which need more than one step per node.
 
+## ADR-023: Cancellation is a durable request; workers end the job
+
+**Decision:** `POST /v1/investigations/{id}/cancel` sets `investigations.cancel_requested_at`. With no job, a queued job, or a job that already succeeded, it ends the investigation in that transaction. With a running job it only records the request, and the job's lease holder ends both, because only that worker knows what is in flight. A repeat changes nothing; an investigation that ended another way is `409`.
+
+`JobRepository.stop_reason` is the one check, for cancellation and for `deadline_at` by PostgreSQL's clock. Four places read it: the claim, which also finishes the job of a dead worker; each heartbeat, which interrupts the handler; the transaction that opens a step; and each settling write. A passed deadline ends the job and its investigation `failed`, with `deadline_exceeded` in `last_error`. Writers lock the job row before the investigation row.
+
+**Reason:** A request needs a durable row because no live connection to a worker exists. A job row lock serializes the request against settling, so a cancellation lands fully before or fully after a settlement. A check only between nodes would never fire for a hung call, since heartbeats keep the lease alive, hence the check in the heartbeat. `status` has no deadline value, and adding one for a case `failed` plus a category describes would change the API, the event, and the UI mapping.
+
+**Trade-off:** Stopping can take up to a third of a lease (10 s by default). An interrupted call may still be charged, so Phase 7 keeps its reservation. A cancellation beats any outcome that has not committed, including finished work. Work finished past the deadline keeps its result, since no new call was made. With no worker running, nothing ends a running or overdue job until one starts.
+
+**Revisit when:** Phase 7 adds calls inside a node, which must check `stop_reason` first; or P06-T05's terminal write changes the path where a cancellation meets a succeeded job.
+
 ## Open questions
 
 | # | Question | Decide by |

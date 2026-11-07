@@ -123,7 +123,7 @@ Validation checks that:
 - A worker claims a job with `SELECT … FOR UPDATE SKIP LOCKED`, sets a short lease, increments `lease_generation`, and **commits before any external call**. It heartbeats while running.
 - Each checkpoint and completion write checks `lease_owner` and `lease_generation`, so an expired worker cannot overwrite newer progress.
 - Completed steps (`UNIQUE(investigation_id, step_key)`) are reused after a restart once their schema and version are validated. Only unfinished nodes run again.
-- Cancellation and deadline are checked before every model call and between nodes.
+- Cancellation and deadline are checked before every node and on every heartbeat, which interrupts a running node. Phase 7 adds the check before each model call inside a node ([ADR-023](decisions.md#adr-023-cancellation-is-a-durable-request-workers-end-the-job)).
 - The system guarantees **checkpoint reuse**, not exactly-once external model execution.
 
 See [reliability.md](reliability.md) for the full set of recovery guarantees and tests.

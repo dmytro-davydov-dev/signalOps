@@ -15,6 +15,12 @@ races the takeover is rejected by the fence in `JobRepository.hold`.
 
 **Shutdown.** A stopping worker releases its job with the attempt refunded, since
 a restart says nothing about the job.
+
+**Stops.** A cancellation or a passed deadline ends the job (ADR-023). A cancelled
+one ends `cancelled`; a deadline ends it and its investigation `failed`. The claim,
+each heartbeat, and each settling write check, and the engine checks before each
+node. A heartbeat that finds a stop interrupts the handler, so a hung call cannot
+outlive the check. A job that finished its work past its deadline still succeeds.
 """
 
 import asyncio
@@ -31,13 +37,18 @@ from typing import Any, Self
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from signalops.agents.investigations import fail_investigation
+from signalops.agents.investigations import end_investigation
 from signalops.config import Settings
 from signalops.contracts.common import MAX_ERROR_DETAIL_LENGTH
-from signalops.contracts.workflow import JobStatus
+from signalops.contracts.workflow import InvestigationStatus, JobStatus
 from signalops.persistence.database import Database
 from signalops.persistence.models import Job
-from signalops.persistence.repositories.jobs import JobLease, JobRepository, LeaseLostError
+from signalops.persistence.repositories.jobs import (
+    JobLease,
+    JobRepository,
+    JobStop,
+    LeaseLostError,
+)
 from signalops.streaming.retry import RetryPolicy
 
 logger = logging.getLogger(__name__)
@@ -51,6 +62,8 @@ class JobErrorCategory(StrEnum):
     UNEXPECTED = "unexpected"
     LEASE_EXPIRED = "lease_expired"
     ATTEMPTS_EXHAUSTED = "attempts_exhausted"
+    CANCELLED = "cancelled"
+    DEADLINE_EXCEEDED = "deadline_exceeded"
 
 
 class TransientJobError(Exception):
@@ -59,6 +72,10 @@ class TransientJobError(Exception):
 
 class PermanentJobError(Exception):
     """Another attempt cannot help. The message is stored, as for `TransientJobError`."""
+
+
+class JobStoppedError(Exception):
+    """The handler reached a check and found a stop; the job settles by re-reading it."""
 
 
 @dataclass(frozen=True)
@@ -109,11 +126,27 @@ async def _exhaust(session: AsyncSession, job: Job, cause: dict[str, Any] | None
         JobStatus.FAILED,
         {"category": JobErrorCategory.ATTEMPTS_EXHAUSTED, "attempts": job.attempts, "cause": cause},
     )
-    await fail_investigation(session, job.investigation_id)
+    await end_investigation(session, job.investigation_id, InvestigationStatus.FAILED)
+
+
+async def _stop(
+    session: AsyncSession, job_id: uuid.UUID, investigation_id: uuid.UUID, reason: JobStop
+) -> None:
+    """End a locked job and its investigation for this reason."""
+    logger.info("job stopped", extra={"job_id": str(job_id), "reason": str(reason)})
+    jobs = JobRepository(session)
+    if reason is JobStop.CANCELLED:
+        await jobs.finish(job_id, JobStatus.CANCELLED, {"category": JobErrorCategory.CANCELLED})
+        await end_investigation(session, investigation_id, InvestigationStatus.CANCELLED)
+    else:
+        await jobs.finish(
+            job_id, JobStatus.FAILED, {"category": JobErrorCategory.DEADLINE_EXCEEDED}
+        )
+        await end_investigation(session, investigation_id, InvestigationStatus.FAILED)
 
 
 async def claim_job(database: Database, owner: str, policy: JobPolicy) -> JobLease | None:
-    """Claim the oldest available job, failing any out of attempts on the way."""
+    """Claim the oldest available job, ending any stopped or out of attempts on the way."""
     while True:
         async with database.transaction() as session:
             jobs = JobRepository(session)
@@ -130,18 +163,25 @@ async def claim_job(database: Database, owner: str, policy: JobPolicy) -> JobLea
                 if expired
                 else job.last_error
             )
-            if job.attempts < job.max_attempts:
+            reason = await jobs.stop_reason(job.investigation_id)
+            if reason is not None:
+                await _stop(session, job.id, job.investigation_id, reason)
+            elif job.attempts < job.max_attempts:
                 lease = await jobs.take(job, owner, policy.lease_seconds, error)
                 await jobs.start_investigation(job.investigation_id)
                 return lease
-            await _exhaust(session, job, error)
+            else:
+                await _exhaust(session, job, error)
 
 
 async def complete_job(database: Database, lease: JobLease) -> None:
     async with database.transaction() as session:
         jobs = JobRepository(session)
         await jobs.hold(lease)
-        await jobs.finish(lease.job_id, JobStatus.SUCCEEDED)
+        if await jobs.stop_reason(lease.investigation_id) is JobStop.CANCELLED:
+            await _stop(session, lease.job_id, lease.investigation_id, JobStop.CANCELLED)
+        else:
+            await jobs.finish(lease.job_id, JobStatus.SUCCEEDED)
 
 
 async def retry_job(
@@ -152,7 +192,10 @@ async def retry_job(
     async with database.transaction() as session:
         jobs = JobRepository(session)
         job = await jobs.hold(lease)
-        if job.attempts >= job.max_attempts:
+        reason = await jobs.stop_reason(lease.investigation_id)
+        if reason is not None:
+            await _stop(session, job.id, lease.investigation_id, reason)
+        elif job.attempts >= job.max_attempts:
             await _exhaust(session, job, record)
         else:
             await jobs.requeue(job.id, policy.retry.delay(job.attempts), record)
@@ -162,8 +205,22 @@ async def fail_job(database: Database, lease: JobLease, error: Exception) -> Non
     async with database.transaction() as session:
         jobs = JobRepository(session)
         await jobs.hold(lease)
-        await jobs.finish(lease.job_id, JobStatus.FAILED, error_record(error))
-        await fail_investigation(session, lease.investigation_id)
+        if await jobs.stop_reason(lease.investigation_id) is JobStop.CANCELLED:
+            await _stop(session, lease.job_id, lease.investigation_id, JobStop.CANCELLED)
+        else:
+            await jobs.finish(lease.job_id, JobStatus.FAILED, error_record(error))
+            await end_investigation(session, lease.investigation_id, InvestigationStatus.FAILED)
+
+
+async def stop_job(database: Database, lease: JobLease) -> None:
+    """End a job whose handler found a stop."""
+    async with database.transaction() as session:
+        jobs = JobRepository(session)
+        await jobs.hold(lease)
+        reason = await jobs.stop_reason(lease.investigation_id)
+        if reason is None:
+            raise AssertionError("a stop reason, once seen, never clears")
+        await _stop(session, lease.job_id, lease.investigation_id, reason)
 
 
 async def release_job(database: Database, lease: JobLease) -> None:
@@ -210,7 +267,7 @@ class JobRunner:
         try:
             await asyncio.wait({work, beats, stopping}, return_when=asyncio.FIRST_COMPLETED)
             finished = work.done()
-            lost = beats.done()
+            beat_ended = beats.done()
         finally:
             beats.cancel()
             stopping.cancel()
@@ -219,7 +276,9 @@ class JobRunner:
         try:
             if finished:
                 await self._settle(lease, work)
-            elif lost:
+            elif beat_ended and beats.exception() is None and beats.result() is not None:
+                await stop_job(self._database, lease)
+            elif beat_ended:
                 logger.warning("job lease lost", extra={"job_id": str(lease.job_id)})
             else:
                 await release_job(self._database, lease)
@@ -234,6 +293,8 @@ class JobRunner:
             await complete_job(self._database, lease)
         elif not isinstance(error, Exception):
             raise error
+        elif isinstance(error, JobStoppedError):
+            await stop_job(self._database, lease)
         elif isinstance(error, PermanentJobError):
             await fail_job(self._database, lease, error)
         else:
@@ -244,8 +305,8 @@ class JobRunner:
             )
             await retry_job(self._database, lease, error, self._policy)
 
-    async def _keep_lease(self, lease: JobLease) -> None:
-        """Beat until the lease is lost or runs out unrenewed; returning means stop the handler.
+    async def _keep_lease(self, lease: JobLease) -> JobStop | None:
+        """Beat until the job must stop, or the lease is lost or runs out unrenewed (None).
 
         An unreachable database is not yet a lost lease, so beats keep trying
         until the last renewal's time is up. Another worker may take over from then on.
@@ -259,15 +320,19 @@ class JobRunner:
             try:
                 async with asyncio.timeout_at(expires):
                     async with self._database.transaction() as session:
-                        await JobRepository(session).heartbeat(lease, lease_seconds)
+                        jobs = JobRepository(session)
+                        await jobs.heartbeat(lease, lease_seconds)
+                        reason = await jobs.stop_reason(lease.investigation_id)
             except LeaseLostError:
-                return
+                return None
             except (SQLAlchemyError, OSError, TimeoutError) as error:
                 logger.warning(
                     "job heartbeat failed",
                     extra={"job_id": str(lease.job_id), "error": type(error).__name__},
                 )
                 if loop.time() >= expires:
-                    return
+                    return None
             else:
                 expires = sent + lease_seconds
+                if reason is not None:
+                    return reason

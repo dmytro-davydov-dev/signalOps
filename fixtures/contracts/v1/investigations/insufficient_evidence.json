@@ -9,6 +9,7 @@
   "max_steps": 12,
   "status": "insufficient_evidence",
   "completed_at": "2026-10-16T10:44:10Z",
+  "cancel_requested_at": null,
   "usage": {
     "budget_microusd": 500000,
     "reserved_microusd": 0,

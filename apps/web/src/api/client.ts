@@ -28,7 +28,7 @@ export interface RequestOptions {
 }
 
 interface RequestBody {
-  method: "PATCH";
+  method: "PATCH" | "POST";
   json: unknown;
 }
 
@@ -47,6 +47,15 @@ export function patchJson<T>(
   options: RequestOptions = {},
 ): Promise<T> {
   return request(path, parse, { method: "PATCH", json }, options);
+}
+
+export function postJson<T>(
+  path: string,
+  json: unknown,
+  parse: (value: unknown) => T | undefined,
+  options: RequestOptions = {},
+): Promise<T> {
+  return request(path, parse, { method: "POST", json }, options);
 }
 
 async function request<T>(

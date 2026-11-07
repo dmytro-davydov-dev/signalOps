@@ -86,6 +86,8 @@ class InvestigationView(ContractModel):
     created_at: UtcDatetime
     deadline_at: UtcDatetime
     completed_at: UtcDatetime | None = None
+    # A running investigation stays running until its worker acts on this.
+    cancel_requested_at: UtcDatetime | None = None
     max_steps: int = Field(ge=1)
     usage: InvestigationUsage
     diagnosis: Diagnosis | None = None

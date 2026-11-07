@@ -13,6 +13,7 @@ from contextlib import contextmanager
 import pytest
 from sqlalchemy import Engine, select
 
+from signalops.agents.investigations import cancel_investigation
 from signalops.agents.jobs import JobErrorCategory
 from signalops.config import Settings
 from signalops.contracts.diagnosis import Diagnosis, DiagnosisStatus
@@ -20,7 +21,7 @@ from signalops.contracts.steps import IncidentBrief
 from signalops.contracts.workflow import InvestigationStatus, JobStatus, StepStatus
 from signalops.persistence import database as db
 from signalops.persistence.models import AgentStep, Investigation, Job
-from tests.integration.job_support import add_job
+from tests.integration.job_support import LIVE, add_job
 
 pytestmark = pytest.mark.integration
 
@@ -126,3 +127,37 @@ async def test_a_killed_worker_resumes_at_the_next_unfinished_node(
     async with database.transaction() as session:
         investigation = await session.get_one(Investigation, investigation_id)
     assert investigation.status == InvestigationStatus.RUNNING  # P06-T05 writes the terminal state
+
+
+async def test_cancelling_a_worker_mid_call_leaves_no_downstream_call(
+    seeded: tuple[Settings, Engine],
+    database: db.Database,
+) -> None:
+    settings = seeded[0]
+    investigation_id = await add_job(database)
+
+    async def hanging_in_investigate() -> bool:
+        return "investigate" in await steps_of(database, investigation_id)
+
+    async def job_cancelled() -> bool:
+        return (await job_of(database, investigation_id)).status == JobStatus.CANCELLED
+
+    with worker(settings, "tests.integration.hanging_worker") as running:
+        await wait_for(hanging_in_investigate)
+        async with database.transaction() as session:
+            requested = await cancel_investigation(session, LIVE, investigation_id)
+        assert requested is not None
+        assert requested.status == InvestigationStatus.RUNNING
+
+        await wait_for(job_cancelled)
+
+        assert running.poll() is None, "the worker should outlive the job it stopped"
+
+    steps = await steps_of(database, investigation_id)
+    assert steps["load_context"].status == StepStatus.COMPLETED
+    assert steps["investigate"].status == StepStatus.FAILED
+    assert "conclude" not in steps
+    async with database.transaction() as session:
+        investigation = await session.get_one(Investigation, investigation_id)
+    assert investigation.status == InvestigationStatus.CANCELLED
+    assert investigation.completed_at is not None

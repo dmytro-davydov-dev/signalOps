@@ -59,9 +59,22 @@ on ack: UPDATE published_at
 - The worker heartbeats three times per lease (`SIGNALOPS_JOB_LEASE_SECONDS`, default 30). Expired leases can be reclaimed by another worker, which records `lease_expired` in `last_error`.
 - Every checkpoint and completion write goes through `JobRepository.hold`, which locks the job row after checking owner and generation. The write commits in that transaction, and a claim skips the locked row, so a takeover cannot fall between the check and the write. An expired lease nobody took stays valid.
 - A worker that cannot reach PostgreSQL keeps trying until its last renewal runs out, then cancels the handler.
+- Writers lock the job row before the investigation row, so they cannot deadlock.
 - Each claim spends an attempt, so a crash loop stops at `max_attempts` (default 3). The next claim fails that job and its investigation, with the `investigation.completed` outbox row in one transaction. A retry waits out a capped, jittered delay in `available_at`. A stopping worker releases its job and refunds the attempt.
 - `last_error` holds a category and the exception type. Only `TransientJobError` and `PermanentJobError` store a message, because other exception text can quote logs or evidence.
 - After losing its lease, a worker may still have a model call in flight. Provider deadlines and conservative budget reservations bound the damage.
+
+## Cancellation and deadlines
+
+- A cancellation request commits in `investigations.cancel_requested_at`. With no worker on the job, the same transaction ends the investigation ([ADR-023](decisions.md#adr-023-cancellation-is-a-durable-request-workers-end-the-job)).
+- `JobRepository.stop_reason` reports a cancellation or a passed `deadline_at`, by PostgreSQL's clock. The claim, each heartbeat, the transaction that opens a step, and each settling write read it.
+- No node starts after a stop commits. A heartbeat that finds one interrupts the running node, so a hung call stops within about a third of a lease. An interrupted call may still be charged.
+- A dead worker's job is ended by the next claim, without spending an attempt or running anything. So is a job the dispatcher created after its investigation was cancelled.
+- A cancelled job ends `cancelled`. A passed deadline ends the job and investigation `failed`, with `deadline_exceeded` in `last_error`. A step left `running` is marked `failed`; completed steps keep their output.
+- Work finished past the deadline still succeeds. A pending cancellation beats any outcome that has not committed.
+- A stopped worker cannot write afterward: the job is no longer `running`, so `JobRepository.hold` rejects it.
+- With no worker running, nothing ends a running or overdue job until one starts.
+- Verified by `tests/integration/test_cancellation.py` and by a real worker process cancelled inside a hung node in `tests/integration/test_workflow_recovery.py`.
 
 ## Workflow recovery
 

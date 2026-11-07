@@ -269,6 +269,8 @@ class Investigation(Base):
     deadline_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = created_at()
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # Set once by an operator. The worker holding the job ends the investigation.
+    cancel_requested_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     diagnosis: Mapped[dict[str, Any] | None] = optional_json()
     version: Mapped[int] = counter(1)
 

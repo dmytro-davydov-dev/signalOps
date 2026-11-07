@@ -30,6 +30,7 @@ from signalops.agents.investigations import (
     IdempotencyConflictError,
     IdempotentRequest,
     InvestigationPolicy,
+    end_investigation,
     request_by_detector,
     request_by_operator,
     request_hash_for,
@@ -62,6 +63,10 @@ from signalops.persistence.models import (
 from signalops.persistence.repositories.catalog import CatalogRepository
 from signalops.persistence.repositories.detection import SeriesKey
 from signalops.persistence.repositories.incidents import IncidentRepository, NewIncident
+from signalops.persistence.repositories.investigations import (
+    InvestigationRepository,
+    NewInvestigation,
+)
 from signalops.persistence.repositories.scope import EvidenceScope
 from signalops.persistence.seed import DEMO_WORKSPACE_ID
 from signalops.streaming.consumer import (
@@ -351,6 +356,117 @@ def test_a_repeat_still_answers_after_the_limit_drops(
     assert repeated.status_code == 202
     assert repeated.json()["id"] == created.json()["id"]
     assert fresh.status_code == 422
+
+
+def view_path(investigation_id: Any, suffix: str = "") -> str:
+    return f"/v1/investigations/{investigation_id}{suffix}"
+
+
+def bearer(token: str = TOKEN) -> dict[str, str]:
+    return {"Authorization": f"Bearer {token}"}
+
+
+def test_a_read_returns_the_durable_state(api: Api) -> None:
+    created = api.post(api.incident(), "read").json()
+
+    response = api.client.get(view_path(created["id"]), headers=bearer())
+
+    assert response.status_code == 200
+    view = response.json()
+    assert (view["id"], view["status"], view["replay_scope"]) == (created["id"], "queued", "live")
+    assert view["cancel_requested_at"] is None
+    assert view["diagnosis"] is None
+    assert view["usage"] == {
+        "budget_microusd": POLICY.budget_microusd,
+        "reserved_microusd": 0,
+        "spent_microusd": 0,
+    }
+
+
+def test_a_read_needs_a_token_and_stays_in_scope(api: Api) -> None:
+    created = api.post(api.incident(), "scoped").json()
+    url = view_path(created["id"])
+
+    assert api.client.get(url).status_code == 401
+    assert api.client.get(url, headers=bearer(OTHER_TOKEN)).status_code == 404
+    assert api.client.get(url, params={"replay_scope": REPLAY}, headers=bearer()).status_code == 404
+    assert api.client.get(view_path(uuid.uuid4()), headers=bearer()).status_code == 404
+
+
+def test_cancelling_before_dispatch_ends_the_investigation(api: Api) -> None:
+    created = api.post(api.incident(), "cancel").json()
+    url = view_path(created["id"], "/cancel")
+
+    first = api.client.post(url, headers=bearer())
+    repeat = api.client.post(url, headers=bearer())
+
+    assert first.status_code == 202
+    assert first.json()["status"] == "cancelled"
+    assert first.json()["completed_at"] is not None
+    assert first.json()["cancel_requested_at"] is not None
+    assert repeat.status_code == 202
+    assert repeat.json() == first.json()
+    assert api.client.get(view_path(created["id"]), headers=bearer()).json() == first.json()
+    events = api.run(lambda database: outbox_for(database, uuid.UUID(created["id"])))
+    assert [event.envelope["event_type"] for event in events] == [
+        "investigation.requested",
+        "investigation.completed",
+    ]
+    assert events[1].aggregate_version > events[0].aggregate_version
+
+
+def test_a_finished_investigation_cannot_be_cancelled(api: Api) -> None:
+    created = api.post(api.incident(), "finished").json()
+    investigation_id = uuid.UUID(created["id"])
+
+    async def fail(database: db.Database) -> None:
+        async with database.transaction() as session:
+            await end_investigation(session, investigation_id, InvestigationStatus.FAILED)
+
+    api.run(fail)
+
+    response = api.client.post(view_path(investigation_id, "/cancel"), headers=bearer())
+    assert response.status_code == 409
+    assert api.client.get(view_path(investigation_id), headers=bearer()).json()["status"] == (
+        "failed"
+    )
+
+
+def test_cancelling_outside_the_live_scope_of_the_workspace_is_404(api: Api) -> None:
+    created = api.post(api.incident(), "cancel-scope").json()
+    url = view_path(created["id"], "/cancel")
+
+    assert api.client.post(url).status_code == 401
+    assert api.client.post(url, headers=bearer(OTHER_TOKEN)).status_code == 404
+    assert api.client.post(view_path(uuid.uuid4(), "/cancel"), headers=bearer()).status_code == 404
+
+    async def replay_investigation(database: db.Database) -> uuid.UUID:
+        scope = EvidenceScope(DEMO_WORKSPACE_ID, REPLAY)
+        incident_id = await add_incident(database, scope)
+        now = datetime.now(UTC)
+        async with database.transaction() as session:
+            row = await InvestigationRepository(session).create(
+                NewInvestigation(
+                    scope=scope,
+                    incident_id=incident_id,
+                    request_key=f"test:{uuid.uuid4()}",
+                    workflow_version=WORKFLOW_VERSION,
+                    budget_microusd=1,
+                    max_steps=1,
+                    created_at=now,
+                    deadline_at=now + WINDOW,
+                )
+            )
+            assert row is not None
+            return row.id
+
+    replayed = api.run(replay_investigation)
+    assert api.client.post(view_path(replayed, "/cancel"), headers=bearer()).status_code == 404
+    response = api.client.get(
+        view_path(replayed), params={"replay_scope": REPLAY}, headers=bearer()
+    )
+    assert response.status_code == 200
+    assert response.json()["status"] == "queued"
 
 
 def idempotent(incident_id: uuid.UUID, key: str, body: InvestigationRequest) -> IdempotentRequest:

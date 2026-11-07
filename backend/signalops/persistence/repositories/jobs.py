@@ -7,24 +7,40 @@ who owns a job.
 and the write it guards commits in the same transaction. A claim skips a locked
 row, so a takeover cannot slip between the check and the write. A lease past
 `lease_until` that nobody has taken stays valid: its generation is still current.
+
+Writers lock a job before its investigation, so they cannot deadlock.
 """
 
 import uuid
 from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import timedelta
+from enum import StrEnum
 from typing import Any
 
 from sqlalchemy import and_, func, or_, select, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from signalops.contracts.workflow import AgentRole, InvestigationStatus, JobStatus, StepStatus
+from signalops.contracts.workflow import (
+    TERMINAL_INVESTIGATION_STATUSES,
+    AgentRole,
+    InvestigationStatus,
+    JobStatus,
+    StepStatus,
+)
 from signalops.persistence.models import AgentStep, Investigation, Job
 
 
 class LeaseLostError(Exception):
     """The job is no longer held at this owner and generation."""
+
+
+class JobStop(StrEnum):
+    """Why a job must end whatever its handler is doing."""
+
+    CANCELLED = "cancelled"
+    DEADLINE_EXCEEDED = "deadline_exceeded"
 
 
 @dataclass(frozen=True)
@@ -112,6 +128,36 @@ class JobRepository:
         if job is None:
             raise LeaseLostError(f"job {lease.job_id} generation {lease.generation}")
         return job
+
+    async def locked_for(self, investigation_id: uuid.UUID) -> Job | None:
+        return await self._session.scalar(
+            select(Job)
+            .where(Job.investigation_id == investigation_id)
+            .with_for_update()
+            .execution_options(populate_existing=True)
+        )
+
+    async def stop_reason(self, investigation_id: uuid.UUID) -> JobStop | None:
+        """Why the investigation's job must stop, by PostgreSQL's clock; cancellation first.
+
+        Both reasons are permanent. Under the job lock a cancellation cannot land
+        between this read and the write it decides.
+        """
+        status, cancel_requested_at, overdue = (
+            await self._session.execute(
+                select(
+                    Investigation.status,
+                    Investigation.cancel_requested_at,
+                    Investigation.deadline_at <= func.clock_timestamp(),
+                ).where(Investigation.id == investigation_id)
+            )
+        ).one()
+        if cancel_requested_at is not None:
+            return JobStop.CANCELLED
+        # A cancellation that raced the dispatcher leaves a job with nothing to do.
+        if InvestigationStatus(status) in TERMINAL_INVESTIGATION_STATUSES:
+            return JobStop.CANCELLED
+        return JobStop.DEADLINE_EXCEEDED if overdue else None
 
     async def finish(
         self, job_id: uuid.UUID, status: JobStatus, last_error: dict[str, Any] | None = None
@@ -215,6 +261,17 @@ class JobRepository:
         """Fenced end of a running step that raised; a retry reopens it."""
         return await self._end_step(
             lease, step_key, status=StepStatus.FAILED, checkpoint=checkpoint
+        )
+
+    async def abandon_steps(self, investigation_id: uuid.UUID) -> None:
+        """Fail steps left running by an investigation that has ended."""
+        await self._session.execute(
+            update(AgentStep)
+            .where(
+                AgentStep.investigation_id == investigation_id,
+                AgentStep.status == StepStatus.RUNNING,
+            )
+            .values(status=StepStatus.FAILED, completed_at=func.clock_timestamp())
         )
 
     async def _end_step(self, lease: JobLease, step_key: str, **values: Any) -> bool:

@@ -19,6 +19,11 @@ new, so it still answers after the settings are lowered.
 **Replay.** Requests are live only. A replay run's investigations are the
 evaluation's to start, under its own budget (P10), so neither an operator nor the
 detector can add spend to one.
+
+**Cancellation.** A request with no worker on the job ends the investigation in
+its own transaction. Otherwise it stays recorded, and the worker ends the
+investigation at its next check, or the next claim does if that worker died
+(ADR-023). An ending investigation stages `investigation.completed` once.
 """
 
 import hashlib
@@ -43,13 +48,18 @@ from signalops.contracts.events import (
     InvestigationTrigger,
 )
 from signalops.contracts.investigations import InvestigationRequest
-from signalops.contracts.workflow import TERMINAL_INVESTIGATION_STATUSES, InvestigationStatus
+from signalops.contracts.workflow import (
+    TERMINAL_INVESTIGATION_STATUSES,
+    InvestigationStatus,
+    JobStatus,
+)
 from signalops.persistence.models import Investigation
 from signalops.persistence.repositories.incidents import IncidentRepository
 from signalops.persistence.repositories.investigations import (
     InvestigationRepository,
     NewInvestigation,
 )
+from signalops.persistence.repositories.jobs import JobRepository
 from signalops.persistence.repositories.reliability import OutboxRepository
 from signalops.persistence.repositories.scope import EvidenceScope
 
@@ -90,6 +100,10 @@ class IdempotencyConflictError(Exception):
 
 class InvestigationLimitError(Exception):
     """The request asks for more than the configured limit."""
+
+
+class InvestigationFinishedError(Exception):
+    """The investigation ended another way, so it cannot be cancelled."""
 
 
 def request_hash_for(incident_id: uuid.UUID, body: InvestigationRequest) -> str:
@@ -213,21 +227,53 @@ async def request_by_detector(
         await _publish(session, created, InvestigationTrigger.DETECTOR, now)
 
 
-async def fail_investigation(session: AsyncSession, investigation_id: uuid.UUID) -> None:
-    """Fail the investigation and stage `investigation.completed`; a terminal one stays as it is.
+async def cancel_investigation(
+    session: AsyncSession, scope: EvidenceScope, investigation_id: uuid.UUID
+) -> Investigation | None:
+    """Record a cancellation, ending the investigation if no worker holds its job.
 
-    The aggregate version is the investigation's `version`, which claiming has
-    already moved past the request's version 1, so the events publish in order.
+    None when there is no such investigation. Repeating the request changes nothing.
+    """
+    jobs = JobRepository(session)
+    job = await jobs.locked_for(investigation_id)
+    investigations = InvestigationRepository(session)
+    investigation = await investigations.locked(scope, investigation_id)
+    if investigation is None:
+        return None
+    status = InvestigationStatus(investigation.status)
+    if status == InvestigationStatus.CANCELLED:
+        return investigation
+    if status in TERMINAL_INVESTIGATION_STATUSES:
+        raise InvestigationFinishedError(f"the investigation already ended as {status}")
+    if investigation.cancel_requested_at is None:
+        investigation.cancel_requested_at = await session.scalar(select(func.clock_timestamp()))
+        await session.flush()
+    if job is None or job.status != JobStatus.RUNNING:
+        if job is not None and job.status == JobStatus.QUEUED:
+            await jobs.finish(job.id, JobStatus.CANCELLED)
+        await end_investigation(session, investigation_id, InvestigationStatus.CANCELLED)
+    return investigation
+
+
+async def end_investigation(
+    session: AsyncSession, investigation_id: uuid.UUID, status: InvestigationStatus
+) -> None:
+    """Move the investigation to a terminal status and stage `investigation.completed`.
+
+    A terminal investigation stays as it is. The aggregate version is the
+    investigation's `version`, always past the request's version 1 by here, so
+    the events publish in order. Hold the job's row lock first.
     """
     investigation = await session.get_one(Investigation, investigation_id, with_for_update=True)
     if InvestigationStatus(investigation.status) in TERMINAL_INVESTIGATION_STATUSES:
         return
     at = await session.scalar(select(func.clock_timestamp()))
     assert at is not None  # noqa: S101 - a scalar function always returns a row
-    investigation.status = InvestigationStatus.FAILED
+    investigation.status = status
     investigation.completed_at = at
     investigation.version += 1
     await session.flush()
+    await JobRepository(session).abandon_steps(investigation_id)
     envelope = EventEnvelope[EventPayload](
         event_id=uuid.uuid5(INVESTIGATION_EVENT_NAMESPACE, f"{investigation.id}:completed"),
         event_type=EventType.INVESTIGATION_COMPLETED,
@@ -239,7 +285,7 @@ async def fail_investigation(session: AsyncSession, investigation_id: uuid.UUID)
         payload=InvestigationCompletedPayload(
             investigation_id=investigation.id,
             incident_id=investigation.incident_id,
-            status=InvestigationStatus.FAILED,
+            status=status,
             workflow_version=investigation.workflow_version,
         ),
     )

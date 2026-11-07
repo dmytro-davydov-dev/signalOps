@@ -72,7 +72,7 @@ The `service_hint` is the source's own string, used as given: two spellings of o
 | `signal.normalized` | `signals.normalized.v1` | `NormalizedSignalPayload`: signal and service IDs, kind, quality status |
 | `incident.changed` | `incidents.changed.v1` | `IncidentChangedPayload`: incident ID and version, change kind, status, severity, replay scope |
 | `investigation.requested` | `investigations.requested.v1` | `InvestigationRequestedPayload`: investigation and incident IDs, request key, trigger, workflow version |
-| `investigation.completed` | `investigations.completed.v1` | `InvestigationCompletedPayload`: terminal status, optional diagnosis status. Written only for `failed` until P06-T05; its aggregate version is the investigation's `version` |
+| `investigation.completed` | `investigations.completed.v1` | `InvestigationCompletedPayload`: terminal status, optional diagnosis status. Written only for `failed` and `cancelled` until P06-T05; its aggregate version is the investigation's `version` |
 | `processing.failed` | `processing.failed.v1` | `ProcessingFailedPayload`: consumer group, original topic/partition/offset/event ID, error category and redacted detail |
 
 Raw adapter records are validated by the normalizer against `contracts/adapters.py` (`StructuredLogInput`, `TraceSummaryInput`, `DeploymentInput`). Fields those models do not define are moved into `attributes`; a name present both as an unknown field and inside `attributes` is rejected.
