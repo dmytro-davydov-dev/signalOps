@@ -227,6 +227,18 @@ Every claim spends an attempt, including a takeover, and a job out of attempts f
 
 **Revisit when:** Phase 7 measures real call lengths against the 30-second lease; or workers need more than one job per process.
 
+## ADR-022: The workflow is a fixed node sequence with a fenced write per step
+
+**Decision:** `agents/workflow.py` defines a workflow as a versioned tuple of typed nodes in `WORKFLOWS`. `WorkflowEngine` is the job handler. It reloads the steps, reuses completed ones after validating them, and runs the rest. Each step gets a fenced open and a fenced end, in separate short transactions, and the node runs between them outside any transaction. The node key is the step key. An investigation runs the version it was requested with.
+
+A failed node marks its step `failed` and a retry reopens it; a step left `running` by a dead worker is taken over. Completed output that does not validate, or that another workflow version wrote, raises `PermanentJobError` and fails the job. Reaching `max_steps` does the same.
+
+**Reason:** A step row is the only checkpoint, so resuming needs no replay log and a crash at any point leaves a state the same code can continue from. Separate transactions keep model calls out of database transactions. Failing on unusable output is the only honest choice: a completed step cannot change state, so it can neither run again nor be trusted.
+
+**Trade-off:** A node can run twice if its worker dies inside it, so execution is at least once. Nodes run strictly in sequence, so parallel specialists (Phase 9) must extend the engine. Any change to a node's behavior or output that resuming investigations would notice needs a new workflow version. `StepCheckpoint.completed_tool_calls` stays empty until tools exist.
+
+**Revisit when:** Phase 9 adds parallel branches or the verifier's follow-up round, which need more than one step per node.
+
 ## Open questions
 
 | # | Question | Decide by |

@@ -170,6 +170,14 @@ services:
       migrate: { condition: service_completed_successfully }
       init-topics: { condition: service_completed_successfully }
 
+  # Claims jobs and runs their workflow; a stopped worker releases its job.
+  investigation-worker:
+    <<: *backend
+    command: ["worker"]
+    restart: unless-stopped
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+
   # Closes live detection windows by wall clock and evaluates their rules.
   detector-closer:
     <<: *backend

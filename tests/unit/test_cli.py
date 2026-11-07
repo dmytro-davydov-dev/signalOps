@@ -99,6 +99,13 @@ def test_dispatcher_consumes_investigation_requests(monkeypatch: pytest.MonkeyPa
     assert calls == [("dispatcher-v1", "investigation.requested")]
 
 
+def test_worker_is_a_command() -> None:
+    from signalops.cli import COMMANDS, build_parser
+
+    assert build_parser().parse_args(["worker"]).command == "worker"
+    assert "worker" in COMMANDS
+
+
 def test_detector_flush_requires_workspace_and_run() -> None:
     with pytest.raises(SystemExit) as exc:
         main(["detector-flush", "--workspace-id", "not-a-uuid", "--replay-run-id", "x"])

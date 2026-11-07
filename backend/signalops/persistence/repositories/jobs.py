@@ -10,6 +10,7 @@ row, so a takeover cannot slip between the check and the write. A lease past
 """
 
 import uuid
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import timedelta
 from typing import Any
@@ -160,7 +161,7 @@ class JobRepository:
         step_input: dict[str, Any],
         checkpoint: dict[str, Any],
     ) -> bool:
-        """Fenced upsert of a running step; False when the step has already finished."""
+        """Fenced open of a step, or of a retry of one; False when it has completed."""
         await self.hold(lease)
         statement = insert(AgentStep).values(
             investigation_id=lease.investigation_id,
@@ -177,11 +178,59 @@ class JobRepository:
             statement.on_conflict_do_update(
                 index_elements=[AgentStep.investigation_id, AgentStep.step_key],
                 set_={
+                    "status": StepStatus.RUNNING,
                     "attempt": statement.excluded.attempt,
                     "checkpoint": statement.excluded.checkpoint,
                     "lease_generation": statement.excluded.lease_generation,
+                    "completed_at": None,
                 },
-                where=AgentStep.status == StepStatus.RUNNING,
+                where=AgentStep.status.in_((StepStatus.RUNNING, StepStatus.FAILED)),
             ).returning(AgentStep.id)
         )
         return saved is not None
+
+    async def steps_of(self, investigation_id: uuid.UUID) -> Sequence[AgentStep]:
+        rows = await self._session.scalars(
+            select(AgentStep).where(AgentStep.investigation_id == investigation_id)
+        )
+        return rows.all()
+
+    async def complete_step(
+        self,
+        lease: JobLease,
+        step_key: str,
+        output: dict[str, Any],
+        checkpoint: dict[str, Any],
+    ) -> bool:
+        """Fenced end of a running step, with the output a resume reuses."""
+        return await self._end_step(
+            lease,
+            step_key,
+            status=StepStatus.COMPLETED,
+            output=output,
+            checkpoint=checkpoint,
+        )
+
+    async def fail_step(self, lease: JobLease, step_key: str, checkpoint: dict[str, Any]) -> bool:
+        """Fenced end of a running step that raised; a retry reopens it."""
+        return await self._end_step(
+            lease, step_key, status=StepStatus.FAILED, checkpoint=checkpoint
+        )
+
+    async def _end_step(self, lease: JobLease, step_key: str, **values: Any) -> bool:
+        await self.hold(lease)
+        ended = await self._session.scalar(
+            update(AgentStep)
+            .where(
+                AgentStep.investigation_id == lease.investigation_id,
+                AgentStep.step_key == step_key,
+                AgentStep.status == StepStatus.RUNNING,
+            )
+            .values(
+                lease_generation=lease.generation,
+                completed_at=func.clock_timestamp(),
+                **values,
+            )
+            .returning(AgentStep.id)
+        )
+        return ended is not None

@@ -27,11 +27,11 @@ PostgreSQL owns evidence, workflow progress, budgets, and the initial knowledge 
 | --- | --- |
 | Active phase | Phase 6 Durable jobs and workflow runtime; Phase 5 gate passed |
 | Active task | None |
-| Last completed task | P06-T02 |
-| Latest verified commit | `1fa2d42` (P06-T01); P06-T02 pending commit, validated against the working tree |
-| Validation evidence | P06-T02: `SIGNALOPS_INTEGRATION=1 uv run pytest` 900 passed; `alembic check` clean at `0013_idempotency_keys`; the 45 lease tests on Compose PostgreSQL repeated 5 times. Eight concurrent claims gave one owner, stale writers were rejected, and a crash loop stopped at `max_attempts`. Lease expiry was simulated; no real process was killed, which P06-T03 covers. Earlier evidence is in the work log |
+| Last completed task | P06-T03 |
+| Latest verified commit | `e4a3a36` (P06-T02); P06-T03 pending commit, validated against the working tree |
+| Validation evidence | P06-T03: `SIGNALOPS_INTEGRATION=1 uv run pytest` 926 passed. A real worker process took SIGKILL inside `investigate`; after the lease expired, `signalops worker` resumed there, with the `load_context` row unchanged (run 5 more times, all passed). The workflow runs only the fake sequence, and no model was called. Earlier evidence is in the work log |
 | Blockers | None recorded |
-| Next task | P06-T03 |
+| Next task | P06-T04 |
 
 ### Scope and release boundaries
 
@@ -580,11 +580,18 @@ Start the React shell in Phase 1 and add API-backed incident views in Phase 5; P
 
 ### P06-T03 Implement the persisted workflow engine
 
-- [ ] Complete this task.
+- [x] Complete this task.
 
 **Implementation:** Define typed workflow nodes, versioned state transitions, deterministic step keys, checkpoints, and validated output reuse. Run a fake-provider sequence before any real model calls.
 
 **Acceptance:** Killing the worker after a completed node resumes at the next unfinished node and retains completed output.
+
+**Notes (2026-11-07):**
+- **Decision (ADR-022):** `agents/workflow.py` holds typed `Node`s in a versioned `WORKFLOWS` map, and `WorkflowEngine` is the `JobRunner` handler. The node key is the step key. Each step has a fenced open and a fenced end in separate transactions, and the node runs outside any transaction. `signalops worker` and Compose `investigation-worker` are added, as P06-T02 deferred.
+- **The fake sequence:** `load_context` reads the incident, `investigate` makes no model call and always abstains, and `conclude` builds an `insufficient_evidence` `Diagnosis`. The `Diagnosis` stays in `agent_steps.output`; nothing writes it to the investigation yet. The gateway is P07-T01, so no provider is called, even a fake one.
+- **Choices the task did not state:** `reused_output` raises `PermanentJobError` on unusable output, because a completed step cannot run again; `max_steps` reached also fails the job, and whether it should abstain instead is left to Phase 7; a failed node marks its step `failed` with an `error_record` in `checkpoint.state`, so `save_checkpoint` now reopens failed steps; `IncidentBrief` holds only fields fixed at detection, because severity can change after the evidence cutoff.
+- **Test code:** `tests/integration/hanging_worker.py` is a real worker whose `investigate` never returns, so production code needs no fault-injection setting. `add_job` moved to `tests/integration/job_support.py`.
+- Left: the investigation stays `running` after its job succeeds, so each one finished by the worker is stranded until P06-T05, and that task must decide how to recover those rows; output is not published as progress (P06-T05); deadlines and cancellation are unchecked between nodes (P06-T04); Phase 7's real investigator needs a new workflow version, since v1 steps hold fake output; nodes run only in sequence (Phase 9).
 
 ### P06-T04 Implement cancellation and deadlines
 
@@ -1207,13 +1214,23 @@ Keep these outside the release critical path unless measurements justify promoti
 
 ### 2026-11-07 — P06-T02
 - Status: completed
-- Commit: pending commit; validated against the current working tree.
+- Commit: `e4a3a36`.
 - Implemented: `persistence/repositories/jobs.py` (`JobRepository`, `JobLease`, `LeaseLostError`); `agents/jobs.py` (`claim_job`, `complete_job`, `retry_job`, `fail_job`, `release_job`, `JobRunner`, `JobPolicy`); `fail_investigation` in `agents/investigations.py`; `SIGNALOPS_JOB_LEASE_SECONDS` and `SIGNALOPS_JOB_POLL_INTERVAL_MS`; ADR-021; docs (data-model, decisions, development, events, reliability). No migration: the columns and indexes date from `0003_incident_workflow`.
 - Validation commands and results: `uv run ruff check .`, `uv run ruff format --check .`, `uv run mypy` (129 files), `uv run signalops export-schemas --check` pass; `uv run pytest` 506 passed, 394 skipped; `SIGNALOPS_INTEGRATION=1 uv run pytest` 900 passed; `tests/integration/test_job_leases.py` repeated 5 times, 45 passed each; `docker compose config --quiet` passes; `alembic check` reports no new operations. Of 29 deliberate mutations, 28 fail the tests, three of them only after adding the same-owner and wrong-owner cases. The survivor, a lost lease attempting to settle, is rejected by the fence with the same outcome. Frontend checks not run: no frontend change.
 - Evidence or artifact references: `tests/integration/test_job_leases.py`, `tests/unit/test_jobs.py`. The tests ran against Compose PostgreSQL with up to eight concurrent claims on separate connections.
 - Deviations and reasons: none from the task. No worker command yet; see task notes.
 - Remaining issues: see task notes.
 - Next task: P06-T03.
+
+### 2026-11-07 — P06-T03
+- Status: completed
+- Commit: pending commit; validated against the current working tree.
+- Implemented: `agents/workflow.py` (`Node`, `Workflow`, `WORKFLOWS`, `NodeContext`, `WorkflowEngine`, `reused_output`); `contracts/steps.py`; `steps_of`, `complete_step`, `fail_step`, and failed-step reopening in `JobRepository`; `signalops worker`; Compose `investigation-worker`; ADR-022; docs (agents-and-workflow, decisions, development, reliability). No migration.
+- Validation commands and results: `uv run ruff check .`, `uv run ruff format --check .`, `uv run mypy` (136 files), `uv run signalops export-schemas --check` pass; `uv run pytest` 514 passed, 412 skipped; `SIGNALOPS_INTEGRATION=1 uv run pytest` 926 passed; `docker compose config --quiet` passes; `tests/integration/test_workflow_recovery.py` repeated 5 times, all passed. Of 16 deliberate mutations, all fail the tests, two only after adding repository-level tests for completed-output protection and the ending lease's generation. `alembic check` was not rerun beyond `test_migrations_match_models`: no model changed. Frontend checks not run: no frontend change.
+- Evidence or artifact references: `tests/integration/test_workflow_recovery.py`, `tests/integration/test_workflow_engine.py`, `tests/unit/test_workflow.py`. `investigation-worker` built and ran in Compose and completed the three steps of the one queued dev job, whose investigation stays `running` as noted under the task.
+- Deviations and reasons: `investigate` is a plain function rather than a fake provider, because the gateway is P07-T01.
+- Remaining issues: see task notes.
+- Next task: P06-T04.
 
 ## Work log template
 

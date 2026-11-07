@@ -63,6 +63,14 @@ on ack: UPDATE published_at
 - `last_error` holds a category and the exception type. Only `TransientJobError` and `PermanentJobError` store a message, because other exception text can quote logs or evidence.
 - After losing its lease, a worker may still have a model call in flight. Provider deadlines and conservative budget reservations bound the damage.
 
+## Workflow recovery
+
+- `WorkflowEngine` (`agents/workflow.py`) opens a step, runs its node outside any transaction, and ends the step. Both writes go through `JobRepository.hold`.
+- A new attempt reloads the steps, reuses completed output after validating it, and runs the rest. A step left `running` or `failed` is reopened under the new lease.
+- A node may run twice if its worker dies inside it. Only completed output is guaranteed to be reused.
+- Completed output that fails validation, or that another workflow version wrote, fails the job. A completed step never runs again.
+- Verified by `tests/integration/test_workflow_recovery.py`: a real process is sent SIGKILL inside the second node, and `signalops worker` resumes it after the lease expires, keeping the first step's row unchanged.
+
 ## Detector state
 
 - The receipt insert and the aggregate update share one transaction, so a Redis-only window would not survive a restart.
@@ -115,7 +123,7 @@ These come from the plan's §13. Each needs a meaningful automated or scripted c
 - [x] Outbox crash after broker ack causes a harmless duplicate (P03-T03).
 - [x] A consumer stopped mid-stream resumes after its last committed record with nothing skipped or repeated; a revoke drops a pending retry and the reassigned partition is fetched again (P03-T05).
 - [x] Permanent failures are quarantined to `processing.failed.v1`; an unacknowledged failure event never commits the original; transient failures retry in place; a redriven record is applied once (P03-T04).
-- [ ] Worker killed after one step: lease expiry, checkpoint reuse, stale-writer rejection.
+- [x] Worker killed after one step: lease expiry, checkpoint reuse, stale-writer rejection (P06-T03).
 - [ ] Provider throttling, ambiguous timeout, malformed output, parallel budget exhaustion.
 - [ ] Redis restart mid-investigation: durable work survives and SSE catches up.
 - [ ] Late and out-of-order signals, plus replay isolation. No access to future evidence or ground truth.

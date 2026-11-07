@@ -30,6 +30,8 @@ flowchart TD
 - The verifier may request **one** bounded follow-up round, and only within the remaining budget and deadline.
 - Downstream capacity for synthesis and verification is reserved up front, so specialists cannot exhaust the budget first.
 
+The engine exists (P06-T03, ADR-022) with a three-node fake sequence: `load_context`, `investigate`, `conclude`. `investigate` makes no model call and always abstains. Phase 7 replaces it, and Phase 9 adds the branches above.
+
 ## Roles
 
 | Role | Responsibility | Output |

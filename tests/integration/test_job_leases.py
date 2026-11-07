@@ -33,28 +33,18 @@ from signalops.agents.jobs import (
 from signalops.contracts.events import EventType
 from signalops.contracts.workflow import (
     AgentRole,
-    IncidentSeverity,
     InvestigationStatus,
     JobStatus,
     StepStatus,
 )
-from signalops.detection.rules import Window
 from signalops.persistence import database as db
 from signalops.persistence.models import AgentStep, Investigation, Job, OutboxEvent
-from signalops.persistence.repositories.incidents import IncidentRepository, NewIncident
-from signalops.persistence.repositories.investigations import (
-    InvestigationRepository,
-    NewInvestigation,
-)
 from signalops.persistence.repositories.jobs import JobLease, JobRepository, LeaseLostError
-from signalops.persistence.repositories.scope import EvidenceScope
-from signalops.persistence.seed import DEMO_WORKSPACE_ID
 from signalops.streaming.retry import RetryPolicy
+from tests.integration.job_support import add_job
 
 pytestmark = pytest.mark.integration
 
-LIVE = EvidenceScope(DEMO_WORKSPACE_ID)
-T0 = datetime(2026, 11, 1, 12, 0, tzinfo=UTC)
 POLICY = JobPolicy(lease_seconds=30, retry=RetryPolicy(base_delay_seconds=60, max_delay_seconds=60))
 FAST = JobPolicy(lease_seconds=0.6, poll_interval_seconds=0.05)
 A, B = "worker-a", "worker-b"
@@ -64,38 +54,6 @@ A, B = "worker-a", "worker-b"
 async def no_other_jobs(database: db.Database) -> None:
     async with database.transaction() as session:
         await session.execute(delete(Job))
-
-
-async def add_job(database: db.Database) -> uuid.UUID:
-    """A queued investigation with its job; returns the investigation."""
-    now = datetime.now(UTC)
-    async with database.transaction() as session:
-        incident_id = await IncidentRepository(session).create(
-            NewIncident(
-                scope=LIVE,
-                fingerprint=f"env:{uuid.uuid4().hex[:8]}",
-                title="High error rate",
-                severity=IncidentSeverity.HIGH,
-                window=Window(T0, T0 + timedelta(minutes=1)),
-                detected_at=T0 + timedelta(minutes=1),
-            )
-        )
-        repository = InvestigationRepository(session)
-        investigation = await repository.create(
-            NewInvestigation(
-                scope=LIVE,
-                incident_id=incident_id,
-                request_key=f"test:{uuid.uuid4()}",
-                workflow_version="v1",
-                budget_microusd=1_000,
-                max_steps=5,
-                created_at=now,
-                deadline_at=now + timedelta(minutes=10),
-            )
-        )
-        assert investigation is not None
-        assert await repository.enqueue(investigation.id)
-        return investigation.id
 
 
 async def job_of(database: db.Database, investigation_id: uuid.UUID) -> Job:

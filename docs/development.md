@@ -53,6 +53,7 @@ uv run signalops normalizer              # normalize signals.raw.v1 into evidenc
 uv run signalops detector                # update detection windows from signals.normalized.v1 until SIGINT/SIGTERM
 uv run signalops graph-projector         # project signals.normalized.v1 into the temporal graph until SIGINT/SIGTERM
 uv run signalops dispatcher              # turn investigations.requested.v1 into durable jobs until SIGINT/SIGTERM
+uv run signalops worker                  # claim investigation jobs and run their workflow until SIGINT/SIGTERM
 uv run signalops detector-closer         # close live detection windows by wall clock until SIGINT/SIGTERM
 uv run signalops detector-flush --workspace-id W --replay-run-id R  # close a replay's remaining windows, then exit
 uv run signalops outbox-publisher        # publish pending outbox rows until SIGINT/SIGTERM

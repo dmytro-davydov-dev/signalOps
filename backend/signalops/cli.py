@@ -39,6 +39,9 @@ def build_parser() -> argparse.ArgumentParser:
         help="turn investigations.requested.v1 into durable jobs until stopped",
     )
     commands.add_parser(
+        "worker", help="claim investigation jobs and run their workflow until stopped"
+    )
+    commands.add_parser(
         "detector-closer", help="close live detection windows by wall clock until stopped"
     )
     flush = commands.add_parser(
@@ -324,6 +327,36 @@ def run_dispatcher() -> int:
     )
 
 
+def run_worker() -> int:
+    import asyncio
+    import signal
+
+    from signalops.agents.jobs import JobPolicy, JobRunner
+    from signalops.agents.workflow import WorkflowEngine
+    from signalops.config import get_settings
+    from signalops.logs import configure_logging
+    from signalops.persistence.database import Database, create_engine
+
+    settings = get_settings()
+    configure_logging(settings.log_level)
+
+    async def work() -> None:
+        stop = asyncio.Event()
+        loop = asyncio.get_running_loop()
+        for signum in (signal.SIGINT, signal.SIGTERM):
+            loop.add_signal_handler(signum, stop.set)
+        engine = create_engine(settings)
+        database = Database.from_engine(engine)
+        runner = JobRunner(database, WorkflowEngine(database), JobPolicy.from_settings(settings))
+        try:
+            await runner.run(stop)
+        finally:
+            await engine.dispose()
+
+    asyncio.run(work())
+    return 0
+
+
 def run_detector_closer() -> int:
     import asyncio
     import signal
@@ -572,6 +605,7 @@ COMMANDS = {
     "detector": run_detector,
     "graph-projector": run_graph_projector,
     "dispatcher": run_dispatcher,
+    "worker": run_worker,
     "detector-closer": run_detector_closer,
 }
 
