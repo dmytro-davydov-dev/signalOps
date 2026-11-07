@@ -28,7 +28,7 @@ PostgreSQL owns evidence, workflow progress, budgets, and the initial knowledge 
 | Active phase | Phase 8 Incident workspace and live frontend; Phase 7 gate passed on the fake provider |
 | Active task | None |
 | Last completed task | P07-T06 |
-| Latest verified commit | `7f77717` (P07-T06) |
+| Latest verified commit | `7671838` (Phase 7 gate) |
 | Validation evidence | Phase 7 gate: `SIGNALOPS_INTEGRATION=1 uv run pytest` 1153 passed, and 28 deliberate mutations of the safety checks all fail the tests after two test gaps were closed. On Compose with the fake provider, a real-time fault run produced an automatic investigation naming `bank-gateway` with 10 verified citations and accounted cost, and a Redis outage paused calls until it recovered. No model was called. Earlier evidence is in the work log |
 | Blockers | None recorded |
 | Next task | P08-T01 |
@@ -1368,7 +1368,7 @@ Keep these outside the release critical path unless measurements justify promoti
 
 ### 2026-11-07 — Phase 7 gate
 - Status: completed on the fake provider
-- Commit: pending
+- Commit: `7671838`
 - Implemented: `InvestigationUsage` gained model calls, tokens, spend by basis, and unknown calls, as an additive contract change, because `docs/api.md` promised labelled cost; `LlmCallRepository.usage_of`; regenerated schemas and fixtures; two test gaps closed; status docs.
 - Validation commands and results: `SIGNALOPS_INTEGRATION=1 uv run pytest` 1153 passed, after fixing one exact `usage` comparison; `uv run ruff check .`, `uv run ruff format --check .`, `uv run mypy` (163 files), `uv run signalops export-schemas --check`, `docker compose config --quiet` pass; `pnpm lint`, `pnpm typecheck`, `pnpm build` pass; `pnpm test` 42 passed. Of 28 deliberate mutations, 26 failed the tests at first. The 2 survivors, an unfenced first tool write and an unchecked cached tool and cutoff, exposed test gaps, which were closed, and both then failed the tests, as did each half of the cache check.
 - Evidence or artifact references: see the Phase 7 gate note.
