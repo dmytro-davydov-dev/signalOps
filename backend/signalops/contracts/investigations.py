@@ -71,6 +71,19 @@ class InvestigationUsage(ContractModel):
     budget_microusd: NonNegativeInt
     reserved_microusd: NonNegativeInt
     spent_microusd: NonNegativeInt
+    # Model calls so far, whatever their outcome.
+    model_calls: NonNegativeInt = 0
+    input_tokens: NonNegativeInt = 0
+    output_tokens: NonNegativeInt = 0
+    cache_read_tokens: NonNegativeInt = 0
+    cache_write_tokens: NonNegativeInt = 0
+    # `spent_microusd` split by how it is known: provider-reported tokens at published
+    # prices, or an estimate.
+    actual_microusd: NonNegativeInt = 0
+    estimated_microusd: NonNegativeInt = 0
+    # Calls whose cost cannot be known, and what they keep reserved. They may have billed.
+    unknown_calls: NonNegativeInt = 0
+    unknown_reserved_microusd: NonNegativeInt = 0
 
 
 class InvestigationView(ContractModel):

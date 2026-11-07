@@ -11,8 +11,9 @@ fact about money, but a call already closed as unknown stays unknown.
 
 import uuid
 from dataclasses import dataclass
+from typing import Any
 
-from sqlalchemy import func, select, update
+from sqlalchemy import ColumnElement, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from signalops.contracts.workflow import CostBasis, LlmCallStatus
@@ -44,6 +45,19 @@ class SettledUsage:
     provider_request_id: str | None
 
 
+@dataclass(frozen=True)
+class UsageTotals:
+    model_calls: int = 0
+    input_tokens: int = 0
+    output_tokens: int = 0
+    cache_read_tokens: int = 0
+    cache_write_tokens: int = 0
+    actual_microusd: int = 0
+    estimated_microusd: int = 0
+    unknown_calls: int = 0
+    unknown_reserved_microusd: int = 0
+
+
 class LlmCallRepository:
     def __init__(self, session: AsyncSession) -> None:
         self._session = session
@@ -57,6 +71,30 @@ class LlmCallRepository:
                 )
             )
         ).scalar_one()
+
+    async def usage_of(self, investigation_id: uuid.UUID) -> UsageTotals:
+        def total(column: Any, *when: ColumnElement[bool]) -> Any:
+            return func.coalesce(func.sum(column).filter(*when), 0)
+
+        unknown = LlmCall.status == LlmCallStatus.UNKNOWN
+        row = (
+            await self._session.execute(
+                select(
+                    func.count(),
+                    total(LlmCall.input_tokens),
+                    total(LlmCall.output_tokens),
+                    total(LlmCall.cache_read_tokens),
+                    total(LlmCall.cache_write_tokens),
+                    total(LlmCall.cost_microusd, LlmCall.cost_basis == CostBasis.ACTUAL),
+                    total(LlmCall.cost_microusd, LlmCall.cost_basis == CostBasis.ESTIMATED),
+                    func.count().filter(unknown),
+                    total(LlmCall.reserved_microusd, unknown),
+                )
+                .join(AgentStep, AgentStep.id == LlmCall.agent_step_id)
+                .where(AgentStep.investigation_id == investigation_id)
+            )
+        ).one()
+        return UsageTotals(*(int(value) for value in row))
 
     async def hold_budget(self, investigation_id: uuid.UUID, amount: int) -> bool:
         """Reserve `amount`, or change nothing and return False if it does not fit."""

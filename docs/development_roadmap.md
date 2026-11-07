@@ -25,11 +25,11 @@ PostgreSQL owns evidence, workflow progress, budgets, and the initial knowledge 
 
 | Field | Current value |
 | --- | --- |
-| Active phase | Phase 7 LLM gateway and first investigator |
+| Active phase | Phase 8 Incident workspace and live frontend; Phase 7 gate passed on the fake provider |
 | Active task | None |
 | Last completed task | P07-T06 |
 | Latest verified commit | `7f77717` (P07-T06) |
-| Validation evidence | P07-T06: `SIGNALOPS_INTEGRATION=1 uv run pytest` 1151 passed. Logs and stored records hold no credentials or evidence at DEBUG on the fake provider and the stubbed adapter. Tests state that timed-out calls may have run. Earlier evidence is in the work log |
+| Validation evidence | Phase 7 gate: `SIGNALOPS_INTEGRATION=1 uv run pytest` 1153 passed, and 28 deliberate mutations of the safety checks all fail the tests after two test gaps were closed. On Compose with the fake provider, a real-time fault run produced an automatic investigation naming `bank-gateway` with 10 verified citations and accounted cost, and a Redis outage paused calls until it recovered. No model was called. Earlier evidence is in the work log |
 | Blockers | None recorded |
 | Next task | P08-T01 |
 
@@ -723,6 +723,8 @@ Start the React shell in Phase 1 and add API-backed incident views in Phase 5; P
 
 **Suggested phase commit:** `feat: add budgeted model gateway and evidence tools`. Split this into task-sized commits as needed.
 
+**Phase 7 gate (2026-11-07): passed on the fake provider.** All six tasks are checked. Outcome demonstrated on the rebuilt Compose stack with `SIGNALOPS_MODEL_PROVIDER=fake`: `signalops demo-post downstream-timeout --realtime --duration-s 300` through the API opened a live incident, which requested investigation `bc4cb419-ed57-43cc-9a1b-993b04fdc576` on its own. It ended `completed` in under a second, naming `bank-gateway` as `downstream_timeout`, with 10 cited signals that all exist in scope and were known by the cutoff; 3 settled calls, 3 tool calls, 0 reserved, 78076 microUSD spent (`estimated`), and 1 job attempt. `GET /v1/investigations/{id}` returned the diagnosis and usage, and `/progress` returned seven events. With `redis` stopped, operator investigation `ba68520f-6ec1-4ae0-bfce-fc402f4e252c` made no model call for 12 seconds and logged `rate limiter unavailable`; once Redis started, it finished on the same job attempt. Throwaway tokens were set for the run and removed after it, and `.env` was not changed. No paid call was made, so this shows the workflow, accounting, and bounds, not diagnostic quality: the fake follows a fixed rule. Open items carried forward: `AnthropicProvider` has never run against the live API; reservations are unmeasured against real usage; R1 still needs the UI of Phase 8.
+
 ## Phase 8 Incident workspace and live frontend
 
 **Dependencies:** Phases 5 and 7.
@@ -1363,6 +1365,16 @@ Keep these outside the release critical path unless measurements justify promoti
 - Deviations and reasons: none.
 - Remaining issues: see task notes.
 - Next task: Phase 7 gate.
+
+### 2026-11-07 — Phase 7 gate
+- Status: completed on the fake provider
+- Commit: pending
+- Implemented: `InvestigationUsage` gained model calls, tokens, spend by basis, and unknown calls, as an additive contract change, because `docs/api.md` promised labelled cost; `LlmCallRepository.usage_of`; regenerated schemas and fixtures; two test gaps closed; status docs.
+- Validation commands and results: `SIGNALOPS_INTEGRATION=1 uv run pytest` 1153 passed, after fixing one exact `usage` comparison; `uv run ruff check .`, `uv run ruff format --check .`, `uv run mypy` (163 files), `uv run signalops export-schemas --check`, `docker compose config --quiet` pass; `pnpm lint`, `pnpm typecheck`, `pnpm build` pass; `pnpm test` 42 passed. Of 28 deliberate mutations, 26 failed the tests at first. The 2 survivors, an unfenced first tool write and an unchecked cached tool and cutoff, exposed test gaps, which were closed, and both then failed the tests, as did each half of the cache check.
+- Evidence or artifact references: see the Phase 7 gate note.
+- Deviations and reasons: none.
+- Remaining issues: see the gate note. The run left two more investigations and one demo dataset in the dev database.
+- Next task: P08-T01.
 
 ## Work log template
 

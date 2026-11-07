@@ -53,7 +53,7 @@ from signalops.persistence.models import (
 )
 from signalops.persistence.repositories.evidence import EvidenceRepository
 from signalops.persistence.repositories.jobs import JobLease
-from signalops.persistence.repositories.llm_calls import LlmCallRepository
+from signalops.persistence.repositories.llm_calls import LlmCallRepository, UsageTotals
 from signalops.persistence.seed import DEMO_SERVICES, DEMO_SOURCES
 from signalops.streaming.retry import RetryPolicy
 from tests.integration.job_support import LIVE, add_job
@@ -335,6 +335,26 @@ async def test_a_timed_out_call_may_have_run_so_its_cost_stays_unknown(
     assert row.status == InvestigationStatus.INSUFFICIENT_EVIDENCE
     assert row.reserved_microusd == first.reserved_microusd
     assert row.spent_microusd == second.cost_microusd
+
+
+async def test_usage_totals_separate_known_cost_from_unknown_calls(
+    database: db.Database,
+) -> None:
+    investigation_id = await new_job(database)
+
+    await run_once(database, engine_with(database, FakeProvider.scripted([TIMEOUT, SUBMIT])))
+
+    unknown, succeeded = await calls_of(database, investigation_id)
+    async with database.transaction() as session:
+        totals = await LlmCallRepository(session).usage_of(investigation_id)
+    assert totals == UsageTotals(
+        model_calls=2,
+        input_tokens=succeeded.input_tokens or 0,
+        output_tokens=succeeded.output_tokens or 0,
+        estimated_microusd=succeeded.cost_microusd or 0,
+        unknown_calls=1,
+        unknown_reserved_microusd=unknown.reserved_microusd,
+    )
 
 
 async def test_a_model_timeout_resumes_on_the_next_attempt_with_earlier_steps_reused(

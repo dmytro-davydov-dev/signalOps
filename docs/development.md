@@ -1,6 +1,6 @@
 # Development guide
 
-> Status: Phases 1–6 complete; Phase 7 in progress. All commands below are verified in this repository.
+> Status: Phases 1–7 complete. All commands below are verified in this repository.
 
 ## Repository layout
 

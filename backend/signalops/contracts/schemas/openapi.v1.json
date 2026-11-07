@@ -1084,9 +1084,51 @@
       "InvestigationUsage": {
         "additionalProperties": false,
         "properties": {
+          "actual_microusd": {
+            "default": 0,
+            "minimum": 0.0,
+            "title": "Actual Microusd",
+            "type": "integer"
+          },
           "budget_microusd": {
             "minimum": 0.0,
             "title": "Budget Microusd",
+            "type": "integer"
+          },
+          "cache_read_tokens": {
+            "default": 0,
+            "minimum": 0.0,
+            "title": "Cache Read Tokens",
+            "type": "integer"
+          },
+          "cache_write_tokens": {
+            "default": 0,
+            "minimum": 0.0,
+            "title": "Cache Write Tokens",
+            "type": "integer"
+          },
+          "estimated_microusd": {
+            "default": 0,
+            "minimum": 0.0,
+            "title": "Estimated Microusd",
+            "type": "integer"
+          },
+          "input_tokens": {
+            "default": 0,
+            "minimum": 0.0,
+            "title": "Input Tokens",
+            "type": "integer"
+          },
+          "model_calls": {
+            "default": 0,
+            "minimum": 0.0,
+            "title": "Model Calls",
+            "type": "integer"
+          },
+          "output_tokens": {
+            "default": 0,
+            "minimum": 0.0,
+            "title": "Output Tokens",
             "type": "integer"
           },
           "reserved_microusd": {
@@ -1097,6 +1139,18 @@
           "spent_microusd": {
             "minimum": 0.0,
             "title": "Spent Microusd",
+            "type": "integer"
+          },
+          "unknown_calls": {
+            "default": 0,
+            "minimum": 0.0,
+            "title": "Unknown Calls",
+            "type": "integer"
+          },
+          "unknown_reserved_microusd": {
+            "default": 0,
+            "minimum": 0.0,
+            "title": "Unknown Reserved Microusd",
             "type": "integer"
           }
         },

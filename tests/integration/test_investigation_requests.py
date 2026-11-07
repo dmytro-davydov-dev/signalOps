@@ -390,6 +390,15 @@ def test_a_read_returns_the_durable_state(api: Api) -> None:
         "budget_microusd": POLICY.budget_microusd,
         "reserved_microusd": 0,
         "spent_microusd": 0,
+        "model_calls": 0,
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "cache_read_tokens": 0,
+        "cache_write_tokens": 0,
+        "actual_microusd": 0,
+        "estimated_microusd": 0,
+        "unknown_calls": 0,
+        "unknown_reserved_microusd": 0,
     }
 
 

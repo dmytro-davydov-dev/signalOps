@@ -13,7 +13,16 @@
   "usage": {
     "budget_microusd": 500000,
     "reserved_microusd": 0,
-    "spent_microusd": 41250
+    "spent_microusd": 41250,
+    "model_calls": 3,
+    "input_tokens": 8200,
+    "output_tokens": 420,
+    "cache_read_tokens": 0,
+    "cache_write_tokens": 0,
+    "actual_microusd": 41250,
+    "estimated_microusd": 0,
+    "unknown_calls": 0,
+    "unknown_reserved_microusd": 0
   },
   "diagnosis": {
     "status": "diagnosed",

@@ -7,6 +7,7 @@ is 404. See `agents/investigations.py` for the rules.
 """
 
 import uuid
+from dataclasses import asdict
 from datetime import UTC, datetime
 from typing import Annotated, Any
 
@@ -46,6 +47,7 @@ from signalops.contracts.progress import ProgressEventView, ProgressPage
 from signalops.contracts.workflow import InvestigationStatus
 from signalops.persistence.models import Investigation
 from signalops.persistence.repositories.investigations import InvestigationRepository
+from signalops.persistence.repositories.llm_calls import LlmCallRepository, UsageTotals
 from signalops.persistence.repositories.progress import ProgressRepository
 from signalops.persistence.repositories.scope import EvidenceScope
 
@@ -61,7 +63,7 @@ def _not_found() -> HTTPException:
     return HTTPException(status.HTTP_404_NOT_FOUND, "investigation not found")
 
 
-def _view(row: Investigation) -> InvestigationView:
+def _view(row: Investigation, totals: UsageTotals) -> InvestigationView:
     return InvestigationView(
         id=row.id,
         incident_id=row.incident_id,
@@ -78,6 +80,7 @@ def _view(row: Investigation) -> InvestigationView:
             budget_microusd=row.budget_microusd,
             reserved_microusd=row.reserved_microusd,
             spent_microusd=row.spent_microusd,
+            **asdict(totals),
         ),
         diagnosis=None if row.diagnosis is None else Diagnosis.model_validate(row.diagnosis),
     )
@@ -151,7 +154,7 @@ async def get_investigation(
             row = await InvestigationRepository(session).get(scope, investigation_id)
             if row is None:
                 raise _not_found()
-            return _view(row)
+            return _view(row, await LlmCallRepository(session).usage_of(row.id))
     except SQLAlchemyError as error:
         raise ReadFailed("investigations/detail", error) from None
 
@@ -220,7 +223,7 @@ async def cancel(
             row = await cancel_investigation(session, scope, investigation_id)
             if row is None:
                 raise _not_found()
-            return _view(row)
+            return _view(row, await LlmCallRepository(session).usage_of(row.id))
     except InvestigationFinishedError as error:
         raise HTTPException(status.HTTP_409_CONFLICT, str(error)) from None
     except SQLAlchemyError as error:

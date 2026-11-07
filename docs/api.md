@@ -132,7 +132,7 @@ The body is optional. `InvestigationRequest` holds `budget_microusd`, `max_steps
 - The investigation state (see [data-model.md](data-model.md#state-machines)).
 - The validated diagnosis or insufficient-evidence result (see [agents-and-workflow.md](agents-and-workflow.md#diagnosis-contract)).
 - The evidence cutoff and replay scope.
-- Token usage and cost, labelled *actual*, *estimated*, or *unknown*.
+- `usage`: budget, reserved, and spent amounts, model calls and tokens, spend split into `actual_microusd` and `estimated_microusd`, and `unknown_calls` with the `unknown_reserved_microusd` they keep held. An unknown call may have been billed.
 - Limitations.
 
 The body is `InvestigationView` (`contracts/investigations.py`). Its `diagnosis` follows one mapping, shared with the `investigation.completed` event, the database, and the UI:

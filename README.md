@@ -4,7 +4,7 @@ SignalOps turns noisy telemetry into evidence-backed software incident diagnoses
 
 It ingests logs, trace summaries, and deployment events, detects incidents with deterministic time-window rules, and runs bounded, budgeted agent investigations. Each investigation returns a validated diagnosis that cites evidence, or an explicit *insufficient evidence* result. A replay-based evaluation lab scores diagnoses against injected faults.
 
-> **Status: Phase 6 of 12 complete (durable jobs and workflow runtime).** Ingestion, detection, incidents, the service graph, and durable investigations run today, on a fake workflow that makes no model call and always abstains. The gateway, a real agent, the live UI, and evaluation are not built yet; the sections below describe the intended system. See the [progress ledger](docs/development_roadmap.md#progress-ledger) for actual progress.
+> **Status: Phase 7 of 12 complete (LLM gateway and first investigator).** Ingestion, detection, incidents, the service graph, durable investigations, and one budgeted tool-using agent run today. By default a deterministic fake plays the model, which proves the plumbing and says nothing about diagnostic quality. A Claude adapter exists and has not run against the live API. The live UI, multi-agent workflow, and evaluation are not built yet; the sections below describe the intended system. See the [progress ledger](docs/development_roadmap.md#progress-ledger) for actual progress.
 
 ## What it does
 
@@ -59,7 +59,7 @@ Planning sources:
 
 ## Quick start
 
-Requires Docker with Compose v2. No model API key is needed: only the deterministic fake provider exists.
+Requires Docker with Compose v2. No model API key is needed: the deterministic fake provider is the default. `SIGNALOPS_MODEL_PROVIDER=anthropic` with a key makes paid calls, each bounded by an investigation's budget.
 
 ```bash
 cp .env.example .env              # placeholders; change POSTGRES_PASSWORD if you like
