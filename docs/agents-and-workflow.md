@@ -30,7 +30,9 @@ flowchart TD
 - The verifier may request **one** bounded follow-up round, and only within the remaining budget and deadline.
 - Downstream capacity for synthesis and verification is reserved up front, so specialists cannot exhaust the budget first.
 
-The engine exists (P06-T03, ADR-022) with a three-node fake sequence: `load_context`, `investigate`, `conclude`. `investigate` makes no model call and always abstains, so every finished investigation ends `insufficient_evidence`. Phase 7 replaces it, and Phase 9 adds the branches above.
+The engine exists (P06-T03, ADR-022). Workflow `v2` runs three nodes ([ADR-028](decisions.md#adr-028-workflow-v2-is-one-bounded-agent-whose-answer-is-a-tool-call)): `load_context` builds the incident brief, `investigate` runs one tool-using agent, and `conclude` turns its findings into the `Diagnosis`. `v1`, which always abstains, stays for rows that use it. Phase 9 adds the branches above.
+
+The agent loop is bounded by `max_steps` minus the node count, 5 tool calls per turn, 10 per step, `SIGNALOPS_MODEL_MAX_OUTPUT_TOKENS` per reply, and `SIGNALOPS_AGENT_MAX_REPAIRS` rejected replies. It ends by calling `submit_findings`. Exhausting a bound, or a model refusal, abstains. Running out of budget ends `budget_exceeded`. In fake mode a fixed rule plays the loop over real evidence, which proves the plumbing, not diagnostic quality.
 
 ## Roles
 
@@ -57,7 +59,7 @@ All tools are **read-only** and typed. Each call enforces workspace scope, repla
 | `get_service_dependencies` | Bounded graph neighborhood (≤ 3 hops) as of incident time |
 | `retrieve_runbooks` | Versioned runbook content with provenance |
 
-Implemented in `agents/tools.py` ([ADR-027](decisions.md#adr-027-tools-take-typed-arguments-and-code-alone-supplies-scope-and-cutoff)): at most 6 hours, 50 rows, and 32 KiB per call. A signal is visible only when it both happened and arrived by the cutoff, so a late arrival stays future evidence. A failed call returns a `ToolFailure` to the agent. `signalops seed` adds two synthetic demo runbooks.
+Implemented in `agents/tools.py` ([ADR-027](decisions.md#adr-027-tools-take-typed-arguments-and-code-alone-supplies-scope-and-cutoff)): at most 6 hours, 50 rows, and 16 KiB per call. A signal is visible only when it both happened and arrived by the cutoff, so a late arrival stays future evidence. A failed call returns a `ToolFailure` to the agent. `signalops seed` adds two synthetic demo runbooks.
 
 No tool exposes SQL, shell access, future evidence, or evaluation labels. Read-only results may be cached in Redis under keys that include replay scope, cutoff, and data version.
 

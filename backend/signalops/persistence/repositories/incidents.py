@@ -124,6 +124,24 @@ class IncidentRepository:
         )
         return [(signal, relevance) for signal, relevance in rows]
 
+    async def evidence_known_by(
+        self, scope: EvidenceScope, incident_id: uuid.UUID, *, known_by: datetime, limit: int
+    ) -> Sequence[uuid.UUID]:
+        """IDs of cited signals that had happened and arrived by a time, newest first."""
+        rows = await self._session.scalars(
+            select(Signal.id)
+            .join(IncidentSignal, IncidentSignal.signal_id == Signal.id)
+            .where(
+                scope.clause(Signal),
+                IncidentSignal.incident_id == incident_id,
+                Signal.occurred_at <= known_by,
+                Signal.ingested_at <= known_by,
+            )
+            .order_by(Signal.occurred_at.desc(), Signal.id)
+            .limit(limit)
+        )
+        return rows.all()
+
     async def triggers_of(
         self, incident_id: uuid.UUID, *, limit: int
     ) -> Sequence[DetectionTrigger]:

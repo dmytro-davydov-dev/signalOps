@@ -26,12 +26,12 @@ PostgreSQL owns evidence, workflow progress, budgets, and the initial knowledge 
 | Field | Current value |
 | --- | --- |
 | Active phase | Phase 7 LLM gateway and first investigator |
-| Active task | P07-T04 (in progress) |
-| Last completed task | P07-T03 |
+| Active task | P07-T05 (in progress) |
+| Last completed task | P07-T04 |
 | Latest verified commit | `242d7bb` (P07-T03) |
-| Validation evidence | P07-T03: `tests/integration/test_agent_tools.py` shows tools reject out-of-scope and future evidence and that inputs cannot widen a call or carry SQL or shell commands. Earlier evidence is in the work log |
+| Validation evidence | P07-T04: `SIGNALOPS_INTEGRATION=1 uv run pytest` 1112 passed. On a real detector replay, the fake investigator names `bank-gateway` with existing evidence IDs, and underdetermined input abstains. No model was called. Earlier evidence is in the work log |
 | Blockers | None recorded |
-| Next task | P07-T04 |
+| Next task | P07-T05 |
 
 ### Scope and release boundaries
 
@@ -679,11 +679,17 @@ Start the React shell in Phase 1 and add API-backed incident views in Phase 5; P
 
 ### P07-T04 Implement the first investigation workflow
 
-- [ ] Complete this task.
+- [x] Complete this task.
 
 **Implementation:** Load incident context, execute bounded tool calls, synthesize hypotheses, and return the typed diagnosis or insufficient_evidence. Add maximum steps, output-token limits, and bounded structured-output repair.
 
 **Acceptance:** The timeout fixture identifies the affected service with existing evidence IDs; underdetermined input yields abstention rather than an invented cause.
+
+**Notes (2026-11-07):**
+- **Decision (ADR-028):** `WORKFLOW_VERSION` is `v2`, with the same three step keys. `agents/investigator.py` is a bounded loop of gateway calls and tools ending in a `submit_findings` tool call. `conclude` names the service from the catalog. `v1` stays for existing rows. `signalops worker` now builds the gateway, rate limiter, and tools.
+- **Fake mode:** `gateway/fake_investigator.py` plays the loop by a fixed rule on real evidence: read error traces and logs, follow failing calls downstream, check the last service's durations, cite what it read, and abstain below 5 errors in a service. It proves the plumbing and is no measure of diagnostic quality.
+- **Choices the task did not state:** turns are `max_steps` minus the node count, resolving what P06-T03 left open: an agent out of turns abstains, while a `max_steps` below the node count still fails; a refusal abstains; a reply cut off at `max_tokens` is dropped, since it may hold a partial tool call; repairs tell the model field locations only; 5 tool calls per turn and 10 per step; a brief lists the workspace's services and detector-cited signals known by the cutoff; a tool result is capped at 16 KiB, down from 32 KiB, so a full step fits the default budget's reservations.
+- **Open:** the conversation is memory only, so a restarted node pays for its turns again; ten full tool results can still reach `budget_exceeded` on reservations alone; citations are not verified yet (P07-T05).
 
 ### P07-T05 Validate findings and cache safe reads
 
@@ -1315,6 +1321,16 @@ Keep these outside the release critical path unless measurements justify promoti
 - Deviations and reasons: none.
 - Remaining issues: see task notes.
 - Next task: P07-T04.
+
+### 2026-11-07 — P07-T04
+- Status: completed
+- Commit: pending
+- Implemented: `agents/investigator.py`; `gateway/fake_investigator.py`; responders in `FakeProvider`; `ProposedDiagnosis`, `ServiceBrief`, and the brief's new fields in `contracts/steps.py`; `load_incident`, `investigate_with_agent`, `conclude_findings`, and workflow `v2`; `NodeContext.at`; `build_gateway`; worker wiring; `CatalogRepository.list_services`; `IncidentRepository.evidence_known_by`; agent settings; ADR-028; docs (agents-and-workflow, decisions, development).
+- Validation commands and results: `uv run ruff check .`, `uv run ruff format --check .`, `uv run mypy` (159 files), `uv run signalops export-schemas --check` pass; `SIGNALOPS_INTEGRATION=1 uv run pytest` 1112 passed.
+- Evidence or artifact references: `tests/integration/test_investigator.py`. A generated `downstream-timeout` dataset passed through the real normalizer and detector into a replay scope; the workflow on the fake investigator names `bank-gateway` with cited signals that exist in scope, 3 settled calls, and zero reserved. An incident with no evidence and a healthy dataset both abstain. Repair, its bound, cut-off replies, refusals, step and tool limits, a cancellation between turns, budget exhaustion between turns, and a node retry reusing `load_context` are covered. No model was called.
+- Deviations and reasons: none.
+- Remaining issues: see task notes.
+- Next task: P07-T05.
 
 ## Work log template
 

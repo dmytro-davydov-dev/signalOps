@@ -89,6 +89,15 @@ class CatalogRepository:
             )
         )
 
+    async def list_services(self, workspace_id: uuid.UUID, *, limit: int) -> list[Service]:
+        result = await self._session.scalars(
+            select(Service)
+            .where(Service.workspace_id == workspace_id)
+            .order_by(Service.name, Service.id)
+            .limit(limit)
+        )
+        return list(result)
+
     async def get_services(
         self, workspace_id: uuid.UUID, service_ids: Collection[uuid.UUID]
     ) -> list[Service]:

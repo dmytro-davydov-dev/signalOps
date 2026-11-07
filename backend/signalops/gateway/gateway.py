@@ -23,11 +23,13 @@ import uuid
 from dataclasses import dataclass, field
 from typing import Self
 
+from redis.asyncio import Redis
+
 from signalops.agents.jobs import JobStoppedError, PermanentJobError, TransientJobError
 from signalops.config import Settings
 from signalops.contracts.workflow import CostBasis
 from signalops.gateway.errors import BudgetExceededError, ProviderError, ProviderErrorCategory
-from signalops.gateway.limits import NoRateLimit, RateLimiter
+from signalops.gateway.limits import NoRateLimit, RateLimiter, RateLimits, RedisRateLimiter
 from signalops.gateway.pricing import (
     PRICES,
     PRICING_VERSION,
@@ -36,7 +38,7 @@ from signalops.gateway.pricing import (
     maximum_cost,
     price_of,
 )
-from signalops.gateway.provider import ModelProvider
+from signalops.gateway.provider import ModelProvider, build_provider
 from signalops.gateway.types import ModelRequest, ModelResponse
 from signalops.persistence.database import Database
 from signalops.persistence.repositories.jobs import JobLease, JobRepository
@@ -233,3 +235,20 @@ class ModelGateway:
                 "latency_ms": latency_ms,
             },
         )
+
+
+def build_gateway(database: Database, redis: "Redis", settings: Settings) -> ModelGateway:
+    """The gateway for this process. An unpriced model fails here, at startup."""
+    provider = build_provider(settings)
+    price_of(provider.name, settings.resolved_model())
+    limiter = RedisRateLimiter(
+        redis,
+        RateLimits(
+            settings.model_requests_per_minute,
+            settings.model_tokens_per_minute,
+            settings.model_limit_wait_seconds,
+        ),
+    )
+    return ModelGateway(
+        database, provider, limiter=limiter, policy=GatewayPolicy.from_settings(settings)
+    )

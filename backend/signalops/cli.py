@@ -331,9 +331,13 @@ def run_worker() -> int:
     import asyncio
     import signal
 
+    from redis.asyncio import Redis
+
+    from signalops.agents.investigator import AgentRuntime
     from signalops.agents.jobs import JobPolicy, JobRunner
     from signalops.agents.workflow import WorkflowEngine
     from signalops.config import get_settings
+    from signalops.gateway.gateway import build_gateway
     from signalops.logs import configure_logging
     from signalops.persistence.database import Database, create_engine
 
@@ -347,10 +351,16 @@ def run_worker() -> int:
             loop.add_signal_handler(signum, stop.set)
         engine = create_engine(settings)
         database = Database.from_engine(engine)
-        runner = JobRunner(database, WorkflowEngine(database), JobPolicy.from_settings(settings))
+        redis = Redis.from_url(str(settings.redis_url))
+        gateway = build_gateway(database, redis, settings)
+        workflow = WorkflowEngine(
+            database, runtime=AgentRuntime.from_settings(database, gateway, settings)
+        )
+        runner = JobRunner(database, workflow, JobPolicy.from_settings(settings))
         try:
             await runner.run(stop)
         finally:
+            await redis.aclose()
             await engine.dispose()
 
     asyncio.run(work())

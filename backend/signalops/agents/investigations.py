@@ -74,7 +74,7 @@ from signalops.persistence.repositories.scope import EvidenceScope
 logger = logging.getLogger(__name__)
 
 DISPATCHER_CONSUMER_GROUP: Final = "dispatcher-v1"
-WORKFLOW_VERSION: Final = "v1"
+WORKFLOW_VERSION: Final = "v2"
 # Fixed namespace: a request's event ID derives from its investigation.
 INVESTIGATION_EVENT_NAMESPACE: Final = uuid.UUID("c1f0a6d4-8b2e-4f37-9e15-2a7d6b3c9e01")
 REQUEST_AGGREGATE_VERSION: Final = 1

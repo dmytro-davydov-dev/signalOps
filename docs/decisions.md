@@ -285,13 +285,25 @@ Revision `0015_investigation_outcomes` adds a partial unique index allowing one 
 
 ## ADR-027: Tools take typed arguments, and code alone supplies scope and cutoff
 
-**Decision:** `agents/tools.py` defines one argument model per tool with unknown fields forbidden. `ToolScope` carries the workspace, replay scope, and cutoff, and only the workflow builds it, from the investigation row. A signal is visible when both `occurred_at` and `ingested_at` are at or before the cutoff. A window past the cutoff is rejected, never clamped. Windows are at most 6 hours, a call returns at most 50 rows and 32 KiB, and a read has a timeout. Failures return a `ToolFailure` to the agent and record a failed `tool_calls` row, whose result is only a hash. Free text passes through `TextRedactor`, which masks `key=value` pairs of the configured sensitive fields and bearer tokens. Runbooks are graph nodes keyed `{key}@{version}`, with their content in `properties` and `DOCUMENTED_BY` edges from `published_at`.
+**Decision:** `agents/tools.py` defines one argument model per tool with unknown fields forbidden. `ToolScope` carries the workspace, replay scope, and cutoff, and only the workflow builds it, from the investigation row. A signal is visible when both `occurred_at` and `ingested_at` are at or before the cutoff. A window past the cutoff is rejected, never clamped. Windows are at most 6 hours, a call returns at most 50 rows and 16 KiB, and a read has a timeout. Failures return a `ToolFailure` to the agent and record a failed `tool_calls` row, whose result is only a hash. Free text passes through `TextRedactor`, which masks `key=value` pairs of the configured sensitive fields and bearer tokens. Runbooks are graph nodes keyed `{key}@{version}`, with their content in `properties` and `DOCUMENTED_BY` edges from `published_at`.
 
 **Reason:** A model cannot name what it has no field for, so authorization needs no prompt to hold. `ingested_at` matters because a late signal carries an old `occurred_at`, which would let a replay see evidence that had not arrived. A rejection teaches the agent its limit, while a silent clamp would let it believe it had seen a window it had not. Keeping results out of `tool_calls` leaves one copy of evidence, under retention rules.
 
 **Trade-off:** Masking free text is a pattern match, so a secret in an unusual form still reaches the provider. Source-specific redaction fields do not apply to text. Runbooks are copied per replay scope, so a replay has none until P10 seeds them. Resolving the latest version happens in Python over every runbook node, which is fine for a handful.
 
 **Revisit when:** Evaluation shows the caps causing abstentions, or runbook counts grow past a few dozen.
+
+## ADR-028: Workflow `v2` is one bounded agent whose answer is a tool call
+
+**Decision:** `WORKFLOW_VERSION` becomes `v2`, keeping the step keys `load_context`, `investigate`, and `conclude`. `v1` stays in `WORKFLOWS` for existing rows. `investigate` runs `agents/investigator.py`: a loop of gateway calls and evidence tools that ends when the model calls `submit_findings` with a valid `ProposedDiagnosis`. An unusable reply goes back with field locations only, up to `SIGNALOPS_AGENT_MAX_REPAIRS` times. Past that, on a refusal, or out of turns, the agent abstains. A reply cut off at `max_tokens` is dropped, because it may hold a partial tool call. Turns are `max_steps` minus the workflow's nodes, so a request's `max_steps` bounds model use and a limit reached by the agent abstains rather than fails. Each step allows 10 tool calls and each turn 5. `conclude` names the service from the catalog, so the model never supplies a name that reaches the diagnosis. Running out of budget still ends `budget_exceeded`.
+
+`IncidentBrief` gained the first window, the workspace's services, and detector-cited signals known by the cutoff. In fake mode `gateway/fake_investigator.py` plays the loop by a fixed rule on real evidence.
+
+**Reason:** A fixed workflow, one agent, and a code-checked answer are the slice the plan asks for before specialists. Abstaining on an exhausted limit keeps a cost or shape problem from reading as a system failure, and it is the honest answer when the model produced no support. Keeping step keys means the progress history and UI need no changes.
+
+**Trade-off:** The conversation is memory only, so a node restarted after a crash or a failed retry pays for its turns again; only a completed step is reused, and `completed_tool_calls` stays empty. Reservations grow with the conversation, so ten full tool results can approach the default 1 USD budget and end `budget_exceeded` although real spend is lower. A `max_steps` below the node count still fails the job, because the conclusion cannot run. The fake's result shows the plumbing works and says nothing about diagnostic quality.
+
+**Revisit when:** Phase 9 splits the agent into specialists, or a paid run measures reservations against real usage.
 
 ## Open questions
 

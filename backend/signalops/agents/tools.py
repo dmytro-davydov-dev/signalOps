@@ -67,7 +67,7 @@ logger = logging.getLogger(__name__)
 MAX_TOOL_LIMIT: Final = 50
 MAX_TOOL_WINDOW: Final = timedelta(hours=6)
 DEFAULT_TOOL_WINDOW: Final = timedelta(hours=1)
-MAX_TOOL_RESULT_BYTES: Final = 32 * 1024
+MAX_TOOL_RESULT_BYTES: Final = 16 * 1024
 MAX_EXCERPT_LENGTH: Final = 2000
 _SEVERITY_ORDER: Final = tuple(Severity)
 

@@ -15,8 +15,8 @@ Completed output that no longer validates, or that another workflow version wrot
 fails the job, because a completed step can never run again.
 
 **Stops.** Opening a step checks for a cancellation or a passed deadline in the same
-transaction, so no node starts after either commits. Phase 7 must make the same
-check before each model call inside a node (ADR-023).
+transaction, so no node starts after either commits. The gateway makes the same check
+before each model call inside a node (ADR-023).
 
 **Outcome.** A workflow ends in a node whose output is the `Diagnosis`. The engine
 returns it, reused if a crash came after that step, and `JobRunner` ends the job and
@@ -26,8 +26,10 @@ workflow reaches the outcome already stored.
 **Versions.** An investigation runs the workflow version it was requested with. A
 change to the nodes or their output needs a new entry in `WORKFLOWS`.
 
-The nodes run in sequence. `investigate` stands in for the model-backed investigator
-of Phase 7 and always abstains, so nothing here calls a provider.
+The nodes run in sequence. In `v1`, `investigate` makes no model call and always
+abstains. In `v2`, it is the tool-using agent of `agents/investigator.py`, whose
+output `conclude` turns into the diagnosis. A node that makes model calls reaches
+them through the gateway, which makes the stop check before each one.
 """
 
 import logging
@@ -40,14 +42,24 @@ from typing import Any, Final, cast
 from pydantic import ValidationError
 
 from signalops.agents.investigations import WORKFLOW_VERSION
+from signalops.agents.investigator import AgentRuntime, investigate_incident
 from signalops.agents.jobs import JobStoppedError, PermanentJobError, error_record
+from signalops.agents.tools import ToolScope
 from signalops.contracts.checkpoints import StepCheckpoint, decode_checkpoint
 from signalops.contracts.common import ContractError, ContractModel
-from signalops.contracts.diagnosis import Diagnosis, DiagnosisStatus
-from signalops.contracts.steps import IncidentBrief, InvestigatorFindings
+from signalops.contracts.diagnosis import Diagnosis, DiagnosisStatus, RootCause
+from signalops.contracts.steps import (
+    MAX_BRIEF_EVIDENCE,
+    MAX_BRIEF_SERVICES,
+    IncidentBrief,
+    InvestigatorFindings,
+    ProposedDiagnosis,
+    ServiceBrief,
+)
 from signalops.contracts.workflow import AgentRole, StepStatus
 from signalops.persistence.database import Database
 from signalops.persistence.models import AgentStep, Investigation
+from signalops.persistence.repositories.catalog import CatalogRepository
 from signalops.persistence.repositories.incidents import IncidentRepository
 from signalops.persistence.repositories.jobs import JobLease, JobRepository
 from signalops.persistence.repositories.scope import EvidenceScope
@@ -79,10 +91,40 @@ class WorkflowRun:
 
 
 class NodeContext:
-    def __init__(self, database: Database, run: WorkflowRun) -> None:
+    def __init__(
+        self, database: Database, run: WorkflowRun, runtime: AgentRuntime | None = None
+    ) -> None:
         self.database = database
         self.run = run
+        self.runtime = runtime
         self._outputs: dict[str, ContractModel] = {}
+        self._lease: JobLease | None = None
+        self._step_key = ""
+        self._step_count = 0
+
+    def at(self, lease: JobLease, step_key: str, step_count: int) -> "NodeContext":
+        """This context for one step, sharing the outputs kept so far."""
+        step = NodeContext(self.database, self.run, self.runtime)
+        step._outputs = self._outputs
+        step._lease = lease
+        step._step_key = step_key
+        step._step_count = step_count
+        return step
+
+    @property
+    def lease(self) -> JobLease:
+        if self._lease is None:
+            raise RuntimeError("the context is not at a step")
+        return self._lease
+
+    @property
+    def step_key(self) -> str:
+        return self._step_key
+
+    @property
+    def step_count(self) -> int:
+        """Steps in this workflow. `max_steps` beyond them is left for model turns."""
+        return self._step_count
 
     def output[T: ContractModel](self, node: "Node[T]") -> T:
         """The output of an earlier node."""
@@ -144,12 +186,98 @@ async def conclude(context: NodeContext) -> Diagnosis:
     )
 
 
+async def load_incident(context: NodeContext) -> IncidentBrief:
+    run = context.run
+    cutoff = run.evidence_cutoff_at
+    async with context.database.transaction() as session:
+        incidents = IncidentRepository(session)
+        incident = await incidents.get(run.scope, run.incident_id)
+        if incident is None:
+            raise PermanentJobError("the incident is outside the investigation's scope")
+        services = await CatalogRepository(session).list_services(
+            run.scope.workspace_id, limit=MAX_BRIEF_SERVICES
+        )
+        cited = await incidents.evidence_known_by(
+            run.scope, run.incident_id, known_by=cutoff, limit=MAX_BRIEF_EVIDENCE
+        )
+    return IncidentBrief(
+        incident_id=incident.id,
+        title=incident.title,
+        detected_at=incident.detected_at,
+        evidence_cutoff_at=cutoff,
+        window_start=incident.correlation_window_start,
+        services=tuple(ServiceBrief(service_id=row.id, name=row.name) for row in services),
+        evidence_signal_ids=tuple(cited),
+    )
+
+
+async def investigate_with_agent(context: NodeContext) -> ProposedDiagnosis:
+    runtime = context.runtime
+    if runtime is None:
+        raise PermanentJobError("this worker has no model runtime")
+    run = context.run
+    return await investigate_incident(
+        runtime,
+        context.lease,
+        context.step_key,
+        ToolScope(run.scope, run.evidence_cutoff_at),
+        context.output(LOAD_INCIDENT),
+        max_turns=run.max_steps - context.step_count,
+    )
+
+
+async def conclude_findings(context: NodeContext) -> Diagnosis:
+    run = context.run
+    proposal = context.output(INVESTIGATE_AGENT)
+    cause = proposal.root_cause
+    root_cause = None
+    if cause is not None:
+        async with context.database.transaction() as session:
+            services = await CatalogRepository(session).get_services(
+                run.scope.workspace_id, [cause.service_id]
+            )
+        if not services:
+            return _unsupported(proposal, run, "The named service is not in this workspace")
+        root_cause = RootCause(**cause.model_dump(mode="python"), service_name=services[0].name)
+    return Diagnosis(
+        status=proposal.status,
+        summary=proposal.summary,
+        root_cause=root_cause,
+        alternatives=proposal.alternatives,
+        suggested_actions=proposal.suggested_actions,
+        limitations=proposal.limitations,
+        missing_evidence=proposal.missing_evidence,
+        workflow_version=run.workflow_version,
+    )
+
+
+def _unsupported(proposal: ProposedDiagnosis, run: WorkflowRun, reason: str) -> Diagnosis:
+    return Diagnosis(
+        status=DiagnosisStatus.INSUFFICIENT_EVIDENCE,
+        summary=proposal.summary,
+        root_cause=None,
+        limitations=proposal.limitations,
+        missing_evidence=(reason,),
+        workflow_version=run.workflow_version,
+    )
+
+
 LOAD_CONTEXT: Final = Node("load_context", AgentRole.COORDINATOR, IncidentBrief, load_context)
 INVESTIGATE: Final = Node("investigate", AgentRole.INVESTIGATOR, InvestigatorFindings, investigate)
 CONCLUDE: Final = Node("conclude", AgentRole.SYNTHESIZER, Diagnosis, conclude)
 
+LOAD_INCIDENT: Final = Node("load_context", AgentRole.COORDINATOR, IncidentBrief, load_incident)
+INVESTIGATE_AGENT: Final = Node(
+    "investigate", AgentRole.INVESTIGATOR, ProposedDiagnosis, investigate_with_agent
+)
+CONCLUDE_FINDINGS: Final = Node("conclude", AgentRole.SYNTHESIZER, Diagnosis, conclude_findings)
+
 WORKFLOWS: Final[Mapping[str, Workflow]] = {
-    WORKFLOW_VERSION: Workflow(WORKFLOW_VERSION, (LOAD_CONTEXT, INVESTIGATE), CONCLUDE),
+    # The fake sequence of Phase 6; finished and running investigations keep it.
+    "v1": Workflow("v1", (LOAD_CONTEXT, INVESTIGATE), CONCLUDE),
+    WORKFLOW_VERSION: Workflow(
+        WORKFLOW_VERSION, (LOAD_INCIDENT, INVESTIGATE_AGENT), CONCLUDE_FINDINGS
+    ),
 }
 
 
@@ -169,9 +297,15 @@ def reused_output[T: ContractModel](node: Node[T], step: AgentStep, workflow_ver
 class WorkflowEngine:
     """`JobHandler` that runs an investigation's unfinished nodes."""
 
-    def __init__(self, database: Database, workflows: Mapping[str, Workflow] = WORKFLOWS) -> None:
+    def __init__(
+        self,
+        database: Database,
+        workflows: Mapping[str, Workflow] = WORKFLOWS,
+        runtime: AgentRuntime | None = None,
+    ) -> None:
         self._database = database
         self._workflows = workflows
+        self._runtime = runtime
 
     async def __call__(self, lease: JobLease) -> Diagnosis:
         async with self._database.transaction() as session:
@@ -181,7 +315,7 @@ class WorkflowEngine:
         if workflow is None:
             raise PermanentJobError(f"unknown workflow version {run.workflow_version}")
         steps = {step.step_key: step for step in stored}
-        context = NodeContext(self._database, run)
+        context = NodeContext(self._database, run, self._runtime)
         for index, node in enumerate(workflow.steps):
             step = steps.get(node.key)
             if step is not None and step.status == StepStatus.COMPLETED:
@@ -190,7 +324,7 @@ class WorkflowEngine:
             elif index >= run.max_steps:
                 raise PermanentJobError(f"max_steps {run.max_steps} reached before {node.key}")
             else:
-                await self._execute(lease, node, context)
+                await self._execute(lease, node, context.at(lease, node.key, len(workflow.steps)))
         return context.output(workflow.conclusion)
 
     async def _execute[T: ContractModel](

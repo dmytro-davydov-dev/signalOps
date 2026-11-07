@@ -92,6 +92,10 @@ class Settings(BaseSettings):
     investigation_deadline_seconds: int = Field(default=600, ge=60, le=24 * 60 * 60)
     # A new live incident requests one investigation.
     investigation_auto_request: bool = True
+    # Replies an agent may have rejected for shape or support before it abstains.
+    agent_max_repairs: int = Field(default=2, ge=0, le=5)
+    # Evidence tool calls in one agent step; each result adds to every later prompt.
+    agent_max_tool_calls: int = Field(default=10, ge=1, le=64)
     # One evidence tool read; a slower one returns a timeout to the agent.
     tool_timeout_seconds: float = Field(default=5.0, gt=0, le=60)
     # A worker that stops heartbeating loses its job this long after the last beat.
@@ -147,6 +151,9 @@ class Settings(BaseSettings):
     model_name: str | None = None
     # One provider call, whatever it is doing; a later retry is a new call.
     model_request_timeout_seconds: float = Field(default=60.0, gt=0, le=600)
+    # Most tokens one model reply may use, including thinking.
+    model_max_output_tokens: int = Field(default=8_000, ge=256, le=64_000)
+    model_effort: Literal["low", "medium", "high"] = "high"
     # Calls per request, including the first; each is reserved and possibly billed.
     model_max_attempts: int = Field(default=3, ge=1, le=10)
     # Provider limits per process group, enforced in Redis.

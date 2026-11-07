@@ -2,7 +2,8 @@
 
 A script is a list of steps, one per call: answer, fail with a provider error, or
 take a while first. Scripts live in code or in `fixtures/gateway/v1`. A call past
-the end of a script repeats its last step.
+the end of a script repeats its last step. A responder decides each step from the
+request instead, as `fake_investigator` does.
 
 Tokens are counted from bytes, so usage is deterministic. They are not a provider's
 tokenizer, and a fake result says nothing about how a real model would answer.
@@ -10,7 +11,7 @@ tokenizer, and a fake result says nothing about how a real model would answer.
 
 import asyncio
 import hashlib
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from pathlib import Path
 from typing import Self
 
@@ -43,6 +44,7 @@ class FakeFailure(ContractModel):
 
 
 FakeStep = FakeAnswer | FakeFailure
+FakeResponder = Callable[[ModelRequest], FakeStep]
 
 
 class FakeScript(ContractModel):
@@ -56,8 +58,11 @@ SCRIPT_ADAPTER = TypeAdapter(FakeScript)
 class FakeProvider:
     name = "fake"
 
-    def __init__(self, steps: Sequence[FakeStep]) -> None:
+    def __init__(
+        self, steps: Sequence[FakeStep] = (), responder: FakeResponder | None = None
+    ) -> None:
         self._steps = tuple(steps)
+        self._responder = responder
         # Every request received, including those that then failed.
         self.requests: list[ModelRequest] = []
 
@@ -72,9 +77,7 @@ class FakeProvider:
     async def complete(self, request: ModelRequest) -> ModelResponse:
         index = len(self.requests)
         self.requests.append(request)
-        if not self._steps:
-            raise ProviderError(ProviderErrorCategory.REJECTED)
-        step = self._steps[min(index, len(self._steps) - 1)]
+        step = self._next_step(request, index)
         if step.delay_seconds:
             await asyncio.sleep(step.delay_seconds)
         request_id = self._request_id(request, index)
@@ -85,6 +88,13 @@ class FakeProvider:
                 provider_request_id=request_id,
             )
         return self._answer(request, step, request_id)
+
+    def _next_step(self, request: ModelRequest, index: int) -> FakeStep:
+        if self._responder is not None:
+            return self._responder(request)
+        if not self._steps:
+            raise ProviderError(ProviderErrorCategory.REJECTED)
+        return self._steps[min(index, len(self._steps) - 1)]
 
     def _answer(self, request: ModelRequest, step: FakeAnswer, request_id: str) -> ModelResponse:
         output = sum(len(block.model_dump_json()) for block in step.content)
