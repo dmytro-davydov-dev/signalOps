@@ -1,0 +1,220 @@
+{
+  "$defs": {
+    "AgentEnding": {
+      "enum": [
+        "submitted",
+        "no_turns",
+        "turn_limit",
+        "repair_limit",
+        "refused",
+        "budget_share",
+        "skipped"
+      ],
+      "title": "AgentEnding",
+      "type": "string"
+    },
+    "AgentRole": {
+      "enum": [
+        "investigator",
+        "coordinator",
+        "telemetry_investigator",
+        "deployment_investigator",
+        "dependency_investigator",
+        "synthesizer",
+        "verifier"
+      ],
+      "title": "AgentRole",
+      "type": "string"
+    },
+    "CitationCheck": {
+      "additionalProperties": false,
+      "properties": {
+        "note": {
+          "maxLength": 500,
+          "minLength": 1,
+          "title": "Note",
+          "type": "string"
+        },
+        "signal_id": {
+          "format": "uuid",
+          "title": "Signal Id",
+          "type": "string"
+        },
+        "supports": {
+          "title": "Supports",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "signal_id",
+        "supports",
+        "note"
+      ],
+      "title": "CitationCheck",
+      "type": "object"
+    },
+    "Provenance": {
+      "additionalProperties": false,
+      "description": "How a role's output came about. Never the model's reasoning.",
+      "properties": {
+        "ended_by": {
+          "$ref": "#/$defs/AgentEnding"
+        },
+        "model": {
+          "anyOf": [
+            {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]*$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Model"
+        },
+        "model_turns": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Model Turns",
+          "type": "integer"
+        },
+        "prompt_version": {
+          "maxLength": 64,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]*$",
+          "title": "Prompt Version",
+          "type": "string"
+        },
+        "role": {
+          "$ref": "#/$defs/AgentRole"
+        },
+        "signals_read": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Signals Read",
+          "type": "integer"
+        },
+        "tool_calls": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/ToolCallRef"
+          },
+          "maxItems": 64,
+          "title": "Tool Calls",
+          "type": "array"
+        }
+      },
+      "required": [
+        "role",
+        "prompt_version",
+        "ended_by"
+      ],
+      "title": "Provenance",
+      "type": "object"
+    },
+    "ToolCallRef": {
+      "additionalProperties": false,
+      "properties": {
+        "call_key": {
+          "maxLength": 256,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]*$",
+          "title": "Call Key",
+          "type": "string"
+        },
+        "tool": {
+          "$ref": "#/$defs/ToolName"
+        }
+      },
+      "required": [
+        "tool",
+        "call_key"
+      ],
+      "title": "ToolCallRef",
+      "type": "object"
+    },
+    "ToolName": {
+      "enum": [
+        "query_logs",
+        "get_trace_summary",
+        "get_deployments",
+        "get_service_dependencies",
+        "retrieve_runbooks"
+      ],
+      "title": "ToolName",
+      "type": "string"
+    },
+    "Verdict": {
+      "enum": [
+        "supported",
+        "unsupported"
+      ],
+      "title": "Verdict",
+      "type": "string"
+    },
+    "VerificationReport": {
+      "additionalProperties": false,
+      "description": "What the verifier submits about the leading hypothesis.",
+      "properties": {
+        "citation_checks": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/CitationCheck"
+          },
+          "maxItems": 50,
+          "title": "Citation Checks",
+          "type": "array"
+        },
+        "limitations": {
+          "default": [],
+          "items": {
+            "maxLength": 500,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 10,
+          "title": "Limitations",
+          "type": "array"
+        },
+        "missing_evidence": {
+          "default": [],
+          "items": {
+            "maxLength": 500,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 10,
+          "title": "Missing Evidence",
+          "type": "array"
+        },
+        "verdict": {
+          "$ref": "#/$defs/Verdict"
+        }
+      },
+      "required": [
+        "verdict"
+      ],
+      "title": "VerificationReport",
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "provenance": {
+      "$ref": "#/$defs/Provenance"
+    },
+    "report": {
+      "$ref": "#/$defs/VerificationReport"
+    }
+  },
+  "required": [
+    "report",
+    "provenance"
+  ],
+  "title": "VerificationOutput",
+  "type": "object"
+}

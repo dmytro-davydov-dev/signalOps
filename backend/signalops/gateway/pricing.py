@@ -61,10 +61,13 @@ def maximum_input_tokens(request: ModelRequest) -> int:
 
 def maximum_cost(request: ModelRequest, price: ModelPrice) -> int:
     """The most this call can cost: all input written to the cache, all output used."""
+    return maximum_cost_of(maximum_input_tokens(request), request.max_output_tokens, price)
+
+
+def maximum_cost_of(input_bytes: int, output_tokens: int, price: ModelPrice) -> int:
+    """`maximum_cost` for a request of this many bytes, before it is built."""
     highest_input = max(price.input, price.cache_write)
-    return _cost(maximum_input_tokens(request), highest_input) + _cost(
-        request.max_output_tokens, price.output
-    )
+    return _cost(input_bytes, highest_input) + _cost(output_tokens, price.output)
 
 
 def actual_cost(usage: ModelUsage, price: ModelPrice) -> int:

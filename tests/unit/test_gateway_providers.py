@@ -96,7 +96,7 @@ def test_the_default_provider_is_fake_and_needs_no_key() -> None:
 
 
 async def test_the_fake_delay_pauses_before_each_reply(monkeypatch: pytest.MonkeyPatch) -> None:
-    from signalops.gateway import fake_investigator
+    from signalops.gateway import fake_roles
 
     slept: list[float] = []
 
@@ -105,8 +105,8 @@ async def test_the_fake_delay_pauses_before_each_reply(monkeypatch: pytest.Monke
 
     monkeypatch.setattr(asyncio, "sleep", sleep)
     monkeypatch.setattr(
-        fake_investigator,
-        "investigator_step",
+        fake_roles,
+        "role_step",
         lambda _request: FakeAnswer(content=(TextBlock(text="ok"),)),
     )
     settings = Settings(

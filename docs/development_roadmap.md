@@ -25,13 +25,13 @@ PostgreSQL owns evidence, workflow progress, budgets, and the initial knowledge 
 
 | Field | Current value |
 | --- | --- |
-| Active phase | Phase 9 Multi-agent investigations (not started); Phase 8 gate passed on the fake provider |
-| Active task | none (Phase 8 gate passed) |
-| Last completed task | P08-T04 and the Phase 8 gate |
-| Latest verified commit | `49ffcb0` (P08-T04; the gate commit follows it) |
-| Validation evidence | Phase 8 gate: `SIGNALOPS_INTEGRATION=1 uv run pytest` 1190 passed. The Playwright browser journey passed on Compose with the fake provider: fault ingestion, an automatic and one manual investigation (a double click started only one), a stream resumed with `Last-Event-ID` after a reload, a diagnosis naming `bank-gateway` with 10 verified citations and estimated cost, and a cancelled run. No model was called. Earlier evidence is in the work log |
+| Active phase | Phase 9 Multi-agent investigations (in progress); Phase 8 gate passed on the fake provider |
+| Active task | P09-T02 (in progress) |
+| Last completed task | P09-T01 |
+| Latest verified commit | the `feat(P09-T01)` commit (its hash is recorded in the next task's commit) |
+| Validation evidence | P09-T01: `SIGNALOPS_INTEGRATION=1 uv run pytest tests/integration` 612 passed, including 9 new `v3` tests; unit 606 passed. Phase 8 gate: `SIGNALOPS_INTEGRATION=1 uv run pytest` 1190 passed. The Playwright browser journey passed on Compose with the fake provider: fault ingestion, an automatic and one manual investigation (a double click started only one), a stream resumed with `Last-Event-ID` after a reload, a diagnosis naming `bank-gateway` with 10 verified citations and estimated cost, and a cancelled run. No model was called. Earlier evidence is in the work log |
 | Blockers | none |
-| Next task | P09-T01 |
+| Next task | P09-T02 |
 
 ### Scope and release boundaries
 
@@ -803,11 +803,20 @@ Start the React shell in Phase 1 and add API-backed incident views in Phase 5; P
 
 ### P09-T01 Define role contracts and handoffs
 
-- [ ] Complete this task.
+- [x] Complete this task.
 
 **Implementation:** Implement coordinator, telemetry investigator, deployment investigator, dependency/runbook investigator, synthesizer, and verifier as logical workflow roles. Version their prompts and structured outputs.
 
 **Acceptance:** Each role receives only its required context and returns typed findings with provenance and explicit uncertainty.
+
+**Notes (2026-11-08):**
+- **Decision (ADR-031):** workflow `v3` in `agents/multi_agent.py`: `load_context`, `plan`, `telemetry`, `deployment`, `dependency`, `synthesize`, `verify`, `conclude`, run in sequence for now (P09-T02 makes the branches parallel). Contracts in `contracts/roles.py`, with schemas `investigation-plan`, `specialist-findings`, `synthesis`, and `verification` (`.v1.json`) under `contracts/schemas/workflow/`. Prompts `telemetry-v1`, `deployment-v1`, `dependency-v1`, `synthesizer-v1`, `verifier-v1`.
+- **The coordinator is code:** `plan` writes each specialist's brief, turns, and budget share into its output, so what each role was told is stored. Telemetry gets detector-cited signals; deployment and dependency get the incident's services; the synthesizer gets only reports; the verifier gets the leading citations as code read them, redacted.
+- **Handoff checks in code:** a specialist cannot cite a signal or runbook its own tool results did not return; the synthesis cannot cite what no specialist cited or credit a role with no findings; the verifier must judge exactly the leading citations; `conclude` keeps only accepted citations and runs ADR-029's check again. Any tool outside a role's two, including another role's, is refused.
+- **Refactor:** the v2 loop moved to `agents/agent_loop.py`, shared by every role; v2 behaviour, messages, and tests are unchanged. Engine types moved to `agents/nodes.py` and `load_incident` to `agents/briefs.py`, re-exported where tests import them.
+- **Choices the task did not state:** `SIGNALOPS_INVESTIGATION_WORKFLOW_VERSION` (`v3` default; `v2` kept for P10 baselines); defaults rise to 40 steps and 3 USD, since three branches will hold reservations at once; turns go to synthesis (2) and verification (2) before specialists (up to 5 each); with no findings, synthesis and verification make no call (`ended_by: skipped`); `AgentEnding` records how each loop ended.
+- **Fake mode:** `gateway/fake_roles.py` answers by prompt version. On `downstream-timeout` the telemetry role names `bank-gateway`, the deployment role reports the unrelated `inventory` deployment at 0.3 confidence, which stays visible as an alternative, and the verifier accepts citations from or naming the service.
+- **Left:** budget shares are computed but not enforced until P09-T02; contradictions are the synthesizer's alone until P09-T03; replay scopes have no graph or runbooks, so the dependency role reports missing evidence in replay tests.
 
 ### P09-T02 Implement bounded parallel scheduling
 
@@ -1453,6 +1462,16 @@ Keep these outside the release critical path unless measurements justify promoti
 - Deviations and reasons: none.
 - Remaining issues: see the gate note's open items.
 - Next task: P09-T01.
+
+### 2026-11-08 — P09-T01
+- Status: completed
+- Commit: the `feat(P09-T01)` commit (hash recorded in the P09-T02 entry)
+- Implemented: `contracts/roles.py`; `agents/agent_loop.py`, `agents/multi_agent.py`, `agents/nodes.py`, `agents/briefs.py`; `gateway/fake_roles.py`; `SIGNALOPS_INVESTIGATION_WORKFLOW_VERSION`; new budget and step defaults; four workflow schemas; `tests/integration/test_multi_agent.py`, `tests/integration/multi_agent_support.py`, `tests/unit/test_roles.py`; ADR-031; `docs/agents-and-workflow.md`, `docs/development.md`.
+- Validation commands and results: `uv run ruff check .`, `uv run ruff format --check .`, `uv run mypy` (176 files), `uv run signalops export-schemas` (4 new schemas) pass; `uv run pytest` 606 passed; `SIGNALOPS_INTEGRATION=1 uv run pytest tests/integration` 612 passed on Compose.
+- Evidence or artifact references: the tests check each role's offered tools and brief fields from the requests the fake received, typed findings with provenance and uncertainty, and refusals of an unread citation, another role's tool, an uncited hypothesis, and an incomplete verification.
+- Deviations and reasons: none.
+- Remaining issues: see task notes.
+- Next task: P09-T02.
 
 ## Work log template
 

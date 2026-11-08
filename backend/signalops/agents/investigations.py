@@ -74,7 +74,8 @@ from signalops.persistence.repositories.scope import EvidenceScope
 logger = logging.getLogger(__name__)
 
 DISPATCHER_CONSUMER_GROUP: Final = "dispatcher-v1"
-WORKFLOW_VERSION: Final = "v2"
+# The default for new investigations; `investigation_workflow_version` chooses.
+WORKFLOW_VERSION: Final = "v3"
 # Fixed namespace: a request's event ID derives from its investigation.
 INVESTIGATION_EVENT_NAMESPACE: Final = uuid.UUID("c1f0a6d4-8b2e-4f37-9e15-2a7d6b3c9e01")
 REQUEST_AGGREGATE_VERSION: Final = 1
@@ -82,9 +83,10 @@ REQUEST_AGGREGATE_VERSION: Final = 1
 
 @dataclass(frozen=True)
 class InvestigationPolicy:
-    budget_microusd: int = 1_000_000
-    max_steps: int = 20
+    budget_microusd: int = 3_000_000
+    max_steps: int = 40
     deadline_seconds: int = 600
+    workflow_version: str = WORKFLOW_VERSION
 
     @classmethod
     def from_settings(cls, settings: Settings) -> "InvestigationPolicy":
@@ -92,6 +94,7 @@ class InvestigationPolicy:
             settings.investigation_budget_microusd,
             settings.investigation_max_steps,
             settings.investigation_deadline_seconds,
+            settings.investigation_workflow_version,
         )
 
 
@@ -191,7 +194,7 @@ async def request_by_operator(
             scope=scope,
             incident_id=incident_id,
             request_key=operator_request_key(scope.workspace_id, route, key),
-            workflow_version=WORKFLOW_VERSION,
+            workflow_version=policy.workflow_version,
             budget_microusd=_resolved(
                 policy.budget_microusd, body.budget_microusd, "budget_microusd"
             ),
@@ -224,7 +227,7 @@ async def request_by_detector(
             scope=scope,
             incident_id=incident_id,
             request_key=f"detector:{incident_id}",
-            workflow_version=WORKFLOW_VERSION,
+            workflow_version=policy.workflow_version,
             budget_microusd=policy.budget_microusd,
             max_steps=policy.max_steps,
             created_at=now,

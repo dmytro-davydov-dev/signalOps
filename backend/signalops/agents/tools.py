@@ -26,7 +26,7 @@ import json
 import logging
 import re
 import uuid
-from collections.abc import Awaitable, Callable, Mapping
+from collections.abc import Awaitable, Callable, Collection, Mapping
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Any, Final, Literal
@@ -130,6 +130,8 @@ class ToolOutcome:
     # Canonical JSON of the result or failure.
     content: str
     is_error: bool
+    # The `tool_calls` row's key within its step.
+    call_key: str = ""
 
 
 class ToolRejectedError(Exception):
@@ -394,7 +396,8 @@ TOOLS: Final[Mapping[ToolName, ToolSpec]] = {
 }
 
 
-def tool_definitions() -> tuple[ToolDefinition, ...]:
+def tool_definitions(allowed: Collection[ToolName] | None = None) -> tuple[ToolDefinition, ...]:
+    """Definitions of the tools a role may call, all five by default, in a fixed order."""
     return tuple(
         ToolDefinition(
             name=spec.name.value,
@@ -402,6 +405,7 @@ def tool_definitions() -> tuple[ToolDefinition, ...]:
             input_schema=spec.arguments.model_json_schema(),
         )
         for spec in TOOLS.values()
+        if allowed is None or spec.name in allowed
     )
 
 
@@ -431,6 +435,10 @@ class ToolExecutor:
         self._redactor = redactor
         self._limits = limits or ToolLimits()
         self._cache = cache
+
+    @property
+    def redactor(self) -> TextRedactor:
+        return self._redactor
 
     async def run(
         self,
@@ -473,7 +481,7 @@ class ToolExecutor:
             "tool call finished",
             extra={"tool": str(tool), "failed": failed, "duration_ms": elapsed},
         )
-        return ToolOutcome(tool, content, failed)
+        return ToolOutcome(tool, content, failed, call_key)
 
     @staticmethod
     def _call_key(tool: ToolName, raw_arguments: Mapping[str, Any]) -> str:

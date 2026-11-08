@@ -10,9 +10,11 @@ well a model diagnoses, and no result from it is a measure of quality.
 import json
 import uuid
 from collections import Counter
+from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Any, Final
 
+from signalops.contracts.common import ContractModel
 from signalops.contracts.diagnosis import DiagnosisStatus
 from signalops.contracts.evidence import Severity
 from signalops.contracts.steps import (
@@ -20,6 +22,7 @@ from signalops.contracts.steps import (
     IncidentBrief,
     ProposedCause,
     ProposedDiagnosis,
+    ServiceBrief,
 )
 from signalops.contracts.workflow import ToolName
 from signalops.gateway.fake import FakeAnswer
@@ -47,7 +50,7 @@ def _brief(request: ModelRequest) -> IncidentBrief:
     return IncidentBrief.model_validate_json(first.text)
 
 
-def _results(request: ModelRequest) -> list[dict[str, Any]]:
+def results_of(request: ModelRequest) -> list[dict[str, Any]]:
     return [
         json.loads(block.content)
         for message in request.messages
@@ -57,7 +60,7 @@ def _results(request: ModelRequest) -> list[dict[str, Any]]:
     ]
 
 
-def _entries(results: list[dict[str, Any]], tool: ToolName) -> list[dict[str, Any]]:
+def entries(results: list[dict[str, Any]], tool: ToolName) -> list[dict[str, Any]]:
     seen: dict[str, dict[str, Any]] = {}
     for result in results:
         if result.get("tool") == tool:
@@ -65,14 +68,13 @@ def _entries(results: list[dict[str, Any]], tool: ToolName) -> list[dict[str, An
     return list(seen.values())
 
 
-def _window(brief: IncidentBrief) -> dict[str, str]:
-    cutoff = brief.evidence_cutoff_at
-    start: datetime = brief.window_start or cutoff - LOOK_BACK
+def window_of(window_start: datetime | None, cutoff: datetime) -> dict[str, str]:
+    start: datetime = window_start or cutoff - LOOK_BACK
     since = max(start - LOOK_BACK, cutoff - LONGEST_WINDOW)
     return {"since": since.isoformat(), "until": cutoff.isoformat()}
 
 
-def _calls(turn: int, *calls: tuple[ToolName, dict[str, Any]]) -> FakeAnswer:
+def calls(turn: int, *calls: tuple[ToolName, dict[str, Any]]) -> FakeAnswer:
     return FakeAnswer(
         content=tuple(
             ToolUseBlock(id=f"toolu_{turn}_{index}", name=tool.value, input=arguments)
@@ -82,11 +84,11 @@ def _calls(turn: int, *calls: tuple[ToolName, dict[str, Any]]) -> FakeAnswer:
     )
 
 
-def _submit(turn: int, proposal: ProposedDiagnosis) -> FakeAnswer:
+def submit(turn: int, output: ContractModel, name: str = SUBMIT_TOOL) -> FakeAnswer:
     block = ToolUseBlock(
         id=f"toolu_{turn}_submit",
-        name=SUBMIT_TOOL,
-        input=proposal.model_dump(mode="json", exclude_none=True),
+        name=name,
+        input=output.model_dump(mode="json", exclude_none=True),
     )
     return FakeAnswer(content=(block,), stop_reason=StopReason.TOOL_USE)
 
@@ -147,12 +149,37 @@ def _diagnosis(
     )
 
 
-def investigator_step(request: ModelRequest) -> FakeAnswer:
-    brief = _brief(request)
-    turn = sum(message.role is ModelRole.ASSISTANT for message in request.messages)
-    window = _window(brief)
+@dataclass(frozen=True)
+class TelemetryVerdict:
+    """What the fixed rule concludes: a service with what it read, or why there is none."""
+
+    service_id: uuid.UUID | None
+    reason: str = ""
+    cited: tuple[dict[str, Any], ...] = ()
+    logs: tuple[dict[str, Any], ...] = ()
+
+    @property
+    def timed_out(self) -> bool:
+        return any(
+            "timed out" in item["message"] or "timeout" in item["message"] for item in self.logs
+        )
+
+
+def turn_of(request: ModelRequest) -> int:
+    return sum(message.role is ModelRole.ASSISTANT for message in request.messages)
+
+
+def telemetry_turn(
+    request: ModelRequest,
+    window_start: datetime | None,
+    cutoff: datetime,
+    services: tuple[ServiceBrief, ...],
+) -> FakeAnswer | TelemetryVerdict:
+    """The next tool calls by the fixed rule, or its verdict once it has read enough."""
+    turn = turn_of(request)
+    window = window_of(window_start, cutoff)
     if turn == 0:
-        return _calls(
+        return calls(
             turn,
             (ToolName.GET_TRACE_SUMMARY, {**window, "status": "error", "limit": ROW_LIMIT}),
             (
@@ -160,18 +187,18 @@ def investigator_step(request: ModelRequest) -> FakeAnswer:
                 {**window, "minimum_severity": Severity.ERROR.value, "limit": ROW_LIMIT},
             ),
         )
-    results = _results(request)
-    errors = _entries(results, ToolName.GET_TRACE_SUMMARY)
+    results = results_of(request)
+    errors = entries(results, ToolName.GET_TRACE_SUMMARY)
     errors = [item for item in errors if item["status"] == "error"]
-    logs = _entries(results, ToolName.QUERY_LOGS)
-    names = {service.name: service.service_id for service in brief.services}
+    logs = entries(results, ToolName.QUERY_LOGS)
+    names = {service.name: service.service_id for service in services}
     found = _last_failing_service(errors, names)
     if found is None:
-        return _submit(turn, _abstention("No service shows sustained errors in this window"))
+        return TelemetryVerdict(None, "No service shows sustained errors in this window")
     failing, callee = found
     if turn == 1 and callee is not None:
         moments = sorted(item["occurred_at"] for item in errors)
-        return _calls(
+        return calls(
             turn,
             (
                 ToolName.GET_TRACE_SUMMARY,
@@ -184,16 +211,27 @@ def investigator_step(request: ModelRequest) -> FakeAnswer:
             ),
         )
     caller_traces = [item for item in errors if item["service_id"] == str(failing)]
-    caller_logs = [item for item in logs if item["service_id"] == str(failing)]
+    caller_logs = tuple(item for item in logs if item["service_id"] == str(failing))
     slow = [
         item
-        for item in _entries(results, ToolName.GET_TRACE_SUMMARY)
+        for item in entries(results, ToolName.GET_TRACE_SUMMARY)
         if callee is not None
         and item["service_id"] == str(callee)
         and item["duration_ms"] >= SLOW_TRACE_MS
     ]
     if callee is not None and slow:
-        return _submit(turn, _diagnosis(callee, cited=[*slow, *caller_logs], logs=caller_logs))
-    return _submit(
-        turn, _diagnosis(failing, cited=[*caller_traces, *caller_logs], logs=caller_logs)
+        return TelemetryVerdict(callee, cited=(*slow, *caller_logs), logs=caller_logs)
+    return TelemetryVerdict(failing, cited=(*caller_traces, *caller_logs), logs=caller_logs)
+
+
+def investigator_step(request: ModelRequest) -> FakeAnswer:
+    brief = _brief(request)
+    outcome = telemetry_turn(request, brief.window_start, brief.evidence_cutoff_at, brief.services)
+    if isinstance(outcome, FakeAnswer):
+        return outcome
+    turn = turn_of(request)
+    if outcome.service_id is None:
+        return submit(turn, _abstention(outcome.reason))
+    return submit(
+        turn, _diagnosis(outcome.service_id, cited=list(outcome.cited), logs=list(outcome.logs))
     )

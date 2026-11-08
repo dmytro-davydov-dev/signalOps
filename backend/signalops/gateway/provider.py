@@ -23,13 +23,11 @@ def build_provider(settings: Settings) -> ModelProvider:
 
         return AnthropicProvider.from_settings(settings)
     from signalops.gateway.fake import FakeProvider
-    from signalops.gateway.fake_investigator import investigator_step
+    from signalops.gateway.fake_roles import role_step
 
     delay = settings.fake_model_delay_seconds
     if delay == 0:
-        return FakeProvider(responder=investigator_step)
+        return FakeProvider(responder=role_step)
     return FakeProvider(
-        responder=lambda request: investigator_step(request).model_copy(
-            update={"delay_seconds": delay}
-        )
+        responder=lambda request: role_step(request).model_copy(update={"delay_seconds": delay})
     )

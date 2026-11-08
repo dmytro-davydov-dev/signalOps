@@ -210,7 +210,8 @@ Backend processes read `SIGNALOPS_`-prefixed variables (`backend/signalops/confi
 | `SIGNALOPS_DETECTION_CLOSER_INTERVAL_MS` | `5000` | Closer wait after a batch that was not full (100–60000) |
 | `SIGNALOPS_INCIDENT_CORRELATION_GAP_SECONDS` | `600` | A breach joins an incident seen within this long; a later one starts a new incident (10–86400) |
 | `SIGNALOPS_INCIDENT_RECOVERY_SECONDS` | `300` | Breach-free time, shown by a sufficient window of every service, that resolves an incident; between the window length and the gap |
-| `SIGNALOPS_INVESTIGATION_BUDGET_MICROUSD` / `SIGNALOPS_INVESTIGATION_MAX_STEPS` / `SIGNALOPS_INVESTIGATION_DEADLINE_SECONDS` | `1000000` / `20` / `600` | The most one investigation may use (1–1000000000, 1–200, 60–86400); a request can only lower them |
+| `SIGNALOPS_INVESTIGATION_BUDGET_MICROUSD` / `SIGNALOPS_INVESTIGATION_MAX_STEPS` / `SIGNALOPS_INVESTIGATION_DEADLINE_SECONDS` | `3000000` / `40` / `600` | The most one investigation may use (1–1000000000, 1–200, 60–86400); a request can only lower them. Steps count workflow nodes plus model turns |
+| `SIGNALOPS_INVESTIGATION_WORKFLOW_VERSION` | `v3` | The workflow new investigations run: `v3` multi-agent (ADR-031) or `v2` single agent (ADR-028) |
 | `SIGNALOPS_INVESTIGATION_AUTO_REQUEST` | `true` | A new live incident requests one investigation |
 | `SIGNALOPS_TOOL_TIMEOUT_SECONDS` | `5` | One evidence tool read (up to 60); a slower one returns a timeout to the agent |
 | `SIGNALOPS_TOOL_CACHE_SECONDS` | `60` | How long Redis keeps a tool result (30–120) |

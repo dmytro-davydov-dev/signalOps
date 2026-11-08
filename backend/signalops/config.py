@@ -87,11 +87,14 @@ class Settings(BaseSettings):
     # Breach-free time, shown by a sufficient window of every service, that resolves an incident.
     incident_recovery_seconds: int = Field(default=300, ge=10, le=24 * 60 * 60)
     # The most one investigation may use; a request can only lower these.
-    investigation_budget_microusd: int = Field(default=1_000_000, ge=1, le=1_000_000_000)
-    investigation_max_steps: int = Field(default=20, ge=1, le=200)
+    investigation_budget_microusd: int = Field(default=3_000_000, ge=1, le=1_000_000_000)
+    # Workflow nodes plus model turns; `v3` has 8 nodes and splits the rest among its roles.
+    investigation_max_steps: int = Field(default=40, ge=1, le=200)
     investigation_deadline_seconds: int = Field(default=600, ge=60, le=24 * 60 * 60)
     # A new live incident requests one investigation.
     investigation_auto_request: bool = True
+    # The workflow new investigations run: `v3` multi-agent, or `v2` single agent.
+    investigation_workflow_version: Literal["v2", "v3"] = "v3"
     # Replies an agent may have rejected for shape or support before it abstains.
     agent_max_repairs: int = Field(default=2, ge=0, le=5)
     # Evidence tool calls in one agent step; each result adds to every later prompt.

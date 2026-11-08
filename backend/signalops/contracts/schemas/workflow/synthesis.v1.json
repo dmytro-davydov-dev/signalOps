@@ -1,0 +1,332 @@
+{
+  "$defs": {
+    "AgentEnding": {
+      "enum": [
+        "submitted",
+        "no_turns",
+        "turn_limit",
+        "repair_limit",
+        "refused",
+        "budget_share",
+        "skipped"
+      ],
+      "title": "AgentEnding",
+      "type": "string"
+    },
+    "AgentRole": {
+      "enum": [
+        "investigator",
+        "coordinator",
+        "telemetry_investigator",
+        "deployment_investigator",
+        "dependency_investigator",
+        "synthesizer",
+        "verifier"
+      ],
+      "title": "AgentRole",
+      "type": "string"
+    },
+    "Contradiction": {
+      "additionalProperties": false,
+      "properties": {
+        "description": {
+          "maxLength": 2000,
+          "minLength": 1,
+          "title": "Description",
+          "type": "string"
+        },
+        "evidence_signal_ids": {
+          "default": [],
+          "items": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "maxItems": 20,
+          "title": "Evidence Signal Ids",
+          "type": "array"
+        },
+        "roles": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/AgentRole"
+          },
+          "maxItems": 3,
+          "title": "Roles",
+          "type": "array"
+        }
+      },
+      "required": [
+        "description"
+      ],
+      "title": "Contradiction",
+      "type": "object"
+    },
+    "DiagnosisStatus": {
+      "enum": [
+        "diagnosed",
+        "insufficient_evidence"
+      ],
+      "title": "DiagnosisStatus",
+      "type": "string"
+    },
+    "Hypothesis": {
+      "additionalProperties": false,
+      "properties": {
+        "assessment": {
+          "maxLength": 2000,
+          "minLength": 1,
+          "title": "Assessment",
+          "type": "string"
+        },
+        "confidence": {
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "title": "Confidence",
+          "type": "number"
+        },
+        "evidence_signal_ids": {
+          "items": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "maxItems": 50,
+          "minItems": 1,
+          "title": "Evidence Signal Ids",
+          "type": "array"
+        },
+        "failure_type": {
+          "maxLength": 64,
+          "pattern": "^[a-z][a-z0-9_]*$",
+          "title": "Failure Type",
+          "type": "string"
+        },
+        "service_id": {
+          "format": "uuid",
+          "title": "Service Id",
+          "type": "string"
+        },
+        "supporting_roles": {
+          "items": {
+            "$ref": "#/$defs/AgentRole"
+          },
+          "maxItems": 3,
+          "minItems": 1,
+          "title": "Supporting Roles",
+          "type": "array"
+        }
+      },
+      "required": [
+        "service_id",
+        "failure_type",
+        "confidence",
+        "evidence_signal_ids",
+        "supporting_roles",
+        "assessment"
+      ],
+      "title": "Hypothesis",
+      "type": "object"
+    },
+    "Provenance": {
+      "additionalProperties": false,
+      "description": "How a role's output came about. Never the model's reasoning.",
+      "properties": {
+        "ended_by": {
+          "$ref": "#/$defs/AgentEnding"
+        },
+        "model": {
+          "anyOf": [
+            {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]*$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Model"
+        },
+        "model_turns": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Model Turns",
+          "type": "integer"
+        },
+        "prompt_version": {
+          "maxLength": 64,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]*$",
+          "title": "Prompt Version",
+          "type": "string"
+        },
+        "role": {
+          "$ref": "#/$defs/AgentRole"
+        },
+        "signals_read": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Signals Read",
+          "type": "integer"
+        },
+        "tool_calls": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/ToolCallRef"
+          },
+          "maxItems": 64,
+          "title": "Tool Calls",
+          "type": "array"
+        }
+      },
+      "required": [
+        "role",
+        "prompt_version",
+        "ended_by"
+      ],
+      "title": "Provenance",
+      "type": "object"
+    },
+    "SuggestedAction": {
+      "additionalProperties": false,
+      "properties": {
+        "action": {
+          "maxLength": 2000,
+          "minLength": 1,
+          "title": "Action",
+          "type": "string"
+        },
+        "requires_approval": {
+          "const": true,
+          "default": true,
+          "title": "Requires Approval",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "action"
+      ],
+      "title": "SuggestedAction",
+      "type": "object"
+    },
+    "SynthesisReport": {
+      "additionalProperties": false,
+      "description": "What the synthesizer submits: ranked hypotheses, the first one leading.",
+      "properties": {
+        "contradictions": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/Contradiction"
+          },
+          "maxItems": 10,
+          "title": "Contradictions",
+          "type": "array"
+        },
+        "hypotheses": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/Hypothesis"
+          },
+          "maxItems": 5,
+          "title": "Hypotheses",
+          "type": "array"
+        },
+        "limitations": {
+          "default": [],
+          "items": {
+            "maxLength": 500,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 10,
+          "title": "Limitations",
+          "type": "array"
+        },
+        "missing_evidence": {
+          "default": [],
+          "items": {
+            "maxLength": 500,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 10,
+          "title": "Missing Evidence",
+          "type": "array"
+        },
+        "status": {
+          "$ref": "#/$defs/DiagnosisStatus"
+        },
+        "suggested_actions": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/SuggestedAction"
+          },
+          "maxItems": 10,
+          "title": "Suggested Actions",
+          "type": "array"
+        },
+        "summary": {
+          "maxLength": 2000,
+          "minLength": 1,
+          "title": "Summary",
+          "type": "string"
+        }
+      },
+      "required": [
+        "status",
+        "summary"
+      ],
+      "title": "SynthesisReport",
+      "type": "object"
+    },
+    "ToolCallRef": {
+      "additionalProperties": false,
+      "properties": {
+        "call_key": {
+          "maxLength": 256,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]*$",
+          "title": "Call Key",
+          "type": "string"
+        },
+        "tool": {
+          "$ref": "#/$defs/ToolName"
+        }
+      },
+      "required": [
+        "tool",
+        "call_key"
+      ],
+      "title": "ToolCallRef",
+      "type": "object"
+    },
+    "ToolName": {
+      "enum": [
+        "query_logs",
+        "get_trace_summary",
+        "get_deployments",
+        "get_service_dependencies",
+        "retrieve_runbooks"
+      ],
+      "title": "ToolName",
+      "type": "string"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "provenance": {
+      "$ref": "#/$defs/Provenance"
+    },
+    "report": {
+      "$ref": "#/$defs/SynthesisReport"
+    }
+  },
+  "required": [
+    "report",
+    "provenance"
+  ],
+  "title": "SynthesisOutput",
+  "type": "object"
+}

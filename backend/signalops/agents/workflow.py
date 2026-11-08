@@ -28,34 +28,34 @@ change to the nodes or their output needs a new entry in `WORKFLOWS`.
 
 The nodes run in sequence. In `v1`, `investigate` makes no model call and always
 abstains. In `v2`, it is the tool-using agent of `agents/investigator.py`, whose
-output `conclude` turns into the diagnosis. A node that makes model calls reaches
-them through the gateway, which makes the stop check before each one.
+output `conclude` turns into the diagnosis. `v3` is the multi-agent workflow of
+`agents/multi_agent.py`. A node that makes model calls reaches them through the
+gateway, which makes the stop check before each one.
 """
 
 import logging
-import uuid
-from collections.abc import Awaitable, Callable, Mapping
-from dataclasses import dataclass
-from datetime import datetime
-from typing import Any, Final, cast
+from collections.abc import Mapping
+from typing import Final
 
 from pydantic import ValidationError
 
+from signalops.agents.briefs import LOAD_INCIDENT
 from signalops.agents.findings import verify_findings
-from signalops.agents.investigations import WORKFLOW_VERSION
 from signalops.agents.investigator import AgentRuntime, investigate_incident
 from signalops.agents.jobs import JobStoppedError, PermanentJobError, error_record
+from signalops.agents.multi_agent import CONCLUDE_VERIFIED, V3_NODES, WORKFLOW_V3
+from signalops.agents.nodes import Node as Node
+from signalops.agents.nodes import NodeContext as NodeContext
+from signalops.agents.nodes import Workflow as Workflow
+from signalops.agents.nodes import WorkflowRun as WorkflowRun
 from signalops.agents.read_cache import ToolScope
 from signalops.contracts.checkpoints import StepCheckpoint, decode_checkpoint
 from signalops.contracts.common import ContractError, ContractModel
 from signalops.contracts.diagnosis import Diagnosis, DiagnosisStatus, RootCause
 from signalops.contracts.steps import (
-    MAX_BRIEF_EVIDENCE,
-    MAX_BRIEF_SERVICES,
     IncidentBrief,
     InvestigatorFindings,
     ProposedDiagnosis,
-    ServiceBrief,
 )
 from signalops.contracts.workflow import AgentRole, StepStatus
 from signalops.persistence.database import Database
@@ -63,100 +63,8 @@ from signalops.persistence.models import AgentStep, Investigation
 from signalops.persistence.repositories.catalog import CatalogRepository
 from signalops.persistence.repositories.incidents import IncidentRepository
 from signalops.persistence.repositories.jobs import JobLease, JobRepository
-from signalops.persistence.repositories.scope import EvidenceScope
 
 logger = logging.getLogger(__name__)
-
-
-@dataclass(frozen=True)
-class WorkflowRun:
-    """What the workflow may know about its investigation, copied from the row."""
-
-    investigation_id: uuid.UUID
-    incident_id: uuid.UUID
-    scope: EvidenceScope
-    evidence_cutoff_at: datetime
-    workflow_version: str
-    max_steps: int
-
-    @classmethod
-    def of(cls, investigation: Investigation) -> "WorkflowRun":
-        return cls(
-            investigation.id,
-            investigation.incident_id,
-            EvidenceScope(investigation.workspace_id, investigation.replay_scope),
-            investigation.evidence_cutoff_at,
-            investigation.workflow_version,
-            investigation.max_steps,
-        )
-
-
-class NodeContext:
-    def __init__(
-        self, database: Database, run: WorkflowRun, runtime: AgentRuntime | None = None
-    ) -> None:
-        self.database = database
-        self.run = run
-        self.runtime = runtime
-        self._outputs: dict[str, ContractModel] = {}
-        self._lease: JobLease | None = None
-        self._step_key = ""
-        self._step_count = 0
-
-    def at(self, lease: JobLease, step_key: str, step_count: int) -> "NodeContext":
-        """This context for one step, sharing the outputs kept so far."""
-        step = NodeContext(self.database, self.run, self.runtime)
-        step._outputs = self._outputs
-        step._lease = lease
-        step._step_key = step_key
-        step._step_count = step_count
-        return step
-
-    @property
-    def lease(self) -> JobLease:
-        if self._lease is None:
-            raise RuntimeError("the context is not at a step")
-        return self._lease
-
-    @property
-    def step_key(self) -> str:
-        return self._step_key
-
-    @property
-    def step_count(self) -> int:
-        """Steps in this workflow. `max_steps` beyond them is left for model turns."""
-        return self._step_count
-
-    def output[T: ContractModel](self, node: "Node[T]") -> T:
-        """The output of an earlier node."""
-        return cast("T", self._outputs[node.key])
-
-    def keep[T: ContractModel](self, node: "Node[T]", output: T) -> None:
-        self._outputs[node.key] = output
-
-    @property
-    def finished(self) -> list[str]:
-        return list(self._outputs)
-
-
-@dataclass(frozen=True)
-class Node[T: ContractModel]:
-    key: str
-    role: AgentRole
-    output: type[T]
-    run: Callable[[NodeContext], Awaitable[T]]
-
-
-@dataclass(frozen=True)
-class Workflow:
-    version: str
-    # The nodes before the conclusion.
-    nodes: tuple[Node[Any], ...]
-    conclusion: Node[Diagnosis]
-
-    @property
-    def steps(self) -> tuple[Node[Any], ...]:
-        return (*self.nodes, self.conclusion)
 
 
 async def load_context(context: NodeContext) -> IncidentBrief:
@@ -184,31 +92,6 @@ async def conclude(context: NodeContext) -> Diagnosis:
         root_cause=None,
         missing_evidence=context.output(INVESTIGATE).missing_evidence,
         workflow_version=context.run.workflow_version,
-    )
-
-
-async def load_incident(context: NodeContext) -> IncidentBrief:
-    run = context.run
-    cutoff = run.evidence_cutoff_at
-    async with context.database.transaction() as session:
-        incidents = IncidentRepository(session)
-        incident = await incidents.get(run.scope, run.incident_id)
-        if incident is None:
-            raise PermanentJobError("the incident is outside the investigation's scope")
-        services = await CatalogRepository(session).list_services(
-            run.scope.workspace_id, limit=MAX_BRIEF_SERVICES
-        )
-        cited = await incidents.evidence_known_by(
-            run.scope, run.incident_id, known_by=cutoff, limit=MAX_BRIEF_EVIDENCE
-        )
-    return IncidentBrief(
-        incident_id=incident.id,
-        title=incident.title,
-        detected_at=incident.detected_at,
-        evidence_cutoff_at=cutoff,
-        window_start=incident.correlation_window_start,
-        services=tuple(ServiceBrief(service_id=row.id, name=row.name) for row in services),
-        evidence_signal_ids=tuple(cited),
     )
 
 
@@ -276,7 +159,6 @@ LOAD_CONTEXT: Final = Node("load_context", AgentRole.COORDINATOR, IncidentBrief,
 INVESTIGATE: Final = Node("investigate", AgentRole.INVESTIGATOR, InvestigatorFindings, investigate)
 CONCLUDE: Final = Node("conclude", AgentRole.SYNTHESIZER, Diagnosis, conclude)
 
-LOAD_INCIDENT: Final = Node("load_context", AgentRole.COORDINATOR, IncidentBrief, load_incident)
 INVESTIGATE_AGENT: Final = Node(
     "investigate", AgentRole.INVESTIGATOR, ProposedDiagnosis, investigate_with_agent
 )
@@ -285,9 +167,8 @@ CONCLUDE_FINDINGS: Final = Node("conclude", AgentRole.SYNTHESIZER, Diagnosis, co
 WORKFLOWS: Final[Mapping[str, Workflow]] = {
     # The fake sequence of Phase 6; finished and running investigations keep it.
     "v1": Workflow("v1", (LOAD_CONTEXT, INVESTIGATE), CONCLUDE),
-    WORKFLOW_VERSION: Workflow(
-        WORKFLOW_VERSION, (LOAD_INCIDENT, INVESTIGATE_AGENT), CONCLUDE_FINDINGS
-    ),
+    "v2": Workflow("v2", (LOAD_INCIDENT, INVESTIGATE_AGENT), CONCLUDE_FINDINGS),
+    WORKFLOW_V3: Workflow(WORKFLOW_V3, V3_NODES, CONCLUDE_VERIFIED),
 }
 
 

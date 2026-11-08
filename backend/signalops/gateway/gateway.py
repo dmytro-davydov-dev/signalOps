@@ -92,6 +92,10 @@ class ModelGateway:
         self._limiter = limiter or NoRateLimit()
         self._policy = policy or GatewayPolicy()
 
+    @property
+    def provider_name(self) -> str:
+        return self._provider.name
+
     async def complete(
         self, lease: JobLease, step_key: str, request: ModelRequest
     ) -> ModelResponse:

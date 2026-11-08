@@ -38,6 +38,12 @@ from signalops.contracts.investigations import (
 )
 from signalops.contracts.progress import ProgressPage
 from signalops.contracts.queries import QualitySummary, ServiceGraph, SignalPage, TraceEvidence
+from signalops.contracts.roles import (
+    InvestigationPlan,
+    SpecialistFindings,
+    SynthesisOutput,
+    VerificationOutput,
+)
 from signalops.contracts.tools import TOOL_RESULT_ADAPTER, ToolFailure
 from signalops.contracts.workflow import TERMINAL_INVESTIGATION_STATUSES, InvestigationStatus
 
@@ -191,6 +197,14 @@ def artifacts() -> list[Artifact]:
             is_schema=False,
         ),
         Artifact(SCHEMA_DIR / "diagnosis" / "diagnosis.v1.json", _schema(Diagnosis)),
+        Artifact(
+            SCHEMA_DIR / "workflow" / "investigation-plan.v1.json", _schema(InvestigationPlan)
+        ),
+        Artifact(
+            SCHEMA_DIR / "workflow" / "specialist-findings.v1.json", _schema(SpecialistFindings)
+        ),
+        Artifact(SCHEMA_DIR / "workflow" / "synthesis.v1.json", _schema(SynthesisOutput)),
+        Artifact(SCHEMA_DIR / "workflow" / "verification.v1.json", _schema(VerificationOutput)),
         Artifact(
             SCHEMA_DIR / "workflow" / f"step-checkpoint.v{CHECKPOINT_SCHEMA_VERSION}.json",
             _schema(StepCheckpoint),

@@ -1,6 +1,6 @@
 # Agents and workflow
 
-> Status: the single-agent slice is built (Phases 6–7); the multi-agent parts are planned. The source is [SignalOps_Implementation_Plan.md](SignalOps_Implementation_Plan.md) §7–8. Delivery order: durable runtime (Phase 6), gateway and one agent (Phase 7), multi-agent (Phase 9).
+> Status: the single-agent slice is built (Phases 6–7). The multi-agent workflow `v3` is being built in Phase 9: roles and handoffs exist (P09-T01); parallel branches, budget shares, contradictions, and the follow-up round are in progress. The source is [SignalOps_Implementation_Plan.md](SignalOps_Implementation_Plan.md) §7–8. Delivery order: durable runtime (Phase 6), gateway and one agent (Phase 7), multi-agent (Phase 9).
 
 ## Principles
 
@@ -30,22 +30,24 @@ flowchart TD
 - The verifier may request **one** bounded follow-up round, and only within the remaining budget and deadline.
 - Downstream capacity for synthesis and verification is reserved up front, so specialists cannot exhaust the budget first.
 
-The engine exists (P06-T03, ADR-022). Workflow `v2` runs three nodes ([ADR-028](decisions.md#adr-028-workflow-v2-is-one-bounded-agent-whose-answer-is-a-tool-call)): `load_context` builds the incident brief, `investigate` runs one tool-using agent, and `conclude` turns its findings into the `Diagnosis`. `v1`, which always abstains, stays for rows that use it. Phase 9 adds the branches above.
+The engine exists (P06-T03, ADR-022). Workflow `v3` ([ADR-031](decisions.md#adr-031-workflow-v3-splits-the-agent-into-roles-with-code-built-briefs-and-code-checked-handoffs)) is the default for new investigations: `load_context`, `plan`, `telemetry`, `deployment`, `dependency`, `synthesize`, `verify`, `conclude`. Workflow `v2` runs three nodes ([ADR-028](decisions.md#adr-028-workflow-v2-is-one-bounded-agent-whose-answer-is-a-tool-call)): `load_context` builds the incident brief, `investigate` runs one tool-using agent, and `conclude` turns its findings into the `Diagnosis`. `v1`, which always abstains, stays for rows that use it. Phase 9 adds the branches above.
 
 The agent loop is bounded by `max_steps` minus the node count, 5 tool calls per turn, 10 per step, `SIGNALOPS_MODEL_MAX_OUTPUT_TOKENS` per reply, and `SIGNALOPS_AGENT_MAX_REPAIRS` rejected replies. It ends by calling `submit_findings`. Exhausting a bound, or a model refusal, abstains. Running out of budget ends `budget_exceeded`. In fake mode a fixed rule plays the loop over real evidence, which proves the plumbing, not diagnostic quality.
 
 ## Roles
 
-| Role | Responsibility | Output |
-| --- | --- | --- |
-| Coordinator | Load incident context, plan branches | Investigation plan |
-| Telemetry investigator | Error and latency patterns, logs, trace summaries | Typed findings with evidence IDs |
-| Deployment investigator | Recent deployments and revisions near the incident window | Typed findings with evidence IDs |
-| Dependency and runbook investigator | Graph neighborhood as of incident time, relevant runbooks | Typed findings with evidence IDs |
-| Synthesizer | Merge compatible findings, surface contradictions | Ranked hypotheses |
-| Verifier | Check citation support, competing hypotheses, schema | Verified diagnosis or abstention |
+| Role | Step | Prompt | Tools | Receives | Output |
+| --- | --- | --- | --- | --- | --- |
+| Coordinator (code) | `load_context`, `plan` | none | none | Incident, its services, the investigation's limits | `InvestigationPlan`: each branch's brief, turns, and budget share |
+| Telemetry investigator | `telemetry` | `telemetry-v1` | `query_logs`, `get_trace_summary` | Incident facts, services, detector-cited signals | `SpecialistFindings` |
+| Deployment investigator | `deployment` | `deployment-v1` | `get_deployments`, `query_logs` | Incident facts, services, the incident's services | `SpecialistFindings` |
+| Dependency and runbook investigator | `dependency` | `dependency-v1` | `get_service_dependencies`, `retrieve_runbooks` | Incident facts, services, the incident's services | `SpecialistFindings` |
+| Synthesizer | `synthesize` | `synthesizer-v1` | none | Specialists' reports and how each branch ended | `SynthesisOutput`: ranked hypotheses, contradictions |
+| Verifier | `verify` | `verifier-v1` | none | The synthesis and the leading citations as stored, redacted | `VerificationOutput`: verdict, one check per citation |
 
-Each role receives only the context it needs. Its prompt and output schema are versioned.
+Each role receives only the context it needs, built by code. Prompts carry versions, which every `llm_calls` row records, and outputs have schemas in `contracts/schemas/workflow/`. A finding carries a confidence and a required uncertainty; every stored output carries `Provenance` (role, prompt version, model, turns, tool call keys, signals read, how the loop ended).
+
+Handoffs are checked in code, and a refusal goes back to the model as a repair: a specialist may cite only what its own tool results returned, the synthesis only what specialists cited, and the verifier must judge exactly the leading citations. `conclude` keeps only the citations the verifier accepted. Any other tool name, including another role's tool, is refused.
 
 ## Tools
 

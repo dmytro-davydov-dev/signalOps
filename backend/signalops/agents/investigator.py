@@ -1,58 +1,33 @@
-"""The single investigating agent: a bounded loop of model turns and evidence tools.
+"""The single investigating agent of workflow `v2`, and the runtime every agent shares.
 
-Each turn is a gateway call, so a stop or an exhausted budget ends the loop at the
-next reservation. Tools run in the step's lease and scope. The loop ends when the
-agent calls `submit_findings` with output that validates and passes `check`.
-
-**Repair.** A reply that cannot be used goes back to the model with field locations
-only, a bounded number of times. Then, or when turns run out or the model refuses,
-the agent abstains: an unsupported answer is never stored as a diagnosis.
-
-**Restart.** The conversation lives in memory, because a provider's thinking blocks
-are not stored. A node that restarts begins it again, and each call is a new billable
-reservation. Tools are read-only, so re-reading changes nothing.
+The agent runs `agent_loop.AgentLoop` with all five tools and ends when it calls
+`submit_findings` with output that validates and passes `check`. A loop that ends
+without output, out of repairs or turns or refused, abstains: an unsupported answer
+is never stored as a diagnosis.
 """
 
 import logging
-from collections.abc import Awaitable, Callable, Sequence
+from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass
 from typing import Final, Self
 
-from pydantic import ValidationError
 from redis.asyncio import Redis
 
+from signalops.agents.agent_loop import AgentLoop, Reads, RoleTask
 from signalops.agents.read_cache import RedisReadCache, ToolScope
-from signalops.agents.tools import (
-    TextRedactor,
-    ToolExecutor,
-    ToolLimits,
-    tool_definitions,
-)
+from signalops.agents.tools import TextRedactor, ToolExecutor, ToolLimits
 from signalops.config import Settings
-from signalops.contracts.common import describe_validation_error
 from signalops.contracts.diagnosis import DiagnosisStatus
+from signalops.contracts.roles import AgentEnding
 from signalops.contracts.steps import SUBMIT_TOOL, IncidentBrief, ProposedDiagnosis
-from signalops.contracts.workflow import ToolName
 from signalops.gateway.gateway import ModelGateway
-from signalops.gateway.types import (
-    Effort,
-    ModelMessage,
-    ModelRequest,
-    ModelResponse,
-    ModelRole,
-    StopReason,
-    TextBlock,
-    ToolDefinition,
-    ToolResultBlock,
-    ToolUseBlock,
-)
+from signalops.gateway.types import Effort, ToolDefinition
 from signalops.persistence.database import Database
 from signalops.persistence.repositories.jobs import JobLease
 
 logger = logging.getLogger(__name__)
 
 PROMPT_VERSION: Final = "investigator-v1"
-MAX_TOOL_CALLS_PER_TURN: Final = 5
 SYSTEM_PROMPT: Final = """\
 You investigate a software incident for an on-call engineer. The user message is a \
 JSON brief naming the incident, the evidence cutoff, the workspace's services, and \
@@ -130,123 +105,21 @@ class AgentRuntime:
         )
 
 
+ABSTENTION_REASONS: Final[Mapping[AgentEnding, str]] = {
+    AgentEnding.NO_TURNS: "The step limit left no turns for a model",
+    AgentEnding.TURN_LIMIT: "The step limit ended the investigation before a conclusion",
+    AgentEnding.REPAIR_LIMIT: "The model did not return a usable diagnosis",
+    AgentEnding.REFUSED: "The model declined to assess this evidence",
+    AgentEnding.BUDGET_SHARE: "The step's budget share ran out before a conclusion",
+}
+
+
 def abstention(reason: str) -> ProposedDiagnosis:
     return ProposedDiagnosis(
         status=DiagnosisStatus.INSUFFICIENT_EVIDENCE,
         summary="The investigation ended without a supported root cause.",
         missing_evidence=(reason,),
     )
-
-
-def _user(*blocks: TextBlock | ToolResultBlock) -> ModelMessage:
-    return ModelMessage(role=ModelRole.USER, content=blocks)
-
-
-class _Investigation:
-    def __init__(
-        self,
-        runtime: AgentRuntime,
-        lease: JobLease,
-        step_key: str,
-        scope: ToolScope,
-        brief: IncidentBrief,
-        check: Check,
-    ) -> None:
-        self._runtime = runtime
-        self._lease = lease
-        self._step_key = step_key
-        self._scope = scope
-        self._check = check
-        self._messages: list[ModelMessage] = [_user(TextBlock(text=brief.model_dump_json()))]
-        self._tools: Sequence[ToolDefinition] = (*tool_definitions(), SUBMIT_DEFINITION)
-        self._repairs = 0
-        self._tool_calls = 0
-
-    async def run(self, max_turns: int) -> ProposedDiagnosis:
-        for _turn in range(max_turns):
-            response = await self._ask()
-            finished = await self._take(response)
-            if finished is not None:
-                return finished
-            if self._repairs > self._runtime.limits.max_repairs:
-                return abstention("The model did not return a usable diagnosis")
-        return abstention("The step limit ended the investigation before a conclusion")
-
-    async def _ask(self) -> ModelResponse:
-        limits = self._runtime.limits
-        request = ModelRequest(
-            model=self._runtime.model,
-            prompt_version=PROMPT_VERSION,
-            system=SYSTEM_PROMPT,
-            messages=tuple(self._messages),
-            tools=tuple(self._tools),
-            max_output_tokens=limits.max_output_tokens,
-            effort=limits.effort,
-        )
-        return await self._runtime.gateway.complete(self._lease, self._step_key, request)
-
-    async def _take(self, response: ModelResponse) -> ProposedDiagnosis | None:
-        if response.stop_reason is StopReason.REFUSAL:
-            return abstention("The model declined to assess this evidence")
-        if response.stop_reason is StopReason.MAX_TOKENS:
-            # A cut-off turn may hold a partial tool call, so it is not kept or acted on.
-            self._repairs += 1
-            self._messages.append(
-                _user(TextBlock(text="Your reply was cut off. Reply again, more briefly."))
-            )
-            return None
-        self._messages.append(ModelMessage(role=ModelRole.ASSISTANT, content=response.content))
-        uses = response.tool_uses()
-        if not uses:
-            self._repairs += 1
-            self._messages.append(
-                _user(TextBlock(text=f"Finish by calling {SUBMIT_TOOL}, or call an evidence tool."))
-            )
-            return None
-        results: list[ToolResultBlock] = []
-        for position, use in enumerate(uses):
-            if use.name == SUBMIT_TOOL:
-                proposal, problem = await self._submitted(use)
-                if proposal is not None:
-                    return proposal
-                results.append(self._error(use, problem))
-            elif position >= MAX_TOOL_CALLS_PER_TURN:
-                results.append(self._error(use, "Too many tool calls in one turn."))
-            elif self._tool_calls >= self._runtime.limits.max_tool_calls:
-                results.append(self._error(use, "The tool call limit is reached. Submit now."))
-            else:
-                results.append(await self._run_tool(use))
-        self._messages.append(_user(*results))
-        return None
-
-    async def _submitted(self, use: ToolUseBlock) -> tuple[ProposedDiagnosis | None, str]:
-        try:
-            proposal = ProposedDiagnosis.model_validate(use.input)
-        except ValidationError as error:
-            self._repairs += 1
-            return None, f"Invalid findings: {describe_validation_error(error)}"
-        problem = await self._check(proposal)
-        if problem is not None:
-            self._repairs += 1
-            return None, problem
-        return proposal, ""
-
-    @staticmethod
-    def _error(use: ToolUseBlock, message: str) -> ToolResultBlock:
-        return ToolResultBlock(tool_use_id=use.id, content=message, is_error=True)
-
-    async def _run_tool(self, use: ToolUseBlock) -> ToolResultBlock:
-        try:
-            tool = ToolName(use.name)
-        except ValueError:
-            return self._error(use, "There is no such tool.")
-        self._tool_calls += 1
-        outcome = await self._runtime.tools.run(
-            self._lease, self._step_key, self._scope, tool, use.input
-        )
-        return ToolResultBlock(
-            tool_use_id=use.id, content=outcome.content, is_error=outcome.is_error
-        )
 
 
 async def investigate_incident(
@@ -260,6 +133,21 @@ async def investigate_incident(
     check: Check = accept,
 ) -> ProposedDiagnosis:
     """The agent's findings, or an abstention. Stops, budgets, and leases raise."""
-    if max_turns <= 0:
-        return abstention("The step limit left no turns for a model")
-    return await _Investigation(runtime, lease, step_key, scope, brief, check).run(max_turns)
+
+    async def checked(proposal: ProposedDiagnosis, _reads: Reads) -> str | None:
+        return await check(proposal)
+
+    task = RoleTask(
+        prompt_version=PROMPT_VERSION,
+        system=SYSTEM_PROMPT,
+        brief=brief.model_dump_json(),
+        tools=None,
+        submit=SUBMIT_DEFINITION,
+        output=ProposedDiagnosis,
+        check=checked,
+        invalid_prefix="Invalid findings",
+    )
+    result = await AgentLoop(runtime, lease, step_key, scope, task).run(max_turns)
+    if result.output is not None:
+        return result.output
+    return abstention(ABSTENTION_REASONS[result.ended_by])

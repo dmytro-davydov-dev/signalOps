@@ -1,0 +1,237 @@
+{
+  "$defs": {
+    "AgentRole": {
+      "enum": [
+        "investigator",
+        "coordinator",
+        "telemetry_investigator",
+        "deployment_investigator",
+        "dependency_investigator",
+        "synthesizer",
+        "verifier"
+      ],
+      "title": "AgentRole",
+      "type": "string"
+    },
+    "BranchPlan": {
+      "additionalProperties": false,
+      "properties": {
+        "brief": {
+          "$ref": "#/$defs/SpecialistBrief"
+        },
+        "budget_share_microusd": {
+          "minimum": 0,
+          "title": "Budget Share Microusd",
+          "type": "integer"
+        },
+        "max_turns": {
+          "minimum": 0,
+          "title": "Max Turns",
+          "type": "integer"
+        },
+        "role": {
+          "$ref": "#/$defs/AgentRole"
+        },
+        "step_key": {
+          "maxLength": 256,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]*$",
+          "title": "Step Key",
+          "type": "string"
+        }
+      },
+      "required": [
+        "role",
+        "step_key",
+        "max_turns",
+        "budget_share_microusd",
+        "brief"
+      ],
+      "title": "BranchPlan",
+      "type": "object"
+    },
+    "IncidentFacts": {
+      "additionalProperties": false,
+      "description": "What every role may know about the incident: fields fixed at detection.",
+      "properties": {
+        "detected_at": {
+          "format": "date-time",
+          "title": "Detected At",
+          "type": "string"
+        },
+        "evidence_cutoff_at": {
+          "format": "date-time",
+          "title": "Evidence Cutoff At",
+          "type": "string"
+        },
+        "incident_id": {
+          "format": "uuid",
+          "title": "Incident Id",
+          "type": "string"
+        },
+        "title": {
+          "maxLength": 500,
+          "minLength": 1,
+          "title": "Title",
+          "type": "string"
+        },
+        "window_start": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Window Start"
+        }
+      },
+      "required": [
+        "incident_id",
+        "title",
+        "detected_at",
+        "evidence_cutoff_at"
+      ],
+      "title": "IncidentFacts",
+      "type": "object"
+    },
+    "ServiceBrief": {
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]*$",
+          "title": "Name",
+          "type": "string"
+        },
+        "service_id": {
+          "format": "uuid",
+          "title": "Service Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "service_id",
+        "name"
+      ],
+      "title": "ServiceBrief",
+      "type": "object"
+    },
+    "SpecialistBrief": {
+      "additionalProperties": false,
+      "description": "A specialist's first message. Code fills only the fields its role needs.",
+      "properties": {
+        "detector_signal_ids": {
+          "default": [],
+          "items": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "maxItems": 20,
+          "title": "Detector Signal Ids",
+          "type": "array"
+        },
+        "incident": {
+          "$ref": "#/$defs/IncidentFacts"
+        },
+        "incident_service_ids": {
+          "default": [],
+          "items": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "maxItems": 100,
+          "title": "Incident Service Ids",
+          "type": "array"
+        },
+        "question": {
+          "anyOf": [
+            {
+              "maxLength": 500,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Question"
+        },
+        "role": {
+          "$ref": "#/$defs/AgentRole"
+        },
+        "services": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/ServiceBrief"
+          },
+          "maxItems": 100,
+          "title": "Services",
+          "type": "array"
+        }
+      },
+      "required": [
+        "role",
+        "incident"
+      ],
+      "title": "SpecialistBrief",
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The coordinator's output, built by code from the investigation's limits.",
+  "properties": {
+    "branches": {
+      "items": {
+        "$ref": "#/$defs/BranchPlan"
+      },
+      "maxItems": 3,
+      "minItems": 1,
+      "title": "Branches",
+      "type": "array"
+    },
+    "downstream_reserve_microusd": {
+      "minimum": 0,
+      "title": "Downstream Reserve Microusd",
+      "type": "integer"
+    },
+    "follow_up_turns": {
+      "minimum": 0,
+      "title": "Follow Up Turns",
+      "type": "integer"
+    },
+    "plan_version": {
+      "default": "plan-v1",
+      "maxLength": 64,
+      "minLength": 1,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]*$",
+      "title": "Plan Version",
+      "type": "string"
+    },
+    "synthesis_turns": {
+      "minimum": 0,
+      "title": "Synthesis Turns",
+      "type": "integer"
+    },
+    "verification_turns": {
+      "minimum": 0,
+      "title": "Verification Turns",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "branches",
+    "synthesis_turns",
+    "verification_turns",
+    "follow_up_turns",
+    "downstream_reserve_microusd"
+  ],
+  "title": "InvestigationPlan",
+  "type": "object"
+}
