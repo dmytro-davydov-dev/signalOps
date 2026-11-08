@@ -14,6 +14,19 @@ if TYPE_CHECKING:
     from signalops.streaming.consumer import EventHandler
 
 
+# Scenario names from `signalops.demo.generator.Scenario`, kept here so the parser
+# does not import the generator; a unit test checks they match.
+SCENARIOS = (
+    "healthy",
+    "downstream-timeout",
+    "pool-exhaustion",
+    "deployment-regression",
+    "memory-pressure",
+    "mixed-timeout-deploy",
+    "unexplained-errors",
+)
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="signalops")
     parser.add_argument("--version", action="version", version=f"signalops {__version__}")
@@ -60,7 +73,7 @@ def build_parser() -> argparse.ArgumentParser:
         "demo-generate",
         help="write a deterministic synthetic telemetry dataset as JSON Lines, then exit",
     )
-    demo.add_argument("scenario", choices=["healthy", "downstream-timeout"])
+    demo.add_argument("scenario", choices=SCENARIOS)
     demo.add_argument("--seed", type=int, default=42, help="random seed (default 42)")
     demo.add_argument("--start", help="UTC start time, RFC 3339 (default 2026-10-16T10:30:00Z)")
     demo.add_argument(
@@ -76,7 +89,7 @@ def build_parser() -> argparse.ArgumentParser:
         "demo-post",
         help="generate a demo dataset and post it to the ingestion API, then exit",
     )
-    post.add_argument("scenario", choices=["healthy", "downstream-timeout"])
+    post.add_argument("scenario", choices=SCENARIOS)
     post.add_argument(
         "--api-url", default="http://localhost:8010", help="API base URL (default %(default)s)"
     )
@@ -95,12 +108,30 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="start now and post records as their timestamps arrive, so detection windows fire",
     )
+    shop = commands.add_parser(
+        "demo-shop",
+        help="run a small instrumented checkout application that exports real telemetry "
+        "to the ingestion API, with an optional real bank-gateway slowdown",
+    )
+    shop.add_argument(
+        "--api-url", default="http://localhost:8010", help="API base URL (default %(default)s)"
+    )
+    shop.add_argument("--rate", type=float, default=1.0, help="orders per second (default 1)")
+    shop.add_argument("--run-s", type=int, default=600, help="seconds to run (default 600)")
+    shop.add_argument(
+        "--slow-after-s",
+        type=int,
+        help="seconds until bank-gateway slows past payment's timeout (default: never)",
+    )
+    shop.add_argument(
+        "--slow-for-s", type=int, default=240, help="how long the slowdown lasts (default 240)"
+    )
     replay = commands.add_parser(
         "evaluation-replay",
         help="replay a generated dataset into its own replay scope, wait for the pipeline "
         "to drain, flush its windows, and print the reconciliation report",
     )
-    replay.add_argument("scenario", choices=["healthy", "downstream-timeout"])
+    replay.add_argument("scenario", choices=SCENARIOS)
     replay.add_argument("--seed", type=int, default=42, help="random seed (default 42)")
     replay.add_argument(
         "--replay-run-id", type=uuid.UUID, help="reuse a run ID to republish (default: new)"
@@ -459,6 +490,48 @@ def run_detector_flush(args: argparse.Namespace) -> int:
     return 0
 
 
+def run_demo_shop(args: argparse.Namespace) -> int:
+    import asyncio
+    import os
+    from datetime import timedelta
+
+    from pydantic import TypeAdapter, ValidationError
+
+    from signalops.demo.shop import FaultSchedule, ingestion_exporter, run_shop
+    from signalops.logs import configure_logging
+
+    configure_logging(os.environ.get("SIGNALOPS_LOG_LEVEL", "INFO"))
+    if not args.api_url.startswith(("http://", "https://")):
+        print("--api-url must use http or https", file=sys.stderr)
+        return 2
+    if not 0 < args.rate <= 50:
+        print("--rate must be in (0, 50]", file=sys.stderr)
+        return 2
+    try:
+        tokens = TypeAdapter(dict[uuid.UUID, str]).validate_json(
+            os.environ.get("SIGNALOPS_INGEST_TOKENS", "{}")
+        )
+    except ValidationError:
+        print(
+            "SIGNALOPS_INGEST_TOKENS must be a JSON object of source ID to token", file=sys.stderr
+        )
+        return 2
+    schedule = None
+    if args.slow_after_s is not None:
+        schedule = FaultSchedule(
+            after=timedelta(seconds=args.slow_after_s), duration=timedelta(seconds=args.slow_for_s)
+        )
+    asyncio.run(
+        run_shop(
+            rate_per_second=args.rate,
+            run_for=timedelta(seconds=args.run_s),
+            schedule=schedule,
+            export=ingestion_exporter(args.api_url, tokens),
+        )
+    )
+    return 0
+
+
 def run_evaluation_replay(args: argparse.Namespace) -> int:
     import asyncio
     from datetime import timedelta
@@ -736,6 +809,8 @@ def main(argv: list[str] | None = None) -> int:
         return run_demo_post(args)
     if args.command == "detector-flush":
         return run_detector_flush(args)
+    if args.command == "demo-shop":
+        return run_demo_shop(args)
     if args.command == "evaluation-replay":
         return run_evaluation_replay(args)
     if args.command == "redrive-record":

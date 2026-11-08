@@ -390,5 +390,5 @@ Revision `0015_investigation_outcomes` adds a partial unique index allowing one 
 | Q7 | ~~Detector window closure metadata schema~~ **Resolved (P05-T02):** columns on `signal_aggregates` plus `detection_clocks`; see ADR-016 | P05-T02 |
 | Q8 | ~~Which real model provider is implemented first, and its pricing provenance format~~ **Resolved:** Anthropic (ADR-025); pricing in ADR-026 | P07-T01 / P07-T02 |
 | Q9 | Operator authentication mechanism before public exposure. Interim: static per-workspace tokens (ADR-014) | P11-T02 |
-| Q10 | Whether the OpenTelemetry Demo fits local resources, or a smaller synthetic app suffices for the `demo` profile | P10-T03 |
+| Q10 | ~~Whether the OpenTelemetry Demo fits local resources, or a smaller synthetic app suffices~~ **Resolved (P10-T03):** a small real instrumented app (`demo/shop.py`, Compose `demo-shop`) | P10-T03 |
 | Q11 | ~~Planning files live in `docs/`, but `CLAUDE.md` expects them at the repository root. Move them, or update `CLAUDE.md`?~~ **Resolved (Phase 8 gate):** the files stay in `docs/`; `CLAUDE.md` points at `docs/development_roadmap.md` and `docs/SignalOps_Implementation_Plan.md` | Before P01-T01 |

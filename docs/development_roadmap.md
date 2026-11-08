@@ -26,12 +26,12 @@ PostgreSQL owns evidence, workflow progress, budgets, and the initial knowledge 
 | Field | Current value |
 | --- | --- |
 | Active phase | Phase 10 Evaluation infrastructure (in progress); Phase 9 gate passed on the fake provider |
-| Active task | P10-T03 (in progress) |
-| Last completed task | P10-T02 |
+| Active task | none (P10-T04 next) |
+| Last completed task | P10-T03 |
 | Latest verified commit | `53db2c6` (gate fix); the `docs(P09)` gate commit follows |
 | Validation evidence | Phase 9 gate: `SIGNALOPS_INTEGRATION=1 uv run pytest` 1260 passed; on Compose, a `v3` investigation survived `docker compose kill investigation-worker` mid-branch, reusing completed branches and keeping the interrupted call `unknown` with its reservation; `pnpm e2e` passed on `v3`. A live-only bug (runbook references) was found and fixed at the gate. No model was called. Earlier evidence is in the work log |
 | Blockers | none |
-| Next task | P10-T04 |
+| Next task | P10-T04 (baselines); then T05 scoring, T06 results view, Phase 10 gate |
 
 ### Scope and release boundaries
 
@@ -929,11 +929,18 @@ Start the React shell in Phase 1 and add API-backed incident views in Phase 5; P
 
 ### P10-T03 Implement scenario families and held-out variants
 
-- [ ] Complete this task.
+- [x] Complete this task.
 
 **Implementation:** Cover downstream timeout, pool exhaustion, deployment regression, memory pressure, and healthy noisy traffic. Add mixed and insufficient-evidence variants. Integrate a small real instrumented demo through an optional profile.
 
 **Acceptance:** Synthetic replay cases are labeled as synthetic; real fault demonstrations expose only signals available to the investigators.
+
+**Notes (2026-11-08):**
+- **Generator:** new scenarios `pool-exhaustion`, `deployment-regression` (target `inventory` or `payment`), `memory-pressure`, `mixed-timeout-deploy` (unrelated checkout deployment at fault start), `unexplained-errors` (insufficient evidence: abstaining is correct). `FaultVariant` varies the window, intensity, and target. Labels gain `failure_type`, `diagnosable`, `variant`, and `supporting_event_ids` (records the fault produced). Fault hooks draw randomness only inside their own window, so `healthy` and `downstream-timeout` keep their committed hashes; all seven label fixtures were regenerated (hashes unchanged for the two old ones).
+- **Catalog:** `evaluation/catalog.py`, version 1: 7 development variants (seed 42, default parameters) and 7 held-out variants (other seeds, windows, intensities, durations; the regression on `payment`). Every entry is synthetic; `definition_of` builds the scenario row (dataset hash, injection spec, expected outcome); `split_hash` hashes a split.
+- **Real demo (Q10 resolved: a smaller app instead of the OpenTelemetry Demo):** `demo/shop.py`, `signalops demo-shop`, Compose service `demo-shop` (profile `demo`). checkout → payment → bank-gateway over real loopback HTTP with real timeouts; bank-gateway really sleeps past payment's 2 s timeout during the configured window. Telemetry goes through the ingestion API; the schedule is never logged or exported.
+- **Verified:** `tests/unit/test_demo_generator.py` 48 passed (shapes of every scenario within healthy shapes, no label words in records, errors concentrated where labels say, supporting records are fault records, variant validation); `tests/unit/test_demo_shop.py` passed (real timeouts ≥ 1.9 s, valid adapter input, no injection words); `SIGNALOPS_INTEGRATION=1 uv run pytest tests/integration/test_scenario_catalog.py` passed (135 s): all 14 entries replayed; each fault opened exactly one incident on affected services, healthy opened none.
+- **Left:** `demo-shop` has not been run against the Compose API (no Docker access in this shell); the UI does not yet show the synthetic flag (P10-T06).
 
 ### P10-T04 Implement three comparable baselines
 
@@ -1593,6 +1600,16 @@ Keep these outside the release critical path unless measurements justify promoti
 - Deviations and reasons: none.
 - Remaining issues: see task notes.
 - Next task: P10-T03.
+
+### 2026-11-08 — P10-T03
+- Status: completed
+- Commit: see git log for `feat(P10-T03)`
+- Implemented: generator scenarios and `FaultVariant`; label fields; regenerated label fixtures; `evaluation/catalog.py`; `demo/shop.py`, `signalops demo-shop`, Compose `demo-shop`; CLI scenario choices.
+- Validation commands and results: ruff check and format, mypy (192 files) pass; unit generator and shop tests pass; `test_scenario_catalog.py` 1 passed (135 s).
+- Evidence or artifact references: `fixtures/scenarios/v1/*.labels.json`.
+- Deviations and reasons: OpenTelemetry Demo replaced by a small real app (Q10).
+- Remaining issues: see task notes.
+- Next task: P10-T04.
 
 ## Work log template
 

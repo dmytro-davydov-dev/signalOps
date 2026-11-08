@@ -248,6 +248,27 @@ services:
       demo-seed: { condition: service_completed_successfully }
       api: { condition: service_healthy }
 
+  # Demo profile: a small real instrumented checkout application that exports its
+  # own telemetry through the ingestion API. bank-gateway really slows past
+  # payment's timeout after 4 minutes, for 4 minutes; nothing exported says so.
+  # Start it alone with `docker compose --profile demo up -d demo-shop`.
+  demo-shop:
+    <<: *backend
+    profiles: [demo]
+    command:
+      [
+        "demo-shop",
+        "--api-url", "http://api:8000",
+        "--rate", "1",
+        "--run-s", "900",
+        "--slow-after-s", "240",
+        "--slow-for-s", "240",
+      ]
+    restart: "no"
+    depends_on:
+      demo-seed: { condition: service_completed_successfully }
+      api: { condition: service_healthy }
+
   backend:
     <<: *backend
     profiles: [tools]

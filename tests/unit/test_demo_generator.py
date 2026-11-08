@@ -10,6 +10,7 @@ from signalops.contracts.evidence import Severity, SourceKind
 from signalops.demo.generator import (
     DemoDataset,
     DemoRecord,
+    FaultVariant,
     Scenario,
     ScenarioLabels,
     generate,
@@ -87,15 +88,24 @@ def test_records_carry_no_labels(scenario: Scenario, datasets: dict[Scenario, De
 def test_fault_and_healthy_records_share_attribute_keys(
     datasets: dict[Scenario, DemoDataset],
 ) -> None:
-    # The fault changes values and frequencies, never the shape of a record.
+    # The fault changes values and frequencies, never the shape of a record. Which
+    # service deploys is a value, so deployments are compared without it.
     def shapes(dataset: DemoDataset) -> set[tuple[object, ...]]:
         return {
-            (record.source_id, record.payload.get("service"), *sorted(attributes))
+            (
+                record.source_id,
+                None
+                if SOURCE_KINDS[record.source_id] is SourceKind.DEPLOYMENT
+                else record.payload.get("service"),
+                *sorted(attributes),
+            )
             for record in dataset.records
             if isinstance(attributes := record.payload["attributes"], dict)
         }
 
-    assert shapes(datasets[Scenario.DOWNSTREAM_TIMEOUT]) <= shapes(datasets[Scenario.HEALTHY])
+    healthy = shapes(datasets[Scenario.HEALTHY])
+    for scenario in Scenario:
+        assert shapes(datasets[scenario]) <= healthy, scenario
 
 
 def test_logs_link_to_trace_summaries(datasets: dict[Scenario, DemoDataset]) -> None:
@@ -214,3 +224,101 @@ def test_cli_rejects_start_without_offset(tmp_path: Path) -> None:
     )
     assert code == 2
     assert not (tmp_path / "s.jsonl").exists()
+
+
+def test_cli_scenario_choices_match_the_generator() -> None:
+    from signalops.cli import SCENARIOS
+
+    assert SCENARIOS == tuple(scenario.value for scenario in Scenario)
+
+
+FAULT_SCENARIOS = [scenario for scenario in Scenario if scenario is not Scenario.HEALTHY]
+
+
+def _errors(dataset: DemoDataset, service: str, inside: bool) -> int:
+    labels = dataset.labels
+    assert labels.fault_start is not None
+    assert labels.fault_end is not None
+    return sum(
+        1
+        for record in dataset.records
+        if record.payload.get("service") == service
+        and (
+            record.payload.get("level") == Severity.ERROR or record.payload.get("status") == "error"
+        )
+        and (labels.fault_start <= record.occurred_at < labels.fault_end) == inside
+    )
+
+
+@pytest.mark.parametrize("scenario", FAULT_SCENARIOS)
+def test_each_fault_concentrates_errors_where_its_labels_say(
+    scenario: Scenario, datasets: dict[Scenario, DemoDataset]
+) -> None:
+    dataset = datasets[scenario]
+    labels = dataset.labels
+    assert labels.expected_incident
+    ids = {record.source_event_id for record in dataset.records}
+    assert labels.supporting_event_ids
+    assert set(labels.supporting_event_ids) <= ids
+    # The service that shows the failure: the root cause, or checkout when none is knowable.
+    shown = labels.root_cause_service or "checkout"
+    if scenario in (Scenario.DOWNSTREAM_TIMEOUT, Scenario.MIXED_TIMEOUT_DEPLOY):
+        shown = "payment"  # bank-gateway is only slow; payment's calls time out
+    assert _errors(dataset, shown, inside=True) >= 5 * max(1, _errors(dataset, shown, False))
+    assert labels.diagnosable == (scenario is not Scenario.UNEXPLAINED_ERRORS)
+    assert (labels.failure_type is None) == (not labels.diagnosable)
+
+
+def test_supporting_records_are_fault_records(datasets: dict[Scenario, DemoDataset]) -> None:
+    dataset = datasets[Scenario.POOL_EXHAUSTION]
+    supporting = set(dataset.labels.supporting_event_ids)
+    messages = {
+        str(record.payload.get("message"))
+        for record in dataset.records
+        if record.source_event_id in supporting and "message" in record.payload
+    }
+    assert any("connection pool exhausted" in message for message in messages)
+    assert "charge authorized" not in messages
+    # A regression's deployment is evidence; an unrelated one is not.
+    regression = datasets[Scenario.DEPLOYMENT_REGRESSION]
+    deploys = {
+        record.source_event_id: record.payload["service"]
+        for record in regression.records
+        if SOURCE_KINDS[record.source_id] is SourceKind.DEPLOYMENT
+    }
+    marked = {deploys[i] for i in regression.labels.supporting_event_ids if i in deploys}
+    assert marked == {"inventory"}
+    assert len(deploys) == 2
+    mixed = datasets[Scenario.MIXED_TIMEOUT_DEPLOY]
+    assert not {
+        record.source_event_id
+        for record in mixed.records
+        if SOURCE_KINDS[record.source_id] is SourceKind.DEPLOYMENT
+    } & set(mixed.labels.supporting_event_ids)
+
+
+def test_variants_change_the_target_timing_and_intensity() -> None:
+    variant = FaultVariant(start_fraction=0.3, end_fraction=0.6, intensity=0.5, target="payment")
+    dataset = generate(Scenario.DEPLOYMENT_REGRESSION, seed=42, variant=variant)
+    labels = dataset.labels
+    assert labels.root_cause_service == "payment"
+    assert labels.affected_services == ("checkout", "payment")
+    assert labels.fault_start == labels.start + (labels.end - labels.start) * 0.3
+    assert labels.variant == {
+        "start_fraction": 0.3,
+        "end_fraction": 0.6,
+        "intensity": 0.5,
+        "target": "payment",
+    }
+    assert _errors(dataset, "payment", inside=True) > 10
+    default = generate(Scenario.DEPLOYMENT_REGRESSION, seed=42)
+    assert default.labels.dataset_hash != labels.dataset_hash
+
+
+def test_variant_parameters_are_validated() -> None:
+    with pytest.raises(ValueError, match="fractions"):
+        FaultVariant(start_fraction=0.8, end_fraction=0.4)
+    with pytest.raises(ValueError, match="intensity"):
+        FaultVariant(intensity=0)
+    with pytest.raises(ValueError, match="target"):
+        generate(Scenario.MEMORY_PRESSURE, seed=1, variant=FaultVariant(target="payment"))

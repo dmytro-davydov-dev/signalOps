@@ -9,7 +9,11 @@
   "fault_start": null,
   "fault_end": null,
   "root_cause_service": null,
+  "failure_type": null,
+  "diagnosable": false,
   "affected_services": [],
+  "variant": {},
+  "supporting_event_ids": [],
   "record_count": 931,
   "dataset_hash": "8163ba51f15b1835ef8558c5691939c5996c73de2f38e05a3e5e2e2bcb9b9541"
 }
