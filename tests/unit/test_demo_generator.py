@@ -229,7 +229,7 @@ def test_cli_rejects_start_without_offset(tmp_path: Path) -> None:
 def test_cli_scenario_choices_match_the_generator() -> None:
     from signalops.cli import SCENARIOS
 
-    assert SCENARIOS == tuple(scenario.value for scenario in Scenario)
+    assert tuple(scenario.value for scenario in Scenario) == SCENARIOS
 
 
 FAULT_SCENARIOS = [scenario for scenario in Scenario if scenario is not Scenario.HEALTHY]
