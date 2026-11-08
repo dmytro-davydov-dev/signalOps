@@ -28,8 +28,8 @@ PostgreSQL owns evidence, workflow progress, budgets, and the initial knowledge 
 | Active phase | Phase 9 Multi-agent investigations (not started); Phase 8 gate passed on the fake provider |
 | Active task | none (Phase 8 gate passed) |
 | Last completed task | P08-T04 and the Phase 8 gate |
-| Latest verified commit | `7671838` (Phase 7 gate) |
-| Validation evidence | Phase 7 gate: `SIGNALOPS_INTEGRATION=1 uv run pytest` 1153 passed, and 28 deliberate mutations of the safety checks all fail the tests after two test gaps were closed. On Compose with the fake provider, a real-time fault run produced an automatic investigation naming `bank-gateway` with 10 verified citations and accounted cost, and a Redis outage paused calls until it recovered. No model was called. Earlier evidence is in the work log |
+| Latest verified commit | `49ffcb0` (P08-T04; the gate commit follows it) |
+| Validation evidence | Phase 8 gate: `SIGNALOPS_INTEGRATION=1 uv run pytest` 1190 passed. The Playwright browser journey passed on Compose with the fake provider: fault ingestion, an automatic and one manual investigation (a double click started only one), a stream resumed with `Last-Event-ID` after a reload, a diagnosis naming `bank-gateway` with 10 verified citations and estimated cost, and a cancelled run. No model was called. Earlier evidence is in the work log |
 | Blockers | none |
 | Next task | P09-T01 |
 
@@ -791,6 +791,8 @@ Start the React shell in Phase 1 and add API-backed incident views in Phase 5; P
 
 **Phase gate:** All tasks above are checked, acceptance evidence is recorded in the ledger, and the phase outcome is demonstrated against real infrastructure where relevant.
 
+**Phase 8 gate (2026-11-08): passed on the fake provider.** All four tasks are checked. Outcome demonstrated in a real browser on the Compose stack (`SIGNALOPS_MODEL_PROVIDER=fake`, `SIGNALOPS_FAKE_MODEL_DELAY_SECONDS=3`) by `pnpm e2e` at `300342a`. A real-time `downstream-timeout` run (262 records accepted, 0 rejected) opened incident `7cb83270-5566-42dd-bcda-7c8a7f2ba1ac` ("High error rate on payment (demo)"), which started investigation `97795cd8-6a63-43a9-bc17-4a5089f8e2ab` on its own. From the UI, a double click on Start investigation added exactly one investigation, `a868bb2d-d010-4522-806a-9604cc632f24`. A reload mid-run resumed the stream with a numeric `Last-Event-ID`, and the page listed each of the history's steps once. Both runs ended `completed`, naming `bank-gateway` as `downstream_timeout` with 10 cited signals, all verified by `/evidence` (0 unverified). Each run had 7 progress events, 3 model calls and 78144 microUSD spent, all `estimated`, with 0 reserved and 0 unknown. A third run, `da6754bc-6333-4646-81c2-3bae42b78b06`, was cancelled from the UI and stored no diagnosis. `SIGNALOPS_INTEGRATION=1 uv run pytest` 1190 passed. No paid call was made, so this shows the workflow and UI, not diagnostic quality. Open items carried forward: CI does not run the browser journey; `AnthropicProvider` has still never run against the live API. Q11 is resolved in the same commit: `CLAUDE.md` now points at the planning files in `docs/`.
+
 **Suggested phase commit:** `feat: build incident investigation workspace`. Split this into task-sized commits as needed.
 
 ## Phase 9 Multi-agent investigations
@@ -1432,15 +1434,25 @@ Keep these outside the release critical path unless measurements justify promoti
 - Remaining issues: run `tests/integration/test_progress_stream.py` on Compose; no real-browser check yet (P08-T04).
 - Next task: P08-T04.
 
-### 2026-11-08 — P08-T04 (in progress)
-- Status: in progress; blocked on Docker
-- Commit: see git log for `test(P08-T04)`
+### 2026-11-08 — P08-T04
+- Status: completed
+- Commit: `300342a` (journey and fake delay), `49ffcb0` (run recorded)
 - Implemented: `apps/web/e2e/journey.e2e.ts`, `playwright.config.ts`, `tsconfig.e2e.json`, `pnpm e2e`, `@playwright/test` dev dependency; `SIGNALOPS_FAKE_MODEL_DELAY_SECONDS` in settings, `build_provider`, Compose, and `.env.example`; "Browser journey check" in `docs/development.md`.
-- Validation commands and results: `uv run ruff check .`, `uv run ruff format --check .`, `uv run mypy` (167 files), `uv run signalops export-schemas --check` pass; `uv run pytest` 587 passed and 603 skipped; `pnpm lint`, `pnpm typecheck`, `pnpm build` pass; `pnpm test` 67 passed; `pnpm exec playwright test --list` finds the journey; a throwaway Playwright script drove the installed Chrome against `pnpm dev`. `docker compose config --quiet` could not run (no Docker); `compose.yaml` parses as YAML.
-- Evidence or artifact references: none; the journey has not run.
+- Validation commands and results: `docker compose config --quiet` passes; `docker compose up -d --build --wait` brought every service up healthy; `pnpm e2e` passed on the first run (1 test, 2.9 min); `SIGNALOPS_INTEGRATION=1 uv run pytest tests/integration` 603 passed; `uv run ruff check .`, `uv run ruff format --check .`, and `uv run mypy` (167 files) pass; `pnpm lint`, `pnpm typecheck`, and `pnpm build` pass; `pnpm test` 67 passed.
+- Evidence or artifact references: Playwright report in `apps/web/e2e-report/` (ignored by git); IDs in the Phase 8 gate note.
+- Deviations and reasons: none in the repository. Locally, Docker ran through `sg docker -c` because the shell predated the user's group membership, and the installed Chrome replaced Playwright's Chromium (`E2E_BROWSER_CHANNEL=chrome`).
+- Remaining issues: CI does not run the journey.
+- Next task: Phase 8 gate.
+
+### 2026-11-08 — Phase 8 gate
+- Status: passed on the fake provider
+- Commit: this gate commit (see git log for `docs(P08)`)
+- Implemented: no code; roadmap evidence, and `CLAUDE.md` now names the planning files in `docs/` (resolves Q11).
+- Validation commands and results: `SIGNALOPS_INTEGRATION=1 uv run pytest` 1190 passed; the browser journey on Compose (see the P08-T04 entry).
+- Evidence or artifact references: incident `7cb83270-5566-42dd-bcda-7c8a7f2ba1ac`; investigations `97795cd8-6a63-43a9-bc17-4a5089f8e2ab` (automatic), `a868bb2d-d010-4522-806a-9604cc632f24` (UI), and `da6754bc-6333-4646-81c2-3bae42b78b06` (cancelled).
 - Deviations and reasons: none.
-- Remaining issues: run the journey and the integration tests on Compose (see the task's status note).
-- Next task: P08-T04, then the Phase 8 gate.
+- Remaining issues: see the gate note's open items.
+- Next task: P09-T01.
 
 ## Work log template
 

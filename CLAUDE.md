@@ -10,8 +10,8 @@ Build a complete working slice before adding infrastructure or more agents.
 ## Required context and work in progress
 
 At the start of every session and before each new task:
-1. Read `development_roadmap.md` at the repository root, including its progress ledger, dependencies, active task, and acceptance criteria.
-2. Read the relevant sections of `SignalOps_Implementation_Plan.md` and applicable architecture decisions in `docs/`.
+1. Read `./docs/development_roadmap.md`, including its progress ledger, dependencies, active task, and acceptance criteria.
+2. Read the relevant sections of `./docs/SignalOps_Implementation_Plan.md` and applicable architecture decisions in `docs/`.
 3. Inspect actual code, configuration, git status, and relevant checks. Documentation describes intent; do not assume planned work exists.
 4. Respect the user's selected task; otherwise choose the next unblocked roadmap task. Record its ID and mark it in progress in the ledger.
 
