@@ -92,6 +92,7 @@ on ack: UPDATE published_at
 - A node may run twice if its worker dies inside it. Only completed output is guaranteed to be reused.
 - Completed output that fails validation, or that another workflow version wrote, fails the job. A completed step never runs again.
 - Verified by `tests/integration/test_workflow_recovery.py`: a real process is sent SIGKILL inside the second node, and `signalops worker` resumes it after the lease expires, keeping the first step's row unchanged.
+- **Parallel branches (workflow `v3`, P09-T04).** Each specialist branch is its own fenced step, so a crash keeps every branch that completed. `tests/integration/test_multi_agent_recovery.py` kills a real `v3` worker (`multi_agent_victim.py`) after two branches completed while the third branch's model call was in flight: `signalops worker` reclaims the job at generation 2, reuses the completed branches unchanged (same output, `completed_at`, attempt 1, generation 1), reruns only the interrupted branch and what follows, and closes the hung call as `unknown` (`abandoned`) with its reservation still held and shown in `usage`. A worker killed after `conclude` was stored but before the terminal write is resumed with no step rerun and no new model call. An in-process takeover shows a stale worker's late model answer still settles its call, while its next fenced write raises `LeaseLostError` and leaves the branch for the new lease.
 
 ## Investigation outcomes
 
@@ -137,6 +138,7 @@ Consumers and the outbox publisher log one structured line every `SIGNALOPS_STRE
 | Outbox crash after broker ack | Duplicate publish, deduplicated downstream |
 | Worker killed after a completed step | Lease expires, another worker resumes at the next unfinished step, stale writes rejected |
 | Worker killed after the last step, before the terminal write | The next attempt reuses every step and ends the investigation with the stored diagnosis |
+| Worker killed with parallel branches part done, one model call in flight | Completed branches reused; the interrupted branch reruns under the new lease; the in-flight call stays `unknown` with its reservation held (P09-T04) |
 | Redis restart or empty volume | Cache misses and briefly paused model calls. Investigations, windows, and SSE history intact; open progress streams fall back to catch-up reads every `SIGNALOPS_SSE_CATCHUP_SECONDS` |
 | Progress stream dropped or a wake-up lost | The client reconnects with `Last-Event-ID` and the server replays missed events from PostgreSQL in order; a lost wake-up delays an event by at most one catch-up interval (ADR-030) |
 | Provider ambiguous timeout | Unknown cost recorded, reservation retained, retry reserved separately |
@@ -156,6 +158,7 @@ These come from the plan's §13. Each needs a meaningful automated or scripted c
 - [x] A consumer stopped mid-stream resumes after its last committed record with nothing skipped or repeated; a revoke drops a pending retry and the reassigned partition is fetched again (P03-T05).
 - [x] Permanent failures are quarantined to `processing.failed.v1`; an unacknowledged failure event never commits the original; transient failures retry in place; a redriven record is applied once (P03-T04).
 - [x] Worker killed after one step: lease expiry, checkpoint reuse, stale-writer rejection (P06-T03).
+- [x] Multi-agent worker killed after completed branches, during another branch's model call, and before final persistence: branch reuse, stale-writer rejection, unknown cost kept (P09-T04).
 - [x] Provider throttling, ambiguous timeout, malformed output, parallel budget exhaustion, on the fake provider (P07-T02, P07-T04, P07-T06).
 - [ ] Redis restart mid-investigation: durable work survives and SSE catches up. (P08-T03 tests a stream with no wake-ups at all catching up from PostgreSQL; the restart itself is P11-T03.)
 - [ ] Late and out-of-order signals, plus replay isolation. No access to future evidence or ground truth.

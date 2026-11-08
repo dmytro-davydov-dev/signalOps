@@ -26,12 +26,12 @@ PostgreSQL owns evidence, workflow progress, budgets, and the initial knowledge 
 | Field | Current value |
 | --- | --- |
 | Active phase | Phase 9 Multi-agent investigations (in progress); Phase 8 gate passed on the fake provider |
-| Active task | P09-T04 (in progress) |
-| Last completed task | P09-T03 |
-| Latest verified commit | `11d34ba` (P09-T02); the `feat(P09-T03)` commit follows |
-| Validation evidence | P09-T03: `SIGNALOPS_INTEGRATION=1 uv run pytest tests/integration` 627 passed, including 7 new synthesis and verification tests; unit and contract 624 passed; `pnpm test` 69 passed. Phase 8 gate: `SIGNALOPS_INTEGRATION=1 uv run pytest` 1190 passed. The Playwright browser journey passed on Compose with the fake provider: fault ingestion, an automatic and one manual investigation (a double click started only one), a stream resumed with `Last-Event-ID` after a reload, a diagnosis naming `bank-gateway` with 10 verified citations and estimated cost, and a cancelled run. No model was called. Earlier evidence is in the work log |
+| Active task | P09-T05 (in progress) |
+| Last completed task | P09-T04 |
+| Latest verified commit | `14485ad` (P09-T03); the `test(P09-T04)` commit follows |
+| Validation evidence | P09-T04: `tests/integration/test_multi_agent_recovery.py` 3 passed, 3 runs in a row, killing real `v3` worker processes. P09-T03: `SIGNALOPS_INTEGRATION=1 uv run pytest tests/integration` 627 passed, including 7 new synthesis and verification tests; unit and contract 624 passed; `pnpm test` 69 passed. Phase 8 gate: `SIGNALOPS_INTEGRATION=1 uv run pytest` 1190 passed. The Playwright browser journey passed on Compose with the fake provider: fault ingestion, an automatic and one manual investigation (a double click started only one), a stream resumed with `Last-Event-ID` after a reload, a diagnosis naming `bank-gateway` with 10 verified citations and estimated cost, and a cancelled run. No model was called. Earlier evidence is in the work log |
 | Blockers | none |
-| Next task | P09-T04 |
+| Next task | P09-T05 |
 
 ### Scope and release boundaries
 
@@ -851,11 +851,18 @@ Start the React shell in Phase 1 and add API-backed incident views in Phase 5; P
 
 ### P09-T04 Verify multi-agent recovery
 
-- [ ] Complete this task.
+- [x] Complete this task.
 
 **Implementation:** Inject crashes after one branch completes, during another model call, and before final persistence. Reclaim with a newer lease generation and reuse valid checkpoints.
 
 **Acceptance:** Completed branches are reused; stale writes fail; ambiguous provider calls remain visible in cost accounting.
+
+**Notes (2026-11-08):**
+- **Tests only; no code change was needed.** `tests/integration/test_multi_agent_recovery.py` with `tests/integration/multi_agent_victim.py`, a real `v3` worker process with the real gateway, tools, and fake roles that hangs at a chosen point and is sent SIGKILL. `signalops worker` (the real CLI, two runners) then reclaims the job after the 3-second lease.
+- **After branches completed, during another model call:** telemetry and dependency completed while the deployment call was reserved and in flight. On resume at generation 2, `load_context`, `plan`, telemetry, and dependency kept their rows unchanged; only deployment (attempt 2) and the later steps ran. The hung call was closed `unknown` with `error_category` `abandoned`, its reservation still held: `reserved_microusd` after completion equals it, and `usage` shows 1 unknown call holding it. The dead lease's `hold` and `complete_job` raise `LeaseLostError`. The progress history shows deployment started at attempts 1 and 2 and every other branch once.
+- **Before final persistence:** a worker that stored `conclude` and hung before the terminal write was killed; the resumed attempt reran no step and made no model call, and the investigation ended with the stored diagnosis and one `investigation.ended` event.
+- **Stale writer:** in process, the old lease's deployment call was held open, the lease expired, and `worker-b` claimed generation 2. The late answer settled its call (a fact about money); the next fenced write raised `LeaseLostError`, leaving the step at generation 1 for the new lease, which completed it and every later step.
+- **Repeated:** the three tests passed 3 times in a row (53 s each run).
 
 ### P09-T05 Add prompt-injection and abstention cases
 
@@ -1500,13 +1507,23 @@ Keep these outside the release critical path unless measurements justify promoti
 
 ### 2026-11-08 — P09-T03
 - Status: completed
-- Commit: the `feat(P09-T03)` commit (hash recorded in the P09-T04 entry)
+- Commit: `14485ad`
 - Implemented: `Diagnosis.contradictions` and `Contradiction`; `FollowUpRequest`, `FollowUpOutput`, `Verdict.NEEDS_FOLLOW_UP`, `detected_contradictions`; `detect_conflicts`, `room_left`, `follow_up_fits`, the `follow_up` and `reverify` nodes, `verifier-v2`; fake verifier rounds; regenerated schemas and fixtures; the UI Contradictions section; `tests/integration/test_synthesis_verification.py`, unit and component tests; ADR-033; `docs/api.md`, `docs/agents-and-workflow.md`.
 - Validation commands and results: `uv run ruff check .`, `uv run ruff format --check .`, `uv run mypy` (178 files), `uv run signalops export-schemas` pass; `uv run pytest` (unit and contract) 624 passed; `SIGNALOPS_INTEGRATION=1 uv run pytest tests/integration` 627 passed on Compose; `pnpm lint`, `pnpm typecheck`, `pnpm build` pass; `pnpm test` 69 passed.
 - Evidence or artifact references: see task notes, "Verified".
 - Deviations and reasons: none.
 - Remaining issues: see task notes.
 - Next task: P09-T04.
+
+### 2026-11-08 — P09-T04
+- Status: completed
+- Commit: the `test(P09-T04)` commit (hash recorded in the P09-T05 entry)
+- Implemented: `tests/integration/test_multi_agent_recovery.py`, `tests/integration/multi_agent_victim.py`; `docs/reliability.md` recovery section, failure table, and checklist.
+- Validation commands and results: `uv run ruff check .`, `uv run ruff format --check .`, `uv run mypy` (180 files) pass; `SIGNALOPS_INTEGRATION=1 uv run pytest tests/integration/test_multi_agent_recovery.py` 3 passed, repeated 3 times.
+- Evidence or artifact references: see task notes.
+- Deviations and reasons: none.
+- Remaining issues: none specific; the recovery covers fake roles, not a live provider.
+- Next task: P09-T05.
 
 ## Work log template
 
