@@ -340,6 +340,7 @@ def run_worker() -> int:
     from signalops.gateway.gateway import build_gateway
     from signalops.logs import configure_logging
     from signalops.persistence.database import Database, create_engine
+    from signalops.wakeups import RedisProgressNotifier
 
     settings = get_settings()
     configure_logging(settings.log_level)
@@ -350,8 +351,9 @@ def run_worker() -> int:
         for signum in (signal.SIGINT, signal.SIGTERM):
             loop.add_signal_handler(signum, stop.set)
         engine = create_engine(settings)
-        database = Database.from_engine(engine)
         redis = Redis.from_url(str(settings.redis_url))
+        # Each committed step or ending wakes the progress streams watching it.
+        database = Database.from_engine(engine, on_progress=RedisProgressNotifier(redis))
         gateway = build_gateway(database, redis, settings)
         workflow = WorkflowEngine(
             database, runtime=AgentRuntime.from_settings(database, gateway, redis, settings)

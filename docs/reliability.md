@@ -137,7 +137,8 @@ Consumers and the outbox publisher log one structured line every `SIGNALOPS_STRE
 | Outbox crash after broker ack | Duplicate publish, deduplicated downstream |
 | Worker killed after a completed step | Lease expires, another worker resumes at the next unfinished step, stale writes rejected |
 | Worker killed after the last step, before the terminal write | The next attempt reuses every step and ends the investigation with the stored diagnosis |
-| Redis restart or empty volume | Cache misses and briefly paused model calls. Investigations, windows, and SSE history intact |
+| Redis restart or empty volume | Cache misses and briefly paused model calls. Investigations, windows, and SSE history intact; open progress streams fall back to catch-up reads every `SIGNALOPS_SSE_CATCHUP_SECONDS` |
+| Progress stream dropped or a wake-up lost | The client reconnects with `Last-Event-ID` and the server replays missed events from PostgreSQL in order; a lost wake-up delays an event by at most one catch-up interval (ADR-030) |
 | Provider ambiguous timeout | Unknown cost recorded, reservation retained, retry reserved separately |
 | Kafka outage during ingest | No record reported accepted; 503 with per-record `failed` (`ambiguous_timeout` when the broker may have written it). Client retries with the same `source_event_id`s and gets the same event IDs. Verified against a stopped Compose broker (P04-T02) |
 | Permanent validation failure | Quarantined to `processing.failed.v1`, original not lost; redrivable while retained |
@@ -156,7 +157,7 @@ These come from the plan's §13. Each needs a meaningful automated or scripted c
 - [x] Permanent failures are quarantined to `processing.failed.v1`; an unacknowledged failure event never commits the original; transient failures retry in place; a redriven record is applied once (P03-T04).
 - [x] Worker killed after one step: lease expiry, checkpoint reuse, stale-writer rejection (P06-T03).
 - [x] Provider throttling, ambiguous timeout, malformed output, parallel budget exhaustion, on the fake provider (P07-T02, P07-T04, P07-T06).
-- [ ] Redis restart mid-investigation: durable work survives and SSE catches up.
+- [ ] Redis restart mid-investigation: durable work survives and SSE catches up. (P08-T03 tests a stream with no wake-ups at all catching up from PostgreSQL; the restart itself is P11-T03.)
 - [ ] Late and out-of-order signals, plus replay isolation. No access to future evidence or ground truth.
 - [ ] Reconciliation: every accepted in-retention record ends processed or explicitly quarantined.
 

@@ -12,6 +12,7 @@ from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from signalops.contracts.progress import ProgressEventType, ProgressPayload
+from signalops.persistence.database import mark_progress
 from signalops.persistence.models import ProgressEvent
 
 
@@ -29,6 +30,16 @@ class ProgressRepository:
                 payload=payload.model_dump(mode="json"),
             )
         )
+        mark_progress(self._session, investigation_id)
+
+    async def exists(self, investigation_id: uuid.UUID, event_id: int) -> bool:
+        """Whether this event ID belongs to this investigation's retained history."""
+        found = await self._session.scalar(
+            select(ProgressEvent.id).where(
+                ProgressEvent.investigation_id == investigation_id, ProgressEvent.id == event_id
+            )
+        )
+        return found is not None
 
     async def after(
         self, investigation_id: uuid.UUID, after: int, *, limit: int

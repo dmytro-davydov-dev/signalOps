@@ -15,7 +15,7 @@ export class ApiError extends Error {
 }
 
 // Empty means same origin: the Vite dev server and nginx proxy API paths.
-const baseUrl = (import.meta.env.VITE_API_BASE_URL ?? "").replace(/\/$/, "");
+export const baseUrl = (import.meta.env.VITE_API_BASE_URL ?? "").replace(/\/$/, "");
 
 const REQUEST_TIMEOUT_MS = 10_000;
 

@@ -23,6 +23,7 @@ from signalops.config import Settings
 from signalops.contracts.health import DependencyStatus, ReadinessResponse
 from signalops.persistence.database import Database, create_engine
 from signalops.streaming.producer import EventProducer
+from signalops.wakeups import RedisProgressNotifier
 
 logger = logging.getLogger(__name__)
 
@@ -101,7 +102,8 @@ async def open_resources(settings: Settings) -> AsyncIterator[Resources]:
     publisher = ReplaceablePublisher(
         lambda: EventProducer(settings, client_id="signalops-api-ingest")
     )
-    database = Database.from_engine(engine)
+    # Cancellations write progress, so open streams hear of them at once.
+    database = Database.from_engine(engine, on_progress=RedisProgressNotifier(redis))
     try:
         yield Resources(
             checks=[

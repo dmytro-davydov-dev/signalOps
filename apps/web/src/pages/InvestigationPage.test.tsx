@@ -1,4 +1,4 @@
-import { act, screen, within } from "@testing-library/react";
+import { act, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { Investigation } from "../api/investigations";
@@ -15,7 +15,10 @@ import {
   noUsage,
   progressPage,
   running,
+  sseFrame,
+  sseStream,
   step,
+  type SseStream,
 } from "../test/investigationFixtures";
 import { jsonResponse, renderRoute } from "../test/renderRoute";
 
@@ -29,17 +32,42 @@ interface StubOptions {
   overrides?: Record<string, Route>;
 }
 
+/** Each stream connection the page opened, with the cursor it sent. */
+interface Connection {
+  lastEventId: string | null;
+  stream: SseStream;
+}
+
 function stub({ investigation, progress = [], overrides = {} }: StubOptions) {
+  const connections: Connection[] = [];
   const fetchMock = vi.fn(
     fetchByPath({
       [API]: () => investigation(),
       [`${API}/progress`]: (url) => progressPage(progress, Number(url.searchParams.get("after"))),
       [`${API}/evidence`]: () => jsonResponse(evidence),
+      [`${API}/events`]: (_url, init) => {
+        const headers = (init?.headers ?? {}) as Record<string, string>;
+        const stream = sseStream(init?.signal);
+        stream.send("retry: 10\n\n");
+        connections.push({ lastEventId: headers["Last-Event-ID"] ?? null, stream });
+        return stream.response;
+      },
       ...overrides,
     }),
   );
   vi.stubGlobal("fetch", fetchMock);
-  return fetchMock;
+  return Object.assign(fetchMock, { connections });
+}
+
+async function connected(fetchMock: ReturnType<typeof stub>, count = 1): Promise<Connection> {
+  await waitFor(() => {
+    expect(fetchMock.connections.length).toBeGreaterThanOrEqual(count);
+  });
+  const connection = fetchMock.connections[count - 1];
+  if (connection === undefined) {
+    throw new Error("no connection");
+  }
+  return connection;
 }
 
 const callsTo = (fetchMock: ReturnType<typeof stub>, path: string) =>
@@ -87,24 +115,111 @@ describe("InvestigationPage", () => {
     expect(screen.queryByText(/The status changes/)).not.toBeInTheDocument();
   });
 
-  it("refreshes until the status is terminal, then stops", async () => {
-    vi.useFakeTimers({ shouldAdvanceTime: true });
-    try {
-      let stored: Investigation = running;
-      const fetchMock = stub({ investigation: () => jsonResponse(stored) });
-      renderRoute(PATH);
-      expect(await screen.findByText("Running")).toBeInTheDocument();
+  it("refreshes the investigation when the stream reports its ending", async () => {
+    let stored: Investigation = running;
+    const fetchMock = stub({
+      investigation: () => jsonResponse(stored),
+      progress: [step(1, "step.started", "investigate")],
+    });
+    renderRoute(PATH);
+    expect(await screen.findByText("Running")).toBeInTheDocument();
+    const connection = await connected(fetchMock);
+    // The stream starts after the history already read.
+    expect(connection.lastEventId).toBe("1");
+    expect(await screen.findByText("Live")).toBeInTheDocument();
 
-      stored = { ...running, status: "failed", completed_at: "2026-11-07T10:00:09Z" };
-      await act(() => vi.advanceTimersByTimeAsync(3_000));
-      expect(await screen.findByText("Failed")).toBeInTheDocument();
+    stored = { ...running, status: "failed", completed_at: "2026-11-07T10:00:09Z" };
+    connection.stream.send(sseFrame(step(2, "step.failed", "investigate", 1, "permanent")));
+    connection.stream.send(sseFrame(ended(3, "failed", null)));
 
-      const calls = callsTo(fetchMock, API).length;
-      await act(() => vi.advanceTimersByTimeAsync(30_000));
-      expect(callsTo(fetchMock, API).length).toBe(calls);
-    } finally {
-      vi.useRealTimers();
-    }
+    expect(await screen.findByText("Failed")).toBeInTheDocument();
+    expect(screen.getByText("permanent")).toBeInTheDocument();
+    expect(screen.queryByLabelText("Live updates")).not.toBeInTheDocument();
+    expect(fetchMock.connections).toHaveLength(1);
+  });
+
+  it("opens no stream for an investigation that already ended", async () => {
+    const fetchMock = stub({
+      investigation: () => jsonResponse(abstained),
+      progress: [ended(1, "insufficient_evidence", "insufficient_evidence")],
+    });
+    renderRoute(PATH);
+
+    expect(await screen.findByText("Insufficient evidence")).toBeInTheDocument();
+    await screen.findByText("No workflow steps ran.");
+    expect(callsTo(fetchMock, `${API}/events`)).toHaveLength(0);
+  });
+
+  it("reconnects after a dropped stream with the last event it received", async () => {
+    const fetchMock = stub({ investigation: () => jsonResponse(running) });
+    renderRoute(PATH);
+    const first = await connected(fetchMock);
+    expect(first.lastEventId).toBeNull();
+
+    first.stream.send(sseFrame(step(4, "step.started", "load_context")));
+    expect(await screen.findByText("load_context")).toBeInTheDocument();
+    first.stream.fail();
+
+    expect(await screen.findByText(/missed steps will be replayed/)).toBeInTheDocument();
+    const second = await connected(fetchMock, 2);
+    expect(second.lastEventId).toBe("4");
+
+    // The server replays what was missed, in order.
+    second.stream.send(sseFrame(step(5, "step.completed", "load_context")));
+    second.stream.send(sseFrame(step(6, "step.started", "investigate")));
+    expect(await screen.findByText("investigate")).toBeInTheDocument();
+    expect(await screen.findByText("Live")).toBeInTheDocument();
+    const items = within(screen.getByRole("list", { name: "Workflow steps" })).getAllByRole(
+      "listitem",
+    );
+    expect(items.map((item) => item.textContent)).toEqual([
+      "load_contextCompleted",
+      "investigateRunning",
+    ]);
+  });
+
+  it("reconnects from its cursor when the server closes at the stream lifetime", async () => {
+    const fetchMock = stub({ investigation: () => jsonResponse(running) });
+    renderRoute(PATH);
+    const first = await connected(fetchMock);
+    first.stream.send(sseFrame(step(9, "step.started", "investigate")));
+    await screen.findByText("investigate");
+
+    first.stream.close();
+
+    const second = await connected(fetchMock, 2);
+    expect(second.lastEventId).toBe("9");
+  });
+
+  it("drops held events when the server does not know the cursor", async () => {
+    const fetchMock = stub({
+      investigation: () => jsonResponse(running),
+      progress: [step(1, "step.started", "stale_step")],
+    });
+    renderRoute(PATH);
+    expect(await screen.findByText("stale_step")).toBeInTheDocument();
+    const connection = await connected(fetchMock);
+
+    connection.stream.send('event: reset\ndata: {"reason":"unknown_cursor"}\n\n');
+    connection.stream.send(sseFrame(step(20, "step.started", "investigate")));
+
+    expect(await screen.findByText("investigate")).toBeInTheDocument();
+    expect(screen.queryByText("stale_step")).not.toBeInTheDocument();
+  });
+
+  it("ignores a replayed event it already holds", async () => {
+    const fetchMock = stub({
+      investigation: () => jsonResponse(running),
+      progress: [step(1, "step.started", "investigate")],
+    });
+    renderRoute(PATH);
+    const connection = await connected(fetchMock);
+
+    connection.stream.send(sseFrame(step(1, "step.started", "investigate")));
+    connection.stream.send(sseFrame(step(2, "step.completed", "investigate")));
+
+    expect(await screen.findByText("Completed")).toBeInTheDocument();
+    expect(screen.getAllByText("investigate")).toHaveLength(1);
   });
 
   it("presents insufficient evidence as a valid outcome", async () => {
@@ -198,27 +313,6 @@ describe("InvestigationPage", () => {
       "load_contextCompleted",
       "investigateCompletedattempt 2",
     ]);
-  });
-
-  it("reads only new progress events on each refresh", async () => {
-    vi.useFakeTimers({ shouldAdvanceTime: true });
-    try {
-      const progress = [step(1, "step.started", "load_context")];
-      const fetchMock = stub({ investigation: () => jsonResponse(running), progress });
-      renderRoute(PATH);
-      expect(await screen.findByText("load_context")).toBeInTheDocument();
-
-      progress.push(step(2, "step.completed", "load_context"));
-      await act(() => vi.advanceTimersByTimeAsync(3_000));
-
-      expect(await screen.findByText("Completed")).toBeInTheDocument();
-      const afters = callsTo(fetchMock, `${API}/progress`).map(([input]) =>
-        new URL(input, "http://x").searchParams.get("after"),
-      );
-      expect(afters.slice(0, 2)).toEqual(["0", "1"]);
-    } finally {
-      vi.useRealTimers();
-    }
   });
 
   it("explains a cancellation that lost to another ending", async () => {

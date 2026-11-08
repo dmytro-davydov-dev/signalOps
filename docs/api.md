@@ -184,16 +184,22 @@ GET /v1/investigations/{id}/progress?after=1042&limit=50
 
 ## Progress stream (SSE)
 
+Implemented in P08-T03 (`api/progress_stream.py`, route in `api/investigations.py`, wake-ups in `wakeups.py`; [ADR-030](decisions.md#adr-030-progress-streams-replay-postgresql-and-an-unknown-cursor-resets)).
+
 ```http
 GET /v1/investigations/{id}/events
 Accept: text/event-stream
+Authorization: Bearer <operator token>
 Last-Event-ID: 1042
 ```
 
-- Each SSE `id` is the `progress_events.id` from PostgreSQL.
-- On reconnect, the server replays events after `Last-Event-ID` in order.
-- Redis pub/sub only wakes the stream. A periodic database catch-up covers missed notifications, so a connected client cannot stay stale.
-- Behavior for an expired or unknown cursor is defined in P08-T03.
+- Scoped like the investigation read: `replay_scope` defaults to live; outside it → `404`, before the stream starts. `Last-Event-ID` that is not a non-negative integer → `400`; `after` (query) works the same way and loses to the header.
+- The first frame is `retry: 3000`. Each event is `id: <progress_events.id>`, `event: progress`, and `data:` holding the same `ProgressEventView` JSON as `/progress`.
+- **Cursor.** Absent or `0`: the whole retained history. A cursor naming an event of this investigation: the events after it, in order. Any other cursor (another investigation's event, or one removed by retention): `event: reset` with `data: {"reason":"unknown_cursor"}`, then the whole history; discard held events and read the investigation again.
+- **Liveness.** The stream reads PostgreSQL on a Redis wake-up and at least every `SIGNALOPS_SSE_CATCHUP_SECONDS` (5 s), and sends `: keepalive` when nothing is new. A lost wake-up delays an event by at most that interval; without Redis the stream still works on catch-up alone.
+- **End.** The stream closes after `investigation.ended`, the last event, and after `SIGNALOPS_SSE_MAX_STREAM_SECONDS` (300 s). Reconnect with `Last-Event-ID` after a close without an ending.
+- More than `SIGNALOPS_SSE_MAX_STREAMS` (200) open streams in one API process → `503` with `Retry-After`.
+- Browsers: `EventSource` cannot send `Authorization`, so the UI reads the stream with `fetch` (`apps/web/src/api/progressStream.ts`). It treats 20 s without bytes as a dead connection.
 
 ## Error categories
 

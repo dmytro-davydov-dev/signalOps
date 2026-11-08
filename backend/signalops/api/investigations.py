@@ -6,12 +6,15 @@ the workflow. Both are live scope only, as for status changes: a replay incident
 is 404. See `agents/investigations.py` for the rules.
 """
 
+import logging
 import uuid
-from dataclasses import asdict
+from collections.abc import AsyncIterator, Sequence
+from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Header, HTTPException, Path, Query, Request, status
+from fastapi.responses import StreamingResponse
 from sqlalchemy.exc import SQLAlchemyError
 
 from signalops.adapters.ingestion import SourceConfigError
@@ -36,6 +39,7 @@ from signalops.api.evidence import (
     output_redaction,
     read_database,
 )
+from signalops.api.progress_stream import StreamLimits, progress_frames
 from signalops.config import Settings
 from signalops.contracts.common import LIVE_REPLAY_SCOPE, MAX_KEY_LENGTH
 from signalops.contracts.diagnosis import Diagnosis, DiagnosisStatus
@@ -50,14 +54,19 @@ from signalops.contracts.investigations import (
     InvestigationView,
 )
 from signalops.contracts.progress import ProgressEventView, ProgressPage
-from signalops.contracts.workflow import InvestigationStatus
-from signalops.persistence.models import Investigation
+from signalops.contracts.workflow import TERMINAL_INVESTIGATION_STATUSES, InvestigationStatus
+from signalops.dependencies import Resources
+from signalops.persistence.database import Database
+from signalops.persistence.models import Investigation, ProgressEvent
 from signalops.persistence.repositories.evidence import EvidenceRepository
 from signalops.persistence.repositories.incidents import IncidentRepository
 from signalops.persistence.repositories.investigations import InvestigationRepository
 from signalops.persistence.repositories.llm_calls import LlmCallRepository, UsageTotals
 from signalops.persistence.repositories.progress import ProgressRepository
 from signalops.persistence.repositories.scope import EvidenceScope
+from signalops.wakeups import subscribe
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/v1", tags=["investigations"])
 
@@ -269,17 +278,7 @@ async def get_progress(
             rows = await ProgressRepository(session).after(
                 investigation_id, after, limit=page_size + 1
             )
-            items = [
-                ProgressEventView.model_validate(
-                    {
-                        "id": row.id,
-                        "event_type": row.event_type,
-                        "payload": row.payload,
-                        "created_at": row.created_at,
-                    }
-                )
-                for row in rows[:page_size]
-            ]
+            items = [_event_view(row) for row in rows[:page_size]]
     except InvalidQueryError as error:
         raise invalid_query(error) from None
     except SQLAlchemyError as error:
@@ -289,6 +288,137 @@ async def get_progress(
         replay_scope=replay_scope,
         items=tuple(items),
         next_after=items[-1].id if len(rows) > page_size else None,
+    )
+
+
+def _event_view(row: ProgressEvent) -> ProgressEventView:
+    return ProgressEventView.model_validate(
+        {
+            "id": row.id,
+            "event_type": row.event_type,
+            "payload": row.payload,
+            "created_at": row.created_at,
+        }
+    )
+
+
+# Largest cursor PostgreSQL's bigint holds.
+MAX_CURSOR = 2**63 - 1
+
+
+def _cursor(last_event_id: str | None, after: int | None) -> int:
+    """`Last-Event-ID`, which a reconnecting client sends, wins over `after`."""
+    if last_event_id is None:
+        return after or 0
+    value = last_event_id.strip()
+    if not value.isascii() or not value.isdigit() or int(value) > MAX_CURSOR:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "invalid Last-Event-ID")
+    return int(value)
+
+
+@dataclass(frozen=True)
+class DatabaseProgressSource:
+    """Each read is its own short transaction; none is open while a stream waits."""
+
+    database: Database
+    investigation_id: uuid.UUID
+
+    async def known(self, cursor: int) -> bool:
+        async with self.database.transaction() as session:
+            return await ProgressRepository(session).exists(self.investigation_id, cursor)
+
+    async def after(self, cursor: int, limit: int) -> Sequence[ProgressEventView]:
+        async with self.database.transaction() as session:
+            rows = await ProgressRepository(session).after(
+                self.investigation_id, cursor, limit=limit
+            )
+            return [_event_view(row) for row in rows]
+
+    async def terminal(self) -> bool:
+        async with self.database.transaction() as session:
+            row = await session.get(Investigation, self.investigation_id)
+        return row is not None and InvestigationStatus(row.status) in (
+            TERMINAL_INVESTIGATION_STATUSES
+        )
+
+
+class StreamCount:
+    """Open progress streams in this process."""
+
+    def __init__(self) -> None:
+        self.open = 0
+
+
+def _stream_count(request: Request) -> StreamCount:
+    state = request.app.state
+    if not hasattr(state, "progress_streams"):
+        state.progress_streams = StreamCount()
+    count: StreamCount = state.progress_streams
+    return count
+
+
+@router.get(
+    "/investigations/{investigation_id}/events",
+    response_class=StreamingResponse,
+    responses={
+        **NOT_FOUND,
+        200: {"content": {"text/event-stream": {}}, "description": "Progress events"},
+        400: {"description": "Invalid Last-Event-ID"},
+        503: {"description": "Too many open streams, or the database is unavailable"},
+    },
+)
+async def stream_progress(
+    request: Request,
+    workspace_id: OperatorWorkspace,
+    investigation_id: Annotated[uuid.UUID, Path()],
+    replay_scope: ReplayScopeQuery = LIVE_REPLAY_SCOPE,
+    after: Annotated[int | None, Query(ge=0, le=MAX_CURSOR)] = None,
+    last_event_id: Annotated[str | None, Header(alias="Last-Event-ID", max_length=32)] = None,
+) -> StreamingResponse:
+    """Durable progress as server-sent events; see `api/progress_stream.py`.
+
+    Each `id` is a `progress_events` ID. A reconnect with `Last-Event-ID` gets the
+    events after it; an unknown cursor gets `reset` and the whole history.
+    """
+    settings: Settings = request.app.state.settings
+    resources: Resources = request.app.state.resources
+    cursor = _cursor(last_event_id, after)
+    database = read_database(request)
+    scope = EvidenceScope(workspace_id, replay_scope)
+    try:
+        async with database.transaction() as session:
+            if await InvestigationRepository(session).get(scope, investigation_id) is None:
+                raise _not_found()
+    except SQLAlchemyError as error:
+        raise ReadFailed("investigations/events", error) from None
+    streams = _stream_count(request)
+    if streams.open >= settings.sse_max_streams:
+        raise HTTPException(
+            status.HTTP_503_SERVICE_UNAVAILABLE,
+            "too many open progress streams",
+            headers={"Retry-After": "5"},
+        )
+    limits = StreamLimits(settings.sse_catchup_seconds, settings.sse_max_stream_seconds)
+    source = DatabaseProgressSource(database, investigation_id)
+
+    async def body() -> AsyncIterator[str]:
+        streams.open += 1
+        try:
+            async with subscribe(resources.redis, investigation_id) as wakeups:
+                async for chunk in progress_frames(
+                    source, wakeups, cursor, limits, disconnected=request.is_disconnected
+                ):
+                    yield chunk
+        except SQLAlchemyError as error:
+            # The response has started; ending it makes the client reconnect from its cursor.
+            logger.warning("progress stream read failed", extra={"error": type(error).__name__})
+        finally:
+            streams.open -= 1
+
+    return StreamingResponse(
+        body(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
 
 

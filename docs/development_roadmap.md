@@ -26,12 +26,12 @@ PostgreSQL owns evidence, workflow progress, budgets, and the initial knowledge 
 | Field | Current value |
 | --- | --- |
 | Active phase | Phase 8 Incident workspace and live frontend; Phase 7 gate passed on the fake provider |
-| Active task | P08-T03 (in progress) |
-| Last completed task | P08-T02 |
+| Active task | P08-T04 (in progress) |
+| Last completed task | P08-T03 |
 | Latest verified commit | `7671838` (Phase 7 gate) |
 | Validation evidence | Phase 7 gate: `SIGNALOPS_INTEGRATION=1 uv run pytest` 1153 passed, and 28 deliberate mutations of the safety checks all fail the tests after two test gaps were closed. On Compose with the fake provider, a real-time fault run produced an automatic investigation naming `bank-gateway` with 10 verified citations and accounted cost, and a Redis outage paused calls until it recovered. No model was called. Earlier evidence is in the work log |
 | Blockers | Docker is not installed on the development machine (2026-11-08) and needs root, so integration tests and Compose runs cannot execute; Phase 8 tasks that need real infrastructure stay unchecked until it is available |
-| Next task | P08-T04 |
+| Next task | Phase 8 gate (after P08-T04) |
 
 ### Scope and release boundaries
 
@@ -762,11 +762,18 @@ Start the React shell in Phase 1 and add API-backed incident views in Phase 5; P
 
 ### P08-T03 Implement durable SSE and recovery
 
-- [ ] Complete this task.
+- [x] Complete this task.
 
 **Implementation:** Serve progress_events through SSE using Last-Event-ID. Use Redis pub/sub only for wake-ups, plus periodic database catch-up. Define behavior for an expired progress cursor.
 
 **Acceptance:** Reconnect replays missed events in order; missing a Redis notification does not leave a connected UI permanently stale.
+
+**Notes (2026-11-08):**
+- **Decision (ADR-030, resolves Q4):** `GET /v1/investigations/{id}/events` replays `progress_events` after `Last-Event-ID` (or `after`), then reads again on a Redis wake-up or every `SIGNALOPS_SSE_CATCHUP_SECONDS` (5 s), with a keep-alive comment when nothing is new. A cursor naming no event of this investigation, whether foreign or expired, gets `event: reset` and the whole retained history. The stream ends after `investigation.ended` or after `SIGNALOPS_SSE_MAX_STREAM_SECONDS` (300 s), and at most `SIGNALOPS_SSE_MAX_STREAMS` (200) are open per API process. No transaction stays open while a stream waits.
+- **Wake-ups after commit:** `ProgressRepository.add` marks the session; `Database.transaction()` hands the marked investigations to an `on_progress` hook after commit and never on rollback. The worker and the API (cancellations) use `RedisProgressNotifier`, which drops a slow or failed publish. Readers never depend on it.
+- **Browser:** `api/progressStream.ts` reads the stream with `fetch`, since `EventSource` cannot send the operator token. It parses SSE, reconnects with `Last-Event-ID` and capped backoff, treats 20 s without bytes as a dead connection, and handles `reset`. `useProgressStream` starts after the history read and merges events into the same query cache, ignoring IDs it holds; a step's end or the investigation's end refreshes the investigation. The page shows Live, reconnecting, and stopped states. Investigation polling dropped from 3 s to a 15 s fallback.
+- **Verified:** `tests/unit/test_progress_stream.py` covers ordered replay after a cursor, reset, a missed wake-up covered by catch-up, an immediate read on a wake-up, a spurious wake-up, paging a backlog, the lifetime close, disconnects, and cursor validation. Frontend tests cover reconnect after a drop and after a server close with the last ID received, reset, replayed duplicates, and no stream for an ended investigation.
+- **Not run:** `tests/integration/test_progress_stream.py` (real PostgreSQL and Redis: a wake-up delivering before a 30 s catch-up, catch-up with no Redis at all, reconnect replay, no wake-up on rollback, and the route's headers, cursors, reset, and scope) needs Compose.
 
 ### P08-T04 Verify the full user journey
 
@@ -1401,13 +1408,23 @@ Keep these outside the release critical path unless measurements justify promoti
 
 ### 2026-11-08 — P08-T02
 - Status: completed (component level; three integration tests not yet run)
-- Commit: see git log for `feat(P08-T02)`
+- Commit: `7b3a938`
 - Implemented: `IncidentInvestigations`, `InvestigationSummary`, `InvestigationEvidence`; `InvestigationRepository.for_incident`, `EvidenceRepository.known_signals`; the two routes; `api/investigations.ts`, `api/progress.ts`, `api/requestKey.ts`, `api/checks.ts`, `hooks/useProgress.ts`, `InvestigationStatusBadge`; the incident Investigations section and start control; the rewritten investigation page; `docs/api.md`.
-- Validation commands and results: `uv run ruff check .`, `uv run ruff format --check .`, `uv run mypy` (163 files), `uv run signalops export-schemas --check` pass; `uv run pytest` 562 passed and 599 skipped (integration, no Docker); `pnpm lint`, `pnpm typecheck`, `pnpm build` pass; `pnpm test` 59 passed, including repeated and double clicks sending one request, a lost response retried with the same key, a later start with a new key, insufficient evidence as an outcome, unverified citations, and actual versus estimated versus unknown cost.
+- Validation commands and results: `uv run ruff check .`, `uv run ruff format --check .`, `uv run mypy` (163 files), `uv run signalops export-schemas --check` pass; `uv run pytest` 562 passed and 596 skipped (integration, no Docker); `pnpm lint`, `pnpm typecheck`, `pnpm build` pass; `pnpm test` 59 passed, including repeated and double clicks sending one request, a lost response retried with the same key, a later start with a new key, insufficient evidence as an outcome, unverified citations, and actual versus estimated versus unknown cost.
 - Evidence or artifact references: none beyond the tests.
 - Deviations and reasons: two read routes not in the plan's endpoint table, because the UI cannot otherwise find an incident's investigations or show cited evidence.
 - Remaining issues: run the new integration tests on Compose.
 - Next task: P08-T03.
+
+### 2026-11-08 — P08-T03
+- Status: completed (unit and component level; integration tests not yet run)
+- Commit: see git log for `feat(P08-T03)`
+- Implemented: `api/progress_stream.py`, the `/events` route, `wakeups.py`, `Database.on_progress` and `mark_progress`, `ProgressRepository.exists`, three `SIGNALOPS_SSE_*` settings; `api/progressStream.ts`, `useProgressHistory`, `useProgressStream`, stream state notices; ADR-030; `docs/api.md`, `docs/development.md`, `docs/reliability.md`.
+- Validation commands and results: `uv run ruff check .`, `uv run ruff format --check .`, `uv run mypy` (167 files), `uv run signalops export-schemas --check` pass; `uv run pytest` 586 passed and 603 skipped (integration, no Docker); `pnpm lint`, `pnpm typecheck`, `pnpm build` pass; `pnpm test` 67 passed.
+- Evidence or artifact references: none beyond the tests.
+- Deviations and reasons: the browser uses `fetch` instead of `EventSource`, which cannot send the operator token.
+- Remaining issues: run `tests/integration/test_progress_stream.py` on Compose; no real-browser check yet (P08-T04).
+- Next task: P08-T04.
 
 ## Work log template
 

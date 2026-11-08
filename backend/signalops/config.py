@@ -100,6 +100,12 @@ class Settings(BaseSettings):
     tool_timeout_seconds: float = Field(default=5.0, gt=0, le=60)
     # How long Redis keeps a tool result.
     tool_cache_seconds: int = Field(default=60, ge=30, le=120)
+    # A progress stream reads PostgreSQL at least this often, wake-up or not.
+    sse_catchup_seconds: float = Field(default=5.0, ge=0.5, le=60)
+    # A progress stream closes after this long; the client reconnects with Last-Event-ID.
+    sse_max_stream_seconds: int = Field(default=300, ge=10, le=3600)
+    # Open progress streams per API process; one more answers 503.
+    sse_max_streams: int = Field(default=200, ge=1, le=10_000)
     # A worker that stops heartbeating loses its job this long after the last beat.
     job_lease_seconds: int = Field(default=30, ge=3, le=600)
     # Worker wait after finding no claimable job.

@@ -7,7 +7,9 @@ every write in it when the block raises. Keep these blocks short: no model
 calls, broker publication, or other slow I/O while one is open.
 """
 
-from collections.abc import AsyncIterator
+import logging
+import uuid
+from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 
@@ -19,6 +21,20 @@ from sqlalchemy.ext.asyncio import (
 )
 
 from signalops.config import Settings
+
+logger = logging.getLogger(__name__)
+
+# `session.info` key: investigations whose progress this transaction wrote.
+PROGRESS_WRITTEN = "signalops.progress_written"
+
+# Told after a commit which investigations gained progress events. Best effort:
+# it must not raise, and readers never depend on it for correctness.
+ProgressHook = Callable[[frozenset[uuid.UUID]], Awaitable[None]]
+
+
+def mark_progress(session: AsyncSession, investigation_id: uuid.UUID) -> None:
+    """Record that this transaction wrote progress for an investigation."""
+    session.info.setdefault(PROGRESS_WRITTEN, set()).add(investigation_id)
 
 
 def create_engine(settings: Settings) -> AsyncEngine:
@@ -49,14 +65,28 @@ def create_engine(settings: Settings) -> AsyncEngine:
 class Database:
     engine: AsyncEngine
     sessions: async_sessionmaker[AsyncSession]
+    on_progress: ProgressHook | None = None
 
     @classmethod
-    def from_engine(cls, engine: AsyncEngine) -> "Database":
+    def from_engine(
+        cls, engine: AsyncEngine, *, on_progress: ProgressHook | None = None
+    ) -> "Database":
         # expire_on_commit=False lets callers read returned rows after the block ends.
-        return cls(engine, async_sessionmaker(engine, expire_on_commit=False))
+        return cls(engine, async_sessionmaker(engine, expire_on_commit=False), on_progress)
 
     @asynccontextmanager
     async def transaction(self) -> AsyncIterator[AsyncSession]:
-        """One unit of work: commit on success, roll back everything on any exception."""
-        async with self.sessions() as session, session.begin():
-            yield session
+        """One unit of work: commit on success, roll back everything on any exception.
+
+        After a commit that wrote progress, `on_progress` hears of it, outside the
+        transaction. A rollback tells it nothing.
+        """
+        async with self.sessions() as session:
+            async with session.begin():
+                yield session
+            written: set[uuid.UUID] | None = session.info.pop(PROGRESS_WRITTEN, None)
+        if written and self.on_progress is not None:
+            try:
+                await self.on_progress(frozenset(written))
+            except Exception as error:  # noqa: BLE001 - a lost wake-up only delays a reader.
+                logger.warning("progress hook failed", extra={"error": type(error).__name__})

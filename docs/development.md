@@ -185,6 +185,7 @@ Backend processes read `SIGNALOPS_`-prefixed variables (`backend/signalops/confi
 | `SIGNALOPS_INVESTIGATION_AUTO_REQUEST` | `true` | A new live incident requests one investigation |
 | `SIGNALOPS_TOOL_TIMEOUT_SECONDS` | `5` | One evidence tool read (up to 60); a slower one returns a timeout to the agent |
 | `SIGNALOPS_TOOL_CACHE_SECONDS` | `60` | How long Redis keeps a tool result (30–120) |
+| `SIGNALOPS_SSE_CATCHUP_SECONDS` / `SIGNALOPS_SSE_MAX_STREAM_SECONDS` / `SIGNALOPS_SSE_MAX_STREAMS` | `5` / `300` / `200` | A progress stream reads PostgreSQL at least this often (0.5–60) and closes after this long (10–3600), and one API process serves at most this many (1–10000; `503` beyond) |
 | `SIGNALOPS_JOB_LEASE_SECONDS` | `30` | A worker that stops heartbeating loses its job this long after the last beat (3–600). Job retries use `SIGNALOPS_RETRY_BASE_DELAY_MS` and `SIGNALOPS_RETRY_MAX_DELAY_MS` |
 | `SIGNALOPS_JOB_POLL_INTERVAL_MS` | `1000` | Worker wait after finding no claimable job (50–60000) |
 | `SIGNALOPS_GRAPH_DEPENDENCY_TTL_SECONDS` | `604800` | An observed dependency stays valid this long after each observation (60–31536000) |

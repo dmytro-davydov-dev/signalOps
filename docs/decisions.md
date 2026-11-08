@@ -263,7 +263,7 @@ Revision `0015_investigation_outcomes` adds a partial unique index allowing one 
 
 **Trade-off:** The history has no event for a reused step or for a cancellation request, and one attempt's `step.started` can follow another's with no ending between them when a worker died. Readers take the latest attempt of a step. The migration hardcodes the event envelope, because it must not change with the code. It settles live rows only, since requests are live only, and its downgrade keeps the outcomes. A crash after `conclude` commits still loses that diagnosis if the job is then out of attempts or past its deadline, because the claim ends such jobs without running them.
 
-**Revisit when:** P08-T03 serves this history over SSE; or Phase 7 wants a job with a finished conclusion to settle at the claim.
+**Revisit when:** Phase 7 wants a job with a finished conclusion to settle at the claim. (P08-T03 now serves this history over SSE; see ADR-030.)
 
 ## ADR-025: Provider calls go through one neutral interface, and the Anthropic SDK never retries
 
@@ -317,6 +317,16 @@ Revision `0015_investigation_outcomes` adds a partial unique index allowing one 
 
 **Revisit when:** Phase 9 adds claim-level verification, or measurements show the cache does not earn its query.
 
+## ADR-030: Progress streams replay PostgreSQL, and an unknown cursor resets
+
+**Decision:** `GET /v1/investigations/{id}/events` serves `progress_events` as SSE with each row's ID as the event `id`. It replays after `Last-Event-ID` (or `after`) in ID order, then reads again on a Redis wake-up on `ui:investigation:{id}` or every `SIGNALOPS_SSE_CATCHUP_SECONDS`, sending a keep-alive comment when nothing is new. A cursor that names no event of this investigation (from another investigation, or removed by future retention) gets `event: reset` and the whole retained history, and the client discards what it held. The stream ends after `investigation.ended` and after `SIGNALOPS_SSE_MAX_STREAM_SECONDS`; the client reconnects with its cursor. Wake-ups publish after commit: `ProgressRepository.add` marks the session, and `Database.transaction()` passes the marked investigations to an `on_progress` hook, `RedisProgressNotifier` in the worker and the API. The browser reads the stream with `fetch`, because `EventSource` cannot send the operator token.
+
+**Reason:** IDs are ascending in commit order within an investigation (ADR-024), so "after the cursor" never skips a committed event. A reset is safer than an error: the client recovers on its own, and the history is small. Publishing after commit means a woken reader always finds the row; a rollback publishes nothing. Catch-up bounds the delay of a lost wake-up, so Redis loss slows the stream and never stalls it. A bounded lifetime keeps no connection, and no subscription, open indefinitely.
+
+**Trade-off:** Each open stream holds a Redis pub/sub connection and reads PostgreSQL every catch-up interval, capped by `SIGNALOPS_SSE_MAX_STREAMS` per API process. A wake-up may be published for a commit a reader has already read, which costs one empty read. The reset cannot tell an expired cursor from a foreign one; both resync. Detecting expiry precisely needs retention metadata, which P11-T05 adds if it trims history.
+
+**Revisit when:** many viewers watch the same investigations (share one subscription per process), or P11-T05 trims progress history.
+
 ## Open questions
 
 | # | Question | Decide by |
@@ -324,7 +334,7 @@ Revision `0015_investigation_outcomes` adds a partial unique index allowing one 
 | Q1 | ~~Which Python Kafka client?~~ **Resolved (P01-T04):** `confluent-kafka` (librdkafka): manual offset commits, idempotent producer, per-message delivery callbacks. Blocking calls run in worker threads from async code. | P01-T03 / P03-T01 |
 | Q2 | ~~Exact Kafka, PostgreSQL, and Redis image versions after the startup spike~~ **Resolved (P01-T03):** `apache/kafka:4.3.0`, `postgres:17.11-alpine`, `redis:7.4.12-alpine`; see development.md | P01-T03 |
 | Q3 | ~~Frontend query layer and routing libraries~~ **Resolved (P01-T04):** TanStack Query 5 for server data, React Router 7 (data router) for routing | P01-T04 |
-| Q4 | Expired or unknown SSE cursor behavior (full resync vs error) | P08-T03 |
+| Q4 | ~~Expired or unknown SSE cursor behavior (full resync vs error)~~ **Resolved (P08-T03):** full resync: `event: reset`, then the whole retained history; see ADR-030 | P08-T03 |
 | Q5 | ~~Idempotency-key storage table and retention window~~ **Resolved (P06-T01):** `idempotency_keys`, retained with the investigation, no expiry; see ADR-020 | P06-T01 |
 | Q6 | ~~Diagnosis status ↔ investigation terminal status mapping~~ **Resolved (P02-T05):** one-to-one. `completed` ⇔ `diagnosed`, `insufficient_evidence` ⇔ `insufficient_evidence`, no diagnosis otherwise; enforced in contracts, a database CHECK, and the generated UI module. See data-model.md | P02-T05 |
 | Q7 | ~~Detector window closure metadata schema~~ **Resolved (P05-T02):** columns on `signal_aggregates` plus `detection_clocks`; see ADR-016 | P05-T02 |

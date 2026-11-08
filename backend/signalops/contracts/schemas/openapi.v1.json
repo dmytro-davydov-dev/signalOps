@@ -2997,6 +2997,110 @@
         ]
       }
     },
+    "/v1/investigations/{investigation_id}/events": {
+      "get": {
+        "description": "Durable progress as server-sent events; see `api/progress_stream.py`.\n\nEach `id` is a `progress_events` ID. A reconnect with `Last-Event-ID` gets the\nevents after it; an unknown cursor gets `reset` and the whole history.",
+        "operationId": "stream_progress_v1_investigations__investigation_id__events_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "investigation_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Investigation Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Replay dataset; `live` by default",
+            "in": "query",
+            "name": "replay_scope",
+            "required": false,
+            "schema": {
+              "default": "live",
+              "description": "Replay dataset; `live` by default",
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^[a-z0-9][a-z0-9._:-]*$",
+              "title": "Replay Scope",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "after",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maximum": 9223372036854775807,
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "After"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Last-Event-ID",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 32,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Last-Event-Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "text/event-stream": {}
+            },
+            "description": "Progress events"
+          },
+          "400": {
+            "description": "Invalid Last-Event-ID"
+          },
+          "404": {
+            "description": "No such investigation"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "503": {
+            "description": "Too many open streams, or the database is unavailable"
+          }
+        },
+        "security": [
+          {
+            "OperatorBearer": []
+          }
+        ],
+        "summary": "Stream Progress",
+        "tags": [
+          "investigations"
+        ]
+      }
+    },
     "/v1/investigations/{investigation_id}/evidence": {
       "get": {
         "description": "The diagnosis's cited signals, checked again against scope and cutoff.\n\nEmpty without a root cause. A citation outside the scope or after the cutoff\nis listed as unverified, never returned.",

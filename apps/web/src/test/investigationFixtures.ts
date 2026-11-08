@@ -142,3 +142,57 @@ export function progressPage(items: ProgressEvent[], after = 0) {
     next_after: null,
   });
 }
+
+export interface SseStream {
+  response: Response;
+  send: (text: string) => void;
+  close: () => void;
+  fail: () => void;
+}
+
+/** A text/event-stream response the test writes to; an abort ends it as fetch would. */
+export function sseStream(signal?: AbortSignal | null): SseStream {
+  let controller!: ReadableStreamDefaultController<Uint8Array>;
+  let open = true;
+  const body = new ReadableStream<Uint8Array>({
+    start(c) {
+      controller = c;
+    },
+    cancel() {
+      open = false;
+    },
+  });
+  const end = (action: () => void) => {
+    if (open) {
+      open = false;
+      action();
+    }
+  };
+  signal?.addEventListener("abort", () => {
+    end(() => {
+      controller.error(new DOMException("aborted", "AbortError"));
+    });
+  });
+  return {
+    response: new Response(body, { headers: { "Content-Type": "text/event-stream" } }),
+    send: (text) => {
+      if (open) {
+        controller.enqueue(new TextEncoder().encode(text));
+      }
+    },
+    close: () => {
+      end(() => {
+        controller.close();
+      });
+    },
+    fail: () => {
+      end(() => {
+        controller.error(new TypeError("network error"));
+      });
+    },
+  };
+}
+
+export function sseFrame(event: ProgressEvent): string {
+  return `id: ${String(event.id)}\nevent: progress\ndata: ${JSON.stringify(event)}\n\n`;
+}

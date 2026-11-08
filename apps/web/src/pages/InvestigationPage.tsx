@@ -18,9 +18,12 @@ import { InvestigationStatusBadge } from "../components/InvestigationStatusBadge
 import { LoadingState } from "../components/LoadingState";
 import { OperatorGate } from "../components/OperatorGate";
 import { StaleNotice } from "../components/StaleNotice";
-import { useProgress } from "../hooks/useProgress";
+import type { StreamState } from "../api/progressStream";
+import { useProgressHistory, useProgressStream } from "../hooks/useProgress";
 
-const REFRESH_MS = 3_000;
+// Progress events refresh the investigation as they arrive; this only catches
+// changes no event announces, such as a reservation settling.
+const REFRESH_MS = 15_000;
 
 export function InvestigationPage() {
   return (
@@ -220,14 +223,39 @@ const STEP_LABELS: Record<StepView["state"], string> = {
   failed: "Failed",
 };
 
+const STREAM_NOTICES: Partial<Record<StreamState, { text: string; className: string }>> = {
+  connecting: { text: "Connecting to live updates…", className: "hint" },
+  live: { text: "Live", className: "badge badge-ok" },
+  reconnecting: {
+    text: "Live updates interrupted. Reconnecting; missed steps will be replayed.",
+    className: "state state-stale",
+  },
+  failed: {
+    text: "Live updates stopped. Reload the page to try again.",
+    className: "state state-error",
+  },
+};
+
 function Progress({ investigation }: { investigation: Investigation }) {
   const terminal = describeInvestigationStatus(investigation.status).terminal;
-  const query = useProgress(investigation.id, investigation.replay_scope, !terminal);
+  const query = useProgressHistory(investigation.id, investigation.replay_scope);
+  // The stream starts after the history, so it only adds what is new.
+  const stream = useProgressStream(
+    investigation.id,
+    investigation.replay_scope,
+    !terminal && query.isSuccess,
+  );
   const steps = query.data === undefined ? undefined : stepsFrom(query.data);
+  const notice = stream === undefined ? undefined : STREAM_NOTICES[stream];
 
   return (
     <>
       <h2>Workflow progress</h2>
+      {notice && (
+        <p role="status" aria-label="Live updates">
+          <span className={notice.className}>{notice.text}</span>
+        </p>
+      )}
       {query.isPending && <LoadingState label="Loading progress…" />}
       {steps === undefined && query.isError && (
         <ErrorState
