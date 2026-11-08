@@ -47,6 +47,15 @@ Every variant gets the same evidence cutoff, tools, dataset, and **total token b
 
 Deterministic labels are used wherever possible. Human audit samples cover semantic support. Judge-model scores are never presented as ground truth.
 
+## Replay orchestration (P10-T02, ADR-035)
+
+`evaluation/replay.py` replays one dataset into its own scope. `signalops evaluation-replay <scenario> --seed N` runs it and prints the report; `--in-process` runs the pipeline processors locally instead of through Kafka.
+
+1. **Scope and IDs.** Each replay gets its own run ID and scope, `replay:<id>`. `ingest_batch(..., replay_run_id=...)` derives raw event IDs within that scope. Republishing a replay is therefore a no-op, and two replays of one dataset share no ID.
+2. **Simulated time.** Records are ingested in event-time order, in 2-second ticks. Each tick's batch is received at the tick's end plus 1 second, so `ingested_at` is at most 3 seconds after `occurred_at`. Replay incidents carry their detection time in event time (ADR-016). An investigation whose cutoff is that time sees what had arrived by then and nothing later.
+3. **Completion markers.** The orchestrator polls PostgreSQL. It waits until every accepted raw event has a `normalizer-v1` receipt, every normalized event of the scope is published from the outbox, and `detector-v1` and `graph-projector-v1` each hold a receipt for every one of them. Then `flush_replay` closes the remaining windows by the simulated clock.
+4. **Timeout and reconciliation.** If the markers are not met before the timeout, the replay ends `timed_out`. Windows are not flushed, and the report lists the accepted raw events that were never normalized. Every report records accepted, rejected, and failed records, each marker count, windows flushed, incidents, and drain time.
+
 ## Isolation and leakage prevention
 
 - Each run gets its own `replay_scope`. Identical runs cannot contaminate each other or live data.

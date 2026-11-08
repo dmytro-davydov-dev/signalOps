@@ -367,6 +367,16 @@ Revision `0015_investigation_outcomes` adds a partial unique index allowing one 
 
 **Revisit when:** P11-T02 adds operator authentication and secret references, or evaluation needs per-run isolation beyond replay scopes.
 
+## ADR-035: A replay is complete when PostgreSQL shows its work drained, on simulated time
+
+**Decision:** The evaluation replay publishes a dataset through `ingest_batch` with a replay run ID, so event IDs derive from the scope. It ingests in event-time ticks, received at the tick's end plus a fixed delay. It then polls PostgreSQL until normalizer receipts cover every accepted raw event, every normalized event of the scope is published, and detector and graph-projector receipts cover every normalized event. Only then does it flush the scope's windows. Otherwise it stops at a timeout and reports the raw events never normalized, without flushing. The same markers judge `KafkaTransport`, which feeds the running services, and `LocalTransport`, which runs the processors in process.
+
+**Reason:** Receipts and outbox state are the durable record of processed work, so they are exact where a sleep or lag reading is a guess. Kafka lag says nothing about which scope a record belongs to. Simulated ingestion time keeps the evidence cutoff meaningful: an investigation at the incident's event-time detection cannot see records that arrived later. Deriving IDs from the scope makes reruns safe and keeps parallel replays apart.
+
+**Trade-off:** A record the normalizer quarantines has no receipt, so its replay times out rather than completing with a footnote. That is deliberate, but a slow quarantine path costs the whole timeout. Each poll counts rows by scope, which is fine for evaluation-sized datasets but not for the million-signal benchmark (P11-T04). Ticks give `ingested_at` up to 3 seconds of artificial delay.
+
+**Revisit when:** P11-T04 replays a million signals, or quarantined records need to count as reconciled.
+
 ## Open questions
 
 | # | Question | Decide by |

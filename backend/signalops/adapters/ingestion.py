@@ -28,12 +28,12 @@ from pydantic import JsonValue, SecretStr, TypeAdapter, ValidationError
 from signalops.adapters.quality import MissingIdentityError, derive_source_event_id
 from signalops.config import Settings
 from signalops.contracts.common import (
-    LIVE_REPLAY_SCOPE,
     MAX_SOURCE_EVENT_ID_LENGTH,
     ContractError,
     Name,
     describe_validation_error,
     json_size,
+    replay_scope_for,
 )
 from signalops.contracts.events import (
     MAX_RAW_RECORD_BYTES,
@@ -281,7 +281,16 @@ async def ingest_batch(
     policy: IngestPolicy,
     now: datetime,
     batch_id: uuid.UUID,
+    replay_run_id: uuid.UUID | None = None,
 ) -> IngestResponse:
+    """Validate, redact, and publish one batch; `now` is the receipt time.
+
+    The HTTP API always ingests live. A replay passes its run ID (and a simulated
+    `now`), which puts the records in their own replay scope and derives their event
+    IDs within it, so republishing a replay is idempotent and two replays of the same
+    dataset never share an ID.
+    """
+    replay_scope = replay_scope_for(replay_run_id)
     redactor = Redactor((*policy.redact_fields, *source.redact_fields))
     results: dict[int, IngestRecordResult] = {}
     pending: list[tuple[int, str, OutgoingMessage]] = []
@@ -344,13 +353,14 @@ async def ingest_batch(
         redacted_values += count
         try:
             envelope = EventEnvelope[RawSignalPayload](
-                event_id=raw_event_id(source.id, LIVE_REPLAY_SCOPE, source_event_id),
+                event_id=raw_event_id(source.id, replay_scope, source_event_id),
                 event_type=EventType.SIGNAL_RAW,
                 schema_version=1,
                 workspace_id=source.workspace_id,
                 source_id=source.id,
                 occurred_at=record.occurred_at,
                 ingested_at=now,
+                replay_run_id=replay_run_id,
                 correlation_id=str(batch_id),
                 payload=RawSignalPayload(
                     source_kind=source.kind,

@@ -26,12 +26,12 @@ PostgreSQL owns evidence, workflow progress, budgets, and the initial knowledge 
 | Field | Current value |
 | --- | --- |
 | Active phase | Phase 10 Evaluation infrastructure (in progress); Phase 9 gate passed on the fake provider |
-| Active task | P10-T02 (in progress) |
-| Last completed task | P10-T01 |
+| Active task | P10-T03 (in progress) |
+| Last completed task | P10-T02 |
 | Latest verified commit | `53db2c6` (gate fix); the `docs(P09)` gate commit follows |
 | Validation evidence | Phase 9 gate: `SIGNALOPS_INTEGRATION=1 uv run pytest` 1260 passed; on Compose, a `v3` investigation survived `docker compose kill investigation-worker` mid-branch, reusing completed branches and keeping the interrupted call `unknown` with its reservation; `pnpm e2e` passed on `v3`. A live-only bug (runbook references) was found and fixed at the gate. No model was called. Earlier evidence is in the work log |
 | Blockers | none |
-| Next task | P10-T03 |
+| Next task | P10-T04 |
 
 ### Scope and release boundaries
 
@@ -915,11 +915,17 @@ Start the React shell in Phase 1 and add API-backed incident views in Phase 5; P
 
 ### P10-T02 Build isolated replay orchestration
 
-- [ ] Complete this task.
+- [x] Complete this task.
 
 **Implementation:** Assign a replay scope per run, use stable event IDs within it, simulate time, flush windows, and wait on explicit pipeline completion markers. Include a timeout and reconciliation report.
 
 **Acceptance:** Identical runs do not contaminate each other; completion is based on drained work and final windows rather than arbitrary sleeps.
+
+**Notes (2026-11-08):**
+- **Decision (ADR-035):** `evaluation/replay.py`. `ingest_batch` takes `replay_run_id`, deriving raw event IDs within the replay scope; the HTTP API still ingests live. Records are ingested in 2-second event-time ticks, received at the tick's end plus 1 s, so `ingested_at - occurred_at` is in (0, 3 s]. The run waits on PostgreSQL markers: normalizer receipts for every accepted raw event, every normalized outbox event of the scope published, and detector and graph-projector receipts for each. Then `flush_replay`. On timeout it reports `timed_out`, lists unreconciled raw events, and does not flush. `KafkaTransport` feeds the running services; `LocalTransport` runs the same processors in process. CLI: `signalops evaluation-replay <scenario> --seed N [--replay-run-id] [--timeout-s] [--in-process]`.
+- **Verified (`tests/integration/test_replay.py`, in process):** two concurrent replays of one dataset both complete with identical markers (1 incident each), share every `source_event_id` and no signal or incident ID; republishing one adds nothing and flushes nothing. Ingestion lag stays within tick plus delay, and the incident's event-time detection leaves later evidence invisible. A normalizer limited to 100 records per poll completes only after draining (≥ 9 polls). A transport that acknowledges but loses one record times out with exactly that raw event unreconciled and no windows flushed.
+- **Verified on Compose (Kafka path, running services):** `signalops evaluation-replay downstream-timeout --seed 8201` against the dev database: 1015 accepted, every marker 1015, 8 windows flushed, incident `192c6012-1ff6-4e1e-8e8e-feafdc4a50bb`, drained in 11.0 s (replay `7919d925-c274-43e8-831e-a9399fef1a8b`). Republishing with the same run ID completed in 0.04 s with no change.
+- **Left:** a quarantined record makes a replay time out rather than reconcile; marker queries count by scope and are sized for evaluation datasets, not P11-T04.
 
 ### P10-T03 Implement scenario families and held-out variants
 
@@ -1577,6 +1583,16 @@ Keep these outside the release critical path unless measurements justify promoti
 - Deviations and reasons: run, replay, and case tables instead of the plan's single-scenario runs (see task notes).
 - Remaining issues: the Compose stack still runs as the owner until it is rebuilt and restarted.
 - Next task: P10-T02.
+
+### 2026-11-08 — P10-T02
+- Status: completed
+- Commit: see git log for `feat(P10-T02)`
+- Implemented: `evaluation/replay.py` (publish on simulated time, markers, flush, report, Kafka and local transports); `replay_run_id` in `ingest_batch`; `signalops evaluation-replay`; ADR-035; `docs/evaluation.md` replay section.
+- Validation commands and results: `uv run ruff check .`, `uv run ruff format --check .`, `uv run mypy` (189 files) pass; `uv run pytest tests/unit/test_cli.py` 11 passed; `SIGNALOPS_INTEGRATION=1 uv run pytest tests/integration/test_replay.py` 4 passed (88 s); the Compose Kafka replay in the task notes.
+- Evidence or artifact references: replay `7919d925-c274-43e8-831e-a9399fef1a8b`, incident `192c6012-1ff6-4e1e-8e8e-feafdc4a50bb` in the dev database.
+- Deviations and reasons: none.
+- Remaining issues: see task notes.
+- Next task: P10-T03.
 
 ## Work log template
 

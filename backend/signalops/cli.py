@@ -95,6 +95,24 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="start now and post records as their timestamps arrive, so detection windows fire",
     )
+    replay = commands.add_parser(
+        "evaluation-replay",
+        help="replay a generated dataset into its own replay scope, wait for the pipeline "
+        "to drain, flush its windows, and print the reconciliation report",
+    )
+    replay.add_argument("scenario", choices=["healthy", "downstream-timeout"])
+    replay.add_argument("--seed", type=int, default=42, help="random seed (default 42)")
+    replay.add_argument(
+        "--replay-run-id", type=uuid.UUID, help="reuse a run ID to republish (default: new)"
+    )
+    replay.add_argument(
+        "--timeout-s", type=int, default=300, help="longest wait for the pipeline to drain"
+    )
+    replay.add_argument(
+        "--in-process",
+        action="store_true",
+        help="run the normalizer, detector, and projector here instead of through Kafka",
+    )
     redrive = commands.add_parser(
         "redrive-record",
         help="republish one quarantined record to its topic with a new redrive attempt ID",
@@ -441,6 +459,80 @@ def run_detector_flush(args: argparse.Namespace) -> int:
     return 0
 
 
+def run_evaluation_replay(args: argparse.Namespace) -> int:
+    import asyncio
+    from datetime import timedelta
+
+    from signalops.adapters.ingestion import DatabaseSourceLookup, IngestPolicy, IngestSource
+    from signalops.adapters.quality import TimingPolicy
+    from signalops.config import get_settings
+    from signalops.contracts.common import replay_scope_for
+    from signalops.contracts.evaluation import ReplayStatus
+    from signalops.demo.generator import Scenario, generate
+    from signalops.detection.detector import DetectionPolicy
+    from signalops.detection.graph import GraphPolicy
+    from signalops.evaluation.replay import (
+        KafkaTransport,
+        LocalTransport,
+        ReplayReport,
+        ReplayTiming,
+        ReplayTransport,
+        replay,
+    )
+    from signalops.logs import configure_logging
+    from signalops.persistence.database import Database, create_engine
+    from signalops.persistence.repositories.scope import EvidenceScope
+    from signalops.persistence.seed import DEMO_SOURCES, DEMO_WORKSPACE_ID
+    from signalops.streaming.producer import EventProducer
+
+    settings = get_settings()
+    configure_logging(settings.log_level)
+    dataset = generate(Scenario(args.scenario), seed=args.seed)
+    run_id = args.replay_run_id or uuid.uuid4()
+    detection = DetectionPolicy.from_settings(settings)
+
+    async def run() -> ReplayReport:
+        engine = create_engine(settings)
+        database = Database.from_engine(engine)
+        transport: ReplayTransport
+        if args.in_process:
+            transport = LocalTransport(
+                database,
+                EvidenceScope(DEMO_WORKSPACE_ID, replay_scope_for(run_id)),
+                timing_policy=TimingPolicy.from_settings(settings),
+                detection_policy=detection,
+                graph_policy=GraphPolicy.from_settings(settings),
+            )
+        else:
+            transport = KafkaTransport(EventProducer(settings, client_id="signalops-replay"))
+        try:
+            lookup = DatabaseSourceLookup(database)
+            sources: dict[uuid.UUID, IngestSource] = {}
+            for demo in DEMO_SOURCES:
+                source = await lookup.get(demo.id)
+                if source is None or not source.enabled:
+                    raise SystemExit(f"source {demo.id} is missing or disabled; run seed first")
+                sources[source.id] = source
+            return await replay(
+                database,
+                dataset.records,
+                replay_run_id=run_id,
+                workspace_id=DEMO_WORKSPACE_ID,
+                sources=sources,
+                transport=transport,
+                ingest_policy=IngestPolicy.from_settings(settings),
+                detection_policy=detection,
+                timing=ReplayTiming(timeout=timedelta(seconds=args.timeout_s)),
+            )
+        finally:
+            transport.close()
+            await engine.dispose()
+
+    report = asyncio.run(run())
+    print(report.model_dump_json(indent=2))
+    return 0 if report.status is ReplayStatus.COMPLETED else 1
+
+
 def run_redrive_record(args: argparse.Namespace) -> int:
     from signalops.config import get_settings
     from signalops.logs import configure_logging
@@ -644,6 +736,8 @@ def main(argv: list[str] | None = None) -> int:
         return run_demo_post(args)
     if args.command == "detector-flush":
         return run_detector_flush(args)
+    if args.command == "evaluation-replay":
+        return run_evaluation_replay(args)
     if args.command == "redrive-record":
         return run_redrive_record(args)
     if args.command == "redrive-outbox":
