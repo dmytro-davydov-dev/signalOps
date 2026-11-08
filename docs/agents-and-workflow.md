@@ -1,6 +1,6 @@
 # Agents and workflow
 
-> Status: the single-agent slice is built (Phases 6–7). The multi-agent workflow `v3` is being built in Phase 9: roles and handoffs (P09-T01), parallel branches with budget shares (P09-T02), and contradictions with one bounded follow-up round (P09-T03) exist, with recovery (P09-T04) and prompt-injection (P09-T05) checks. The source is [SignalOps_Implementation_Plan.md](SignalOps_Implementation_Plan.md) §7–8. Delivery order: durable runtime (Phase 6), gateway and one agent (Phase 7), multi-agent (Phase 9).
+> Status: built on the fake provider. The single-agent slice (Phases 6–7, workflow `v2`) and the multi-agent workflow `v3` (Phase 9: roles and handoffs, parallel branches with budget shares, contradictions, one bounded follow-up round, recovery and prompt-injection checks) are in place. No paid model has run either workflow, so nothing here measures diagnostic quality; P10 compares them. The source is [SignalOps_Implementation_Plan.md](SignalOps_Implementation_Plan.md) §7–8.
 
 ## Principles
 

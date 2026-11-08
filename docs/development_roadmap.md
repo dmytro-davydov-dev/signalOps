@@ -25,13 +25,13 @@ PostgreSQL owns evidence, workflow progress, budgets, and the initial knowledge 
 
 | Field | Current value |
 | --- | --- |
-| Active phase | Phase 9 Multi-agent investigations (in progress); Phase 8 gate passed on the fake provider |
-| Active task | Phase 9 gate (in progress) |
-| Last completed task | P09-T05 |
-| Latest verified commit | `443e844` (P09-T04); the `test(P09-T05)` commit follows |
-| Validation evidence | P09-T05: `tests/integration/test_prompt_injection.py` 5 passed; two mutations each failed it. P09-T04: `tests/integration/test_multi_agent_recovery.py` 3 passed, 3 runs in a row, killing real `v3` worker processes. P09-T03: `SIGNALOPS_INTEGRATION=1 uv run pytest tests/integration` 627 passed, including 7 new synthesis and verification tests; unit and contract 624 passed; `pnpm test` 69 passed. Phase 8 gate: `SIGNALOPS_INTEGRATION=1 uv run pytest` 1190 passed. The Playwright browser journey passed on Compose with the fake provider: fault ingestion, an automatic and one manual investigation (a double click started only one), a stream resumed with `Last-Event-ID` after a reload, a diagnosis naming `bank-gateway` with 10 verified citations and estimated cost, and a cancelled run. No model was called. Earlier evidence is in the work log |
+| Active phase | Phase 10 Evaluation infrastructure (not started); Phase 9 gate passed on the fake provider |
+| Active task | none (Phase 9 gate passed) |
+| Last completed task | P09-T05 and the Phase 9 gate |
+| Latest verified commit | `53db2c6` (gate fix); the `docs(P09)` gate commit follows |
+| Validation evidence | Phase 9 gate: `SIGNALOPS_INTEGRATION=1 uv run pytest` 1260 passed; on Compose, a `v3` investigation survived `docker compose kill investigation-worker` mid-branch, reusing completed branches and keeping the interrupted call `unknown` with its reservation; `pnpm e2e` passed on `v3`. A live-only bug (runbook references) was found and fixed at the gate. No model was called. Earlier evidence is in the work log |
 | Blockers | none |
-| Next task | Phase 9 gate |
+| Next task | P10-T01 |
 
 ### Scope and release boundaries
 
@@ -881,6 +881,13 @@ Start the React shell in Phase 1 and add API-backed incident views in Phase 5; P
 
 **Phase gate:** All tasks above are checked, acceptance evidence is recorded in the ledger, and the phase outcome is demonstrated against real infrastructure where relevant.
 
+**Phase 9 gate (2026-11-08): passed on the fake provider.** All five tasks are checked. R2 ("durable specialist workflow survives a worker crash") was demonstrated on the rebuilt Compose stack (`SIGNALOPS_MODEL_PROVIDER=fake`, `SIGNALOPS_FAKE_MODEL_DELAY_SECONDS=3`, defaults otherwise: `v3`, 40 steps, 3 USD, 2 jobs and 4 branch slots per worker).
+- **Found and fixed at the gate:** the first live run, detector investigation `26d54db3-db5f-46bb-8e5b-7000a3ce6891` on incident `88b6d26a-a170-4d55-9c97-fa098af82bf3`, ended `failed` after three attempts. The dependency role cited runbooks as `key@version`, which the `Key` pattern rejected. Replay tests had no graph or runbooks, so none caught it. Fixed in `53db2c6` with a `RunbookRef` type, plus a test that projects the graph and seeds runbooks into a replay scope; that test fails without the fix.
+- **Crash and resume:** operator investigation `aeba2631-becf-414e-89be-015ab7c96de5` on the same incident, started through the API. `docker compose kill investigation-worker` hit when deployment and dependency had completed and a telemetry call was in flight (generation 1). After `docker compose start`, the worker reclaimed the job when the lease expired: job `succeeded`, 2 attempts, generation 2, `last_error` `lease_expired`. `load_context`, `plan`, deployment, and dependency stayed at attempt 1, generation 1 with their original `completed_at`; telemetry and every later step ran at generation 2. The in-flight call is `unknown`/`abandoned` with its 311140 microUSD still reserved, and `GET /v1/investigations/{id}` shows `unknown_calls` 1, `unknown_reserved_microusd` 311140, and 12 model calls, 167292 microUSD `estimated`. The diagnosis names `bank-gateway` with 10 citations and one contradiction (telemetry against the deployment role's `inventory` lead).
+- **Browser journey on `v3`:** `pnpm e2e` passed in 2.7 minutes on incident `69232f49-70c4-4745-8a21-cfe0b32a0c00`: investigations `9c90b031-f186-4b9a-9a05-d35977a26681` (automatic) and `374896e7-0a29-40e2-8e9a-2d6cf3915449` (UI, double click started one) both `completed` on `v3` with 10 steps, naming `bank-gateway` with one contradiction. `a8db9fa2-adf8-4f86-b753-6ac32714d176` was cancelled from the UI.
+- **Checks:** `SIGNALOPS_INTEGRATION=1 uv run pytest` 1260 passed; `uv run ruff check .`, `uv run ruff format --check .`, `uv run mypy` (181 files), `uv run signalops export-schemas --check`, `docker compose config --quiet` pass; `pnpm lint`, `pnpm typecheck`, `pnpm build` pass; `pnpm test` 69 passed.
+- No paid call was made. This shows the multi-agent workflow, bounds, recovery, and UI, not diagnostic quality: the fake roles follow fixed rules. Open items carried forward: `AnthropicProvider` has never run against the live API, so no prompt has met a real model; the branch limit is per worker process; redaction is pattern-based; CI does not run the browser journey or the process-kill tests' Compose prerequisites beyond the integration job.
+
 **Suggested phase commit:** `feat: orchestrate specialist agents with verification`. Split this into task-sized commits as needed.
 
 ## Phase 10 Evaluation infrastructure
@@ -1534,13 +1541,23 @@ Keep these outside the release critical path unless measurements justify promoti
 
 ### 2026-11-08 — P09-T05
 - Status: completed
-- Commit: the `test(P09-T05)` commit (hash recorded in the Phase 9 gate entry)
+- Commit: `21ba99f`
 - Implemented: `fixtures/adversarial/v1/injections.json`; `tests/integration/test_prompt_injection.py`; `docs/agents-and-workflow.md` injection section.
 - Validation commands and results: `uv run ruff check .`, `uv run ruff format --check .`, `uv run mypy` (181 files) pass; `SIGNALOPS_INTEGRATION=1 uv run pytest tests/integration/test_prompt_injection.py` 5 passed; with redaction disabled 2 failed, and with the role tool check removed 2 failed (reverted).
 - Evidence or artifact references: see task notes.
 - Deviations and reasons: none.
 - Remaining issues: pattern-based redaction (see task notes).
 - Next task: Phase 9 gate.
+
+### 2026-11-08 — Phase 9 gate
+- Status: passed on the fake provider
+- Commit: `53db2c6` (fix), then this gate commit (see git log for `docs(P09)`)
+- Implemented: the `RunbookRef` fix and its graph-backed test; roadmap evidence; `docs/agents-and-workflow.md` status.
+- Validation commands and results: `SIGNALOPS_INTEGRATION=1 uv run pytest` 1260 passed; ruff, format, mypy, schema check, compose config pass; `pnpm lint`, `pnpm typecheck`, `pnpm build` pass, `pnpm test` 69 passed; `pnpm e2e` passed (2.7 min) on Compose.
+- Evidence or artifact references: incidents `88b6d26a-a170-4d55-9c97-fa098af82bf3` and `69232f49-70c4-4745-8a21-cfe0b32a0c00`; investigations `26d54db3-db5f-46bb-8e5b-7000a3ce6891` (failed, the bug), `aeba2631-becf-414e-89be-015ab7c96de5` (crash and resume), `9c90b031-f186-4b9a-9a05-d35977a26681`, `374896e7-0a29-40e2-8e9a-2d6cf3915449`, `a8db9fa2-adf8-4f86-b753-6ac32714d176` (journey).
+- Deviations and reasons: none.
+- Remaining issues: see the gate note's open items. The runs left investigations and demo data in the dev database.
+- Next task: P10-T01.
 
 ## Work log template
 
