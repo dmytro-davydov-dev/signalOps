@@ -97,8 +97,8 @@ Credential, `replay_scope`, RFC 3339 rules, `503`, and redaction are those of [e
 
 | Route | Returns |
 | --- | --- |
-| `GET /v1/incidents` | `IncidentPage`: newest `detected_at` first (ties by ID descending), optional `service_id`, `severity`, `status`. `limit` is at most 100, the contract's page size, even when `SIGNALOPS_QUERY_MAX_LIMIT` is higher. A cursor from another query → `400` |
-| `GET /v1/incidents/{id}` | `IncidentDetail`: services with roles, up to 200 evidence references, and rule firings oldest first (up to 200; `triggers_truncated` when more exist) |
+| `GET /v1/incidents` | `IncidentPage`: newest `detected_at` first (ties by ID descending), optional `service_id`, `severity`, `status`. Each row (`IncidentListItem`) carries its `services` with roles, primary first (added in P08-T01; absent from older servers). `limit` is at most 100, the contract's page size, even when `SIGNALOPS_QUERY_MAX_LIMIT` is higher. A cursor from another query → `400` |
+| `GET /v1/incidents/{id}` | `IncidentDetail`: services with roles (primary first since P08-T01), up to 200 evidence references, and rule firings oldest first (up to 200; `triggers_truncated` when more exist) |
 | `GET /v1/incidents/{id}/evidence` | `IncidentEvidencePage`: cited signals with `relevance`, oldest first. A cursor from another incident → `400` |
 | `GET /v1/services/{id}/graph` | `ServiceGraph`: `downstream` and `upstream` `DEPENDS_ON` edges, up to `hops` (1–3, default 3), the services they name, and what each ran at `as_of`. `as_of` defaults to now; pass the incident's time for the neighborhood it had. `truncated` means a walk reached its bound. A service never observed has empty edge lists. A path never re-enters its start, so in a cycle the edge back to the service shows only under `upstream` |
 

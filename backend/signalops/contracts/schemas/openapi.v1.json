@@ -571,12 +571,96 @@
         "title": "IncidentEvidencePage",
         "type": "object"
       },
+      "IncidentListItem": {
+        "additionalProperties": false,
+        "description": "A list row: the summary plus the incident's services, primary first, then by name.",
+        "properties": {
+          "detected_at": {
+            "format": "date-time",
+            "title": "Detected At",
+            "type": "string"
+          },
+          "first_seen_at": {
+            "format": "date-time",
+            "title": "First Seen At",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "last_seen_at": {
+            "format": "date-time",
+            "title": "Last Seen At",
+            "type": "string"
+          },
+          "replay_scope": {
+            "maxLength": 128,
+            "minLength": 1,
+            "pattern": "^[a-z0-9][a-z0-9._:-]*$",
+            "title": "Replay Scope",
+            "type": "string"
+          },
+          "resolved_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resolved At"
+          },
+          "services": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/IncidentServiceRef"
+            },
+            "maxItems": 100,
+            "title": "Services",
+            "type": "array"
+          },
+          "severity": {
+            "$ref": "#/components/schemas/IncidentSeverity"
+          },
+          "status": {
+            "$ref": "#/components/schemas/IncidentStatus"
+          },
+          "title": {
+            "maxLength": 500,
+            "minLength": 1,
+            "title": "Title",
+            "type": "string"
+          },
+          "version": {
+            "minimum": 1.0,
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "replay_scope",
+          "title",
+          "severity",
+          "status",
+          "detected_at",
+          "first_seen_at",
+          "last_seen_at",
+          "version"
+        ],
+        "title": "IncidentListItem",
+        "type": "object"
+      },
       "IncidentPage": {
         "additionalProperties": false,
         "properties": {
           "items": {
             "items": {
-              "$ref": "#/components/schemas/IncidentSummary"
+              "$ref": "#/components/schemas/IncidentListItem"
             },
             "maxItems": 100,
             "title": "Items",
@@ -682,80 +766,6 @@
           "version"
         ],
         "title": "IncidentStatusUpdate",
-        "type": "object"
-      },
-      "IncidentSummary": {
-        "additionalProperties": false,
-        "properties": {
-          "detected_at": {
-            "format": "date-time",
-            "title": "Detected At",
-            "type": "string"
-          },
-          "first_seen_at": {
-            "format": "date-time",
-            "title": "First Seen At",
-            "type": "string"
-          },
-          "id": {
-            "format": "uuid",
-            "title": "Id",
-            "type": "string"
-          },
-          "last_seen_at": {
-            "format": "date-time",
-            "title": "Last Seen At",
-            "type": "string"
-          },
-          "replay_scope": {
-            "maxLength": 128,
-            "minLength": 1,
-            "pattern": "^[a-z0-9][a-z0-9._:-]*$",
-            "title": "Replay Scope",
-            "type": "string"
-          },
-          "resolved_at": {
-            "anyOf": [
-              {
-                "format": "date-time",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Resolved At"
-          },
-          "severity": {
-            "$ref": "#/components/schemas/IncidentSeverity"
-          },
-          "status": {
-            "$ref": "#/components/schemas/IncidentStatus"
-          },
-          "title": {
-            "maxLength": 500,
-            "minLength": 1,
-            "title": "Title",
-            "type": "string"
-          },
-          "version": {
-            "minimum": 1.0,
-            "title": "Version",
-            "type": "integer"
-          }
-        },
-        "required": [
-          "id",
-          "replay_scope",
-          "title",
-          "severity",
-          "status",
-          "detected_at",
-          "first_seen_at",
-          "last_seen_at",
-          "version"
-        ],
-        "title": "IncidentSummary",
         "type": "object"
       },
       "IncidentTrigger": {

@@ -7,6 +7,7 @@ import {
   INCIDENT_STATUSES,
   LIVE_SCOPE,
   type IncidentFilters,
+  type IncidentService,
 } from "../api/incidents";
 import { ErrorState } from "../components/ErrorState";
 import { SeverityBadge, StatusBadge } from "../components/IncidentBadges";
@@ -56,6 +57,9 @@ function IncidentList() {
 
   const items = query.data?.pages.flatMap((page) => page.items);
   const hasFilter = filters.status ?? filters.severity ?? filters.serviceId;
+  const serviceName = items
+    ?.flatMap((incident) => incident.services)
+    .find((service) => service.service_id === filters.serviceId)?.name;
 
   return (
     <section>
@@ -90,15 +94,18 @@ function IncidentList() {
           </select>
         </label>
         {filters.serviceId && (
-          <button
-            type="button"
-            className="link"
-            onClick={() => {
-              setFilter("service_id", undefined);
-            }}
-          >
-            Clear service filter
-          </button>
+          <p className="filter-chip">
+            Service: {serviceName ?? "selected service"}{" "}
+            <button
+              type="button"
+              className="link"
+              onClick={() => {
+                setFilter("service_id", undefined);
+              }}
+            >
+              Clear service filter
+            </button>
+          </p>
         )}
       </form>
       {replay && <p className="hint">Replay scope: {filters.replayScope}</p>}
@@ -127,6 +134,7 @@ function IncidentList() {
             <thead>
               <tr>
                 <th scope="col">Incident</th>
+                <th scope="col">Services</th>
                 <th scope="col">Severity</th>
                 <th scope="col">Status</th>
                 <th scope="col">Detected</th>
@@ -145,6 +153,14 @@ function IncidentList() {
                       {incident.title}
                     </Link>
                   </th>
+                  <td>
+                    <ServiceLinks
+                      services={incident.services}
+                      onSelect={(serviceId) => {
+                        setFilter("service_id", serviceId);
+                      }}
+                    />
+                  </td>
                   <td>
                     <SeverityBadge severity={incident.severity} />
                   </td>
@@ -175,5 +191,36 @@ function IncidentList() {
         </p>
       )}
     </section>
+  );
+}
+
+interface ServiceLinksProps {
+  services: IncidentService[];
+  onSelect: (serviceId: string) => void;
+}
+
+/** Each service filters the list to its incidents; primary services are listed first. */
+function ServiceLinks({ services, onSelect }: ServiceLinksProps) {
+  if (services.length === 0) {
+    return <span className="hint">None recorded</span>;
+  }
+  return (
+    <ul className="inline-list">
+      {services.map((service) => (
+        <li key={service.service_id}>
+          <button
+            type="button"
+            className="link"
+            title={`Show incidents involving ${service.name}`}
+            onClick={() => {
+              onSelect(service.service_id);
+            }}
+          >
+            {service.name}
+          </button>
+          {service.role === "affected" && <span className="hint"> (affected)</span>}
+        </li>
+      ))}
+    </ul>
   );
 }

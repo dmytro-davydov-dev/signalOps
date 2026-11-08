@@ -304,6 +304,9 @@ def test_list_filters_and_scope(client: TestClient, stored: dict[str, Any]) -> N
     by_service = get(client, "/v1/incidents", service_id=str(PAYMENT))["items"]
     assert str(stored["paying"]) in {item["id"] for item in by_service}
     assert str(stored["listed"][0]) not in {item["id"] for item in by_service}
+    paying = next(item for item in by_service if item["id"] == str(stored["paying"]))
+    assert {(s["service_id"], s["role"]) for s in paying["services"]} >= {(str(PAYMENT), "primary")}
+    assert paying["services"][0]["role"] == "primary"
 
     assert get(client, "/v1/incidents", severity="critical")["items"] == []
     assert get(client, "/v1/incidents", status="resolved", service_id=str(GATEWAY))["items"] == []

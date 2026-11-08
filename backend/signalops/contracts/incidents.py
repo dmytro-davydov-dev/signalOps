@@ -85,8 +85,14 @@ class IncidentDetail(IncidentSummary):
     triggers_truncated: bool = False
 
 
+class IncidentListItem(IncidentSummary):
+    """A list row: the summary plus the incident's services, primary first, then by name."""
+
+    services: tuple[IncidentServiceRef, ...] = Field(default=(), max_length=MAX_PAGE_SIZE)
+
+
 class IncidentPage(ContractModel):
-    items: tuple[IncidentSummary, ...] = Field(max_length=MAX_PAGE_SIZE)
+    items: tuple[IncidentListItem, ...] = Field(max_length=MAX_PAGE_SIZE)
     # Opaque; None on the last page.
     next_cursor: Key | None = None
 

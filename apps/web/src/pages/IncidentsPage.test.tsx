@@ -2,10 +2,21 @@ import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { clearOperatorToken, getOperatorToken, setOperatorToken } from "../api/operatorToken";
-import { fetchByPath, INCIDENT_ID, summary } from "../test/incidentFixtures";
+import {
+  CHECKOUT,
+  fetchByPath,
+  INCIDENT_ID,
+  incidentRoutes,
+  PAYMENT,
+  summary,
+} from "../test/incidentFixtures";
 import { jsonResponse, renderRoute } from "../test/renderRoute";
 
-const page = { items: [summary], next_cursor: null };
+const services = [
+  { service_id: CHECKOUT, name: "checkout", environment: "demo", role: "primary" },
+  { service_id: PAYMENT, name: "payment", environment: "demo", role: "affected" },
+];
+const page = { items: [{ ...summary, services }], next_cursor: null };
 
 function stubIncidents(respond: (url: URL) => Response) {
   const handler = vi.fn(respond);
@@ -147,6 +158,56 @@ describe("IncidentsPage", () => {
     await waitFor(() => {
       expect(screen.queryByRole("alert")).not.toBeInTheDocument();
     });
+  });
+
+  it("lists each incident's services and filters by one of them", async () => {
+    const handler = stubIncidents((url) =>
+      url.searchParams.get("service_id") === PAYMENT
+        ? jsonResponse({ items: [], next_cursor: null })
+        : jsonResponse(page),
+    );
+    renderRoute("/incidents");
+    await screen.findByRole("link", { name: summary.title });
+    expect(screen.getByText("(affected)")).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: "payment" }));
+
+    expect(await screen.findByText("No incidents match these filters.")).toBeInTheDocument();
+    expect(handler.mock.lastCall?.[0].searchParams.get("service_id")).toBe(PAYMENT);
+    await userEvent.click(screen.getByRole("button", { name: "Clear service filter" }));
+    expect(await screen.findByRole("link", { name: summary.title })).toBeInTheDocument();
+    expect(handler.mock.lastCall?.[0].searchParams.has("service_id")).toBe(false);
+  });
+
+  it("names the filtered service while its incidents are shown", async () => {
+    stubIncidents(() => jsonResponse(page));
+    renderRoute(`/incidents?service_id=${CHECKOUT}`);
+
+    expect(await screen.findByText(/Service: checkout/)).toBeInTheDocument();
+  });
+
+  it("reads a list from a server that does not send services", async () => {
+    stubIncidents(() => jsonResponse({ items: [summary], next_cursor: null }));
+    renderRoute("/incidents");
+
+    expect(await screen.findByRole("link", { name: summary.title })).toBeInTheDocument();
+    expect(screen.getByText("None recorded")).toBeInTheDocument();
+  });
+
+  it("leads from the list to the incident's evidence and dependency graph", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(fetchByPath({ "/v1/incidents": () => jsonResponse(page), ...incidentRoutes() })),
+    );
+    renderRoute("/incidents");
+
+    await userEvent.click(await screen.findByRole("link", { name: summary.title }));
+
+    expect(await screen.findByRole("heading", { name: "Evidence timeline" })).toBeInTheDocument();
+    expect(await screen.findByText("POST /charge timed out")).toBeInTheDocument();
+    expect(
+      await screen.findByRole("img", { name: "Dependency neighborhood of checkout" }),
+    ).toBeInTheDocument();
   });
 
   it("rejects a response with an unknown severity", async () => {

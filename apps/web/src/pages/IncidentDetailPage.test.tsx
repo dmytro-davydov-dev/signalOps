@@ -43,8 +43,40 @@ describe("IncidentDetailPage", () => {
     expect(screen.getByText("trace_error_rate")).toBeInTheDocument();
     expect(await screen.findByText("POST /charge timed out")).toBeInTheDocument();
     expect(screen.getByText("degraded")).toBeInTheDocument();
-    expect(screen.getByText("Quality flags: clock_skew")).toBeInTheDocument();
+    expect(screen.getByText("clock_skew")).toBeInTheDocument();
     expect(screen.getByText(/\[REDACTED\]/)).toBeInTheDocument();
+  });
+
+  it("summarizes the quality of the cited evidence", async () => {
+    const ref = {
+      signal_id: "22222222-2222-4222-8222-222222222222",
+      kind: "trace",
+      occurred_at: "2026-11-06T17:01:05Z",
+      severity: "error",
+      relevance: 1,
+    };
+    stub({
+      [API_PATH]: () =>
+        jsonResponse({
+          ...detail,
+          evidence: [
+            { ...ref, quality_status: "accepted" },
+            { ...ref, signal_id: "33333333-3333-4333-8333-333333333333", quality_status: "degraded" },
+          ],
+        }),
+    });
+    renderRoute(PATH);
+
+    expect(
+      await screen.findByText(/1 of 2 cited signals are not fully accepted \(1 degraded\)/),
+    ).toBeInTheDocument();
+  });
+
+  it("says when there is no evidence to assess", async () => {
+    stub();
+    renderRoute(PATH);
+
+    expect(await screen.findByText(/nothing to assess/)).toBeInTheDocument();
   });
 
   it("draws the neighborhood as of the incident, not as of now", async () => {

@@ -103,6 +103,23 @@ class IncidentRepository:
         )
         return [(service, role) for service, role in rows]
 
+    async def services_of_many(
+        self, incident_ids: Sequence[uuid.UUID]
+    ) -> dict[uuid.UUID, list[tuple[Service, str]]]:
+        """Services and roles per incident, by name; the caller has scoped the incidents."""
+        found: dict[uuid.UUID, list[tuple[Service, str]]] = {i: [] for i in incident_ids}
+        if not incident_ids:
+            return found
+        rows = await self._session.execute(
+            select(IncidentService.incident_id, Service, IncidentService.role)
+            .join(IncidentService, IncidentService.service_id == Service.id)
+            .where(IncidentService.incident_id.in_(incident_ids))
+            .order_by(IncidentService.incident_id, Service.name, Service.id)
+        )
+        for incident_id, service, role in rows:
+            found[incident_id].append((service, role))
+        return found
+
     async def evidence_of(
         self,
         scope: EvidenceScope,

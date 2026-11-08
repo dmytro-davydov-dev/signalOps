@@ -15,6 +15,7 @@ import hashlib
 import json
 import logging
 import uuid
+from collections.abc import Sequence
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 from typing import Annotated, Any
@@ -49,17 +50,17 @@ from signalops.contracts.incidents import (
     IncidentDetail,
     IncidentEvidence,
     IncidentEvidencePage,
+    IncidentListItem,
     IncidentPage,
     IncidentServiceRef,
     IncidentStatusUpdate,
-    IncidentSummary,
     IncidentTrigger,
 )
 from signalops.contracts.queries import GraphService, ServiceGraph
 from signalops.contracts.tools import MAX_TRAVERSAL_HOPS
 from signalops.contracts.workflow import IncidentServiceRole, IncidentSeverity, IncidentStatus
 from signalops.detection.incidents import IncidentVersionError, change_status
-from signalops.persistence.models import Incident
+from signalops.persistence.models import Incident, Service
 from signalops.persistence.repositories.catalog import CatalogRepository
 from signalops.persistence.repositories.graph import GraphDirection, GraphRepository
 from signalops.persistence.repositories.incidents import (
@@ -165,6 +166,20 @@ def _summary_fields(row: Incident) -> dict[str, object]:
     }
 
 
+def _service_refs(services: Sequence[tuple[Service, str]]) -> list[IncidentServiceRef]:
+    """Primary services first, then by name, as the repository returned them."""
+    refs = [
+        IncidentServiceRef(
+            service_id=service.id,
+            name=service.name,
+            environment=service.environment,
+            role=IncidentServiceRole(role),
+        )
+        for service, role in services
+    ]
+    return sorted(refs, key=lambda ref: ref.role is not IncidentServiceRole.PRIMARY)
+
+
 async def _detail(session: AsyncSession, scope: EvidenceScope, row: Incident) -> IncidentDetail:
     incidents = IncidentRepository(session)
     services = await incidents.services_of(row.id)
@@ -175,15 +190,7 @@ async def _detail(session: AsyncSession, scope: EvidenceScope, row: Incident) ->
             **_summary_fields(row),
             "fingerprint": row.fingerprint,
             "correlation_window_start": row.correlation_window_start,
-            "services": [
-                IncidentServiceRef(
-                    service_id=service.id,
-                    name=service.name,
-                    environment=service.environment,
-                    role=IncidentServiceRole(role),
-                )
-                for service, role in services
-            ],
+            "services": _service_refs(services),
             "evidence": [
                 EvidenceRef(
                     signal_id=signal.id,
@@ -243,10 +250,17 @@ async def list_incidents(
 
     try:
         async with read_database(request).transaction() as session:
-            rows = await IncidentRepository(session).list_incidents(
+            incidents = IncidentRepository(session)
+            rows = await incidents.list_incidents(
                 query.scope, query.criteria, after=after, limit=page_size + 1
             )
-            items = [IncidentSummary.model_validate(_summary_fields(r)) for r in rows[:page_size]]
+            services = await incidents.services_of_many([row.id for row in rows[:page_size]])
+            items = [
+                IncidentListItem.model_validate(
+                    {**_summary_fields(row), "services": _service_refs(services[row.id])}
+                )
+                for row in rows[:page_size]
+            ]
     except SQLAlchemyError as error:
         raise ReadFailed("incidents", error) from None
 

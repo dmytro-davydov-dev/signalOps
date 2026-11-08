@@ -21,6 +21,8 @@ import { OperatorGate } from "../components/OperatorGate";
 import { StaleNotice } from "../components/StaleNotice";
 
 const REFRESH_MS = 15_000;
+// The detail response holds at most this many evidence references.
+const MAX_EVIDENCE_REFS = 200;
 
 export function IncidentDetailPage() {
   return (
@@ -95,6 +97,7 @@ function IncidentView() {
         )}
       </dl>
       <StatusControl incident={incident} />
+      <DataQuality incident={incident} />
       <Services incident={incident} />
       <Neighborhood incident={incident} />
       <Triggers incident={incident} />
@@ -145,6 +148,38 @@ function StatusControl({ incident }: { incident: IncidentDetail }) {
       )}
       {mutation.isError && !conflict && (
         <ErrorState title="Status not changed" error={mutation.error} />
+      )}
+    </>
+  );
+}
+
+/** Counts of the incident's evidence references by quality status. */
+function DataQuality({ incident }: { incident: IncidentDetail }) {
+  const counts = new Map<string, number>();
+  incident.evidence.forEach((ref) => {
+    counts.set(ref.quality_status, (counts.get(ref.quality_status) ?? 0) + 1);
+  });
+  const flagged = incident.evidence.length - (counts.get("accepted") ?? 0);
+  const capped = incident.evidence.length >= MAX_EVIDENCE_REFS;
+  return (
+    <>
+      <h2>Data quality</h2>
+      {incident.evidence.length === 0 ? (
+        <p className="state" role="status">
+          No cited signals yet, so there is nothing to assess.
+        </p>
+      ) : (
+        <p className={flagged > 0 ? "state state-stale" : "hint"} role="status">
+          {flagged === 0
+            ? `All ${String(incident.evidence.length)} cited signals were accepted.`
+            : `${String(flagged)} of ${String(incident.evidence.length)} cited signals are not fully accepted (${[
+                ...counts,
+              ]
+                .filter(([status]) => status !== "accepted")
+                .map(([status, count]) => `${String(count)} ${status}`)
+                .join(", ")}). Weigh them accordingly; the timeline below lists their flags.`}
+          {capped && ` Counts cover the first ${String(MAX_EVIDENCE_REFS)} references.`}
+        </p>
       )}
     </>
   );
@@ -365,11 +400,15 @@ function EvidenceRow({ item: { signal }, names }: EvidenceRowProps) {
         {signal.quality_status !== "accepted" && (
           <span className="badge badge-warn">{signal.quality_status}</span>
         )}
+        {signal.quality_flags.map((flag) => (
+          <span key={flag} className="flag">
+            {flag}
+          </span>
+        ))}
       </p>
       <p>{signal.message ?? "No message"}</p>
       <details>
         <summary>Details</summary>
-        {signal.quality_flags.length > 0 && <p>Quality flags: {signal.quality_flags.join(", ")}</p>}
         {signal.trace_id && <p>Trace: {signal.trace_id}</p>}
         <pre>{JSON.stringify(signal.attributes, null, 2)}</pre>
       </details>

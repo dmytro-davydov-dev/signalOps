@@ -21,8 +21,13 @@ export interface IncidentSummary {
   version: number;
 }
 
+export interface IncidentListItem extends IncidentSummary {
+  /** Primary services first. Older servers omit it, which reads as none. */
+  services: IncidentService[];
+}
+
 export interface IncidentPage {
-  items: IncidentSummary[];
+  items: IncidentListItem[];
   next_cursor: string | null;
 }
 
@@ -46,9 +51,19 @@ export interface IncidentTrigger {
   error_count: number;
 }
 
+export interface EvidenceRef {
+  signal_id: string;
+  kind: string;
+  occurred_at: string;
+  severity: string;
+  quality_status: string;
+  relevance: number;
+}
+
 export interface IncidentDetail extends IncidentSummary {
   services: IncidentService[];
-  evidence: unknown[];
+  /** Up to 200 references, oldest first. */
+  evidence: EvidenceRef[];
   triggers: IncidentTrigger[];
   triggers_truncated: boolean;
 }
@@ -143,17 +158,26 @@ const summaryChecks: Checks = {
   version: isNumber,
 };
 
+const isService = matches({
+  service_id: isString,
+  name: isString,
+  environment: isString,
+  role: isOneOf(["primary", "affected"]),
+});
+
 const isDetail = matches({
   ...summaryChecks,
-  services: isListOf(
+  services: isListOf(isService),
+  evidence: isListOf(
     matches({
-      service_id: isString,
-      name: isString,
-      environment: isString,
-      role: isOneOf(["primary", "affected"]),
+      signal_id: isString,
+      kind: isString,
+      occurred_at: isString,
+      severity: isString,
+      quality_status: isString,
+      relevance: isNumber,
     }),
   ),
-  evidence: Array.isArray,
   triggers: isListOf(
     matches({
       trigger_id: isString,
@@ -172,7 +196,12 @@ const isDetail = matches({
 });
 
 const isPage = matches({
-  items: isListOf(matches(summaryChecks)),
+  items: isListOf(
+    matches({
+      ...summaryChecks,
+      services: (value: unknown) => value === undefined || isListOf(isService)(value),
+    }),
+  ),
   next_cursor: isNullableString,
 });
 
@@ -224,7 +253,13 @@ const isGraph = matches({
 });
 
 const parseDetail = (value: unknown) => (isDetail(value) ? (value as IncidentDetail) : undefined);
-const parsePage = (value: unknown) => (isPage(value) ? (value as IncidentPage) : undefined);
+const parsePage = (value: unknown): IncidentPage | undefined => {
+  if (!isPage(value)) {
+    return undefined;
+  }
+  const page = value as { items: (IncidentSummary & { services?: IncidentService[] })[] } & IncidentPage;
+  return { ...page, items: page.items.map((item) => ({ ...item, services: item.services ?? [] })) };
+};
 const parseEvidencePage = (value: unknown) =>
   isEvidencePage(value) ? (value as EvidencePage) : undefined;
 const parseGraph = (value: unknown) => (isGraph(value) ? (value as ServiceGraph) : undefined);

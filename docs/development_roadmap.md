@@ -26,12 +26,12 @@ PostgreSQL owns evidence, workflow progress, budgets, and the initial knowledge 
 | Field | Current value |
 | --- | --- |
 | Active phase | Phase 8 Incident workspace and live frontend; Phase 7 gate passed on the fake provider |
-| Active task | None |
-| Last completed task | P07-T06 |
+| Active task | P08-T02 (in progress) |
+| Last completed task | P08-T01 |
 | Latest verified commit | `7671838` (Phase 7 gate) |
 | Validation evidence | Phase 7 gate: `SIGNALOPS_INTEGRATION=1 uv run pytest` 1153 passed, and 28 deliberate mutations of the safety checks all fail the tests after two test gaps were closed. On Compose with the fake provider, a real-time fault run produced an automatic investigation naming `bank-gateway` with 10 verified citations and accounted cost, and a Redis outage paused calls until it recovered. No model was called. Earlier evidence is in the work log |
-| Blockers | None recorded |
-| Next task | P08-T01 |
+| Blockers | Docker is not installed on the development machine (2026-11-08) and needs root, so integration tests and Compose runs cannot execute; Phase 8 tasks that need real infrastructure stay unchecked until it is available |
+| Next task | P08-T03 |
 
 ### Scope and release boundaries
 
@@ -733,11 +733,17 @@ Start the React shell in Phase 1 and add API-backed incident views in Phase 5; P
 
 ### P08-T01 Complete incident browsing
 
-- [ ] Complete this task.
+- [x] Complete this task.
 
 **Implementation:** Add service/severity/status filters, cursor navigation, timeline, quality flags, affected services, and bounded graph display. Include meaningful loading, empty, and error states.
 
 **Acceptance:** A user can navigate from the incident list to its evidence and dependency graph without manual API calls.
+
+**Notes (2026-11-08):**
+- Most of this existed from P05-T05: status and severity filters, cursor paging, the evidence timeline, the bounded graph, and their loading, empty, stale, and error states. This task added what was missing.
+- **Additive contract change:** `IncidentPage.items` are now `IncidentListItem`, an `IncidentSummary` with `services` (roles, primary first, default empty). `IncidentRepository.services_of_many` loads them for one page in one query. The detail's services are also primary first now, so the graph centers on a service whose rule fired. The UI treats a missing `services` as none, so it still reads an older server.
+- **UI:** the list has a Services column whose names set the `service_id` filter, and a chip naming the filtered service with a clear button. The detail has a Data quality section counting cited evidence by quality status, and the timeline shows each signal's quality flags without opening its details.
+- **Environment:** this machine had no `uv`, `pnpm`, installed dependencies, or Docker. `uv` and `pnpm` (through corepack) were installed in user space. Docker needs root, so integration tests were skipped; the new assertion in `test_list_filters_and_scope` has not run yet. Run `SIGNALOPS_INTEGRATION=1 uv run pytest tests/integration/test_incident_api.py` once Compose is available.
 
 ### P08-T02 Build investigation controls and results
 
@@ -1375,6 +1381,16 @@ Keep these outside the release critical path unless measurements justify promoti
 - Deviations and reasons: none.
 - Remaining issues: see the gate note. The run left two more investigations and one demo dataset in the dev database.
 - Next task: P08-T01.
+
+### 2026-11-08 — P08-T01
+- Status: completed (component level; one integration assertion not yet run)
+- Commit: see git log for `feat(P08-T01)`
+- Implemented: `IncidentListItem` with `services`; `IncidentRepository.services_of_many`; primary-first service order; list Services column, service filter chip, detail Data quality section, inline quality flags; tests in `IncidentsPage.test.tsx` and `IncidentDetailPage.test.tsx`; `docs/api.md`.
+- Validation commands and results: `uv run ruff check .`, `uv run ruff format --check .`, `uv run mypy` (163 files), `uv run signalops export-schemas` (page and OpenAPI regenerated), `uv run pytest` 560 passed and 593 skipped (integration, no Docker); `pnpm lint`, `pnpm typecheck`, `pnpm build` pass; `pnpm test` 48 passed, including a list-to-evidence-and-graph navigation test against a stubbed API.
+- Evidence or artifact references: none beyond the tests.
+- Deviations and reasons: the integration test for list services was written but not run, because Docker is unavailable.
+- Remaining issues: run the incident API integration tests on Compose.
+- Next task: P08-T02.
 
 ## Work log template
 

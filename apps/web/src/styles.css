@@ -107,3 +107,7 @@ label.filters { flex-direction: column; align-items: flex-start; gap: 0.25rem; c
 .graph-node { fill: var(--surface); stroke: var(--border); }
 .graph-node-affected { stroke: var(--error); stroke-width: 2; }
 .graph-label { fill: var(--text); font-size: 0.85rem; }
+
+.inline-list { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 0.25rem 0.75rem; }
+.filter-chip { margin: 0; align-self: center; }
+.flag { font-size: 0.85rem; color: var(--warn); }

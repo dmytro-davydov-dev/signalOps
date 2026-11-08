@@ -1,25 +1,8 @@
 {
   "$defs": {
-    "IncidentSeverity": {
-      "enum": [
-        "low",
-        "medium",
-        "high",
-        "critical"
-      ],
-      "title": "IncidentSeverity",
-      "type": "string"
-    },
-    "IncidentStatus": {
-      "enum": [
-        "open",
-        "resolved"
-      ],
-      "title": "IncidentStatus",
-      "type": "string"
-    },
-    "IncidentSummary": {
+    "IncidentListItem": {
       "additionalProperties": false,
+      "description": "A list row: the summary plus the incident's services, primary first, then by name.",
       "properties": {
         "detected_at": {
           "format": "date-time",
@@ -61,6 +44,15 @@
           "default": null,
           "title": "Resolved At"
         },
+        "services": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/IncidentServiceRef"
+          },
+          "maxItems": 100,
+          "title": "Services",
+          "type": "array"
+        },
         "severity": {
           "$ref": "#/$defs/IncidentSeverity"
         },
@@ -90,8 +82,69 @@
         "last_seen_at",
         "version"
       ],
-      "title": "IncidentSummary",
+      "title": "IncidentListItem",
       "type": "object"
+    },
+    "IncidentServiceRef": {
+      "additionalProperties": false,
+      "properties": {
+        "environment": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]*$",
+          "title": "Environment",
+          "type": "string"
+        },
+        "name": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]*$",
+          "title": "Name",
+          "type": "string"
+        },
+        "role": {
+          "$ref": "#/$defs/IncidentServiceRole"
+        },
+        "service_id": {
+          "format": "uuid",
+          "title": "Service Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "service_id",
+        "name",
+        "environment",
+        "role"
+      ],
+      "title": "IncidentServiceRef",
+      "type": "object"
+    },
+    "IncidentServiceRole": {
+      "enum": [
+        "primary",
+        "affected"
+      ],
+      "title": "IncidentServiceRole",
+      "type": "string"
+    },
+    "IncidentSeverity": {
+      "enum": [
+        "low",
+        "medium",
+        "high",
+        "critical"
+      ],
+      "title": "IncidentSeverity",
+      "type": "string"
+    },
+    "IncidentStatus": {
+      "enum": [
+        "open",
+        "resolved"
+      ],
+      "title": "IncidentStatus",
+      "type": "string"
     }
   },
   "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -99,7 +152,7 @@
   "properties": {
     "items": {
       "items": {
-        "$ref": "#/$defs/IncidentSummary"
+        "$ref": "#/$defs/IncidentListItem"
       },
       "maxItems": 100,
       "title": "Items",
