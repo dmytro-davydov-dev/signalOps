@@ -11,11 +11,12 @@ Confidence everywhere is a model's own assessment, never a measurement.
 
 import uuid
 from enum import StrEnum
-from typing import Final, Self
+from typing import Annotated, Final, Self
 
-from pydantic import Field, NonNegativeInt, model_validator
+from pydantic import Field, NonNegativeInt, StringConstraints, model_validator
 
 from signalops.contracts.common import (
+    MAX_KEY_LENGTH,
     ContractModel,
     Key,
     LongText,
@@ -50,6 +51,16 @@ SPECIALIST_ROLES: Final = (
     AgentRole.DEPLOYMENT_INVESTIGATOR,
     AgentRole.DEPENDENCY_INVESTIGATOR,
 )
+
+
+# A runbook version as tools return it: `{key}@{version}`, the graph node's identity.
+RunbookRef = Annotated[
+    str,
+    StringConstraints(
+        max_length=MAX_KEY_LENGTH,
+        pattern=r"^[A-Za-z0-9][A-Za-z0-9._:/-]*@[A-Za-z0-9][A-Za-z0-9._:/-]*$",
+    ),
+]
 
 
 def _unique_ids(values: tuple[uuid.UUID, ...], field: str) -> None:
@@ -142,7 +153,7 @@ class Finding(ContractModel):
     uncertainty: ShortText
     evidence_signal_ids: tuple[uuid.UUID, ...] = Field(default=(), max_length=MAX_FINDING_EVIDENCE)
     # Runbooks read, as `key@version`.
-    references: tuple[Key, ...] = Field(default=(), max_length=MAX_LIST_ITEMS)
+    references: tuple[RunbookRef, ...] = Field(default=(), max_length=MAX_LIST_ITEMS)
 
     @model_validator(mode="after")
     def _check(self) -> Self:

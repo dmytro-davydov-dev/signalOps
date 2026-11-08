@@ -11,6 +11,7 @@ from sqlalchemy import select
 from signalops.agents.investigator import AgentLimits, AgentRuntime
 from signalops.agents.tools import TextRedactor, ToolExecutor
 from signalops.agents.workflow import WorkflowEngine
+from signalops.contracts.common import replay_scope_for
 from signalops.contracts.roles import SpecialistFindings
 from signalops.demo.generator import Scenario
 from signalops.gateway.fake import FAKE_MODEL, FakeStep
@@ -19,12 +20,14 @@ from signalops.gateway.gateway import ModelGateway
 from signalops.gateway.provider import ModelProvider
 from signalops.gateway.types import ModelRequest, TextBlock
 from signalops.persistence import database as db
-from signalops.persistence.models import AgentStep
+from signalops.persistence.models import AgentStep, Incident
+from signalops.persistence.repositories.graph import GraphRepository
 from signalops.persistence.repositories.investigations import (
     InvestigationRepository,
     NewInvestigation,
 )
 from signalops.persistence.repositories.scope import EvidenceScope
+from signalops.persistence.seed import DEMO_RUNBOOKS, DEMO_SERVICES, DEMO_WORKSPACE_ID
 from tests.integration.test_investigator import RETRIES, replayed_incident
 
 V3_LIMITS = AgentLimits(max_output_tokens=1_000, effort=None, max_repairs=1, max_tool_calls=6)
@@ -99,6 +102,32 @@ async def queued_v3(
 
 async def timeout_incident(database: db.Database, seed: int) -> tuple[EvidenceScope, uuid.UUID]:
     scope, incident_id = await replayed_incident(database, Scenario.DOWNSTREAM_TIMEOUT, seed)
+    assert incident_id is not None
+    return scope, incident_id
+
+
+async def timeout_incident_with_graph(
+    database: db.Database, seed: int
+) -> tuple[EvidenceScope, uuid.UUID]:
+    """The timeout fault with its dependency graph projected and the demo runbooks seeded."""
+    from tests.integration.test_detector import _flush, _normalized_demo, _process
+    from tests.integration.test_graph import _project
+
+    start = (datetime.now(UTC) - timedelta(minutes=11)).replace(second=0, microsecond=0)
+    run_id = uuid.uuid4()
+    normalized = await _normalized_demo(
+        database, start, timedelta(minutes=10), seed=seed, run_id=run_id
+    )
+    await _process(database, normalized)
+    await _project(database, normalized)
+    await _flush(database, run_id)
+    scope = EvidenceScope(DEMO_WORKSPACE_ID, replay_scope_for(run_id))
+    ids = {service.name: service.id for service in DEMO_SERVICES}
+    async with database.transaction() as session:
+        graph = GraphRepository(session)
+        for runbook, services in DEMO_RUNBOOKS:
+            await graph.ensure_runbook(scope, runbook, [ids[name] for name in services])
+        incident_id = await session.scalar(select(Incident.id).where(scope.clause(Incident)))
     assert incident_id is not None
     return scope, incident_id
 

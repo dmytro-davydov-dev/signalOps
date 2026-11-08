@@ -41,6 +41,7 @@ from tests.integration.multi_agent_support import (
     roles_with,
     steps_by_key,
     timeout_incident,
+    timeout_incident_with_graph,
     v3_engine,
 )
 from tests.integration.test_investigator import (
@@ -394,3 +395,25 @@ async def test_too_few_steps_leave_branches_no_turns_and_abstain(database: db.Da
     assert provider.requests == []
     row = await row_of(database, investigation_id)
     assert row.status == InvestigationStatus.INSUFFICIENT_EVIDENCE
+
+
+async def test_the_dependency_role_reads_the_graph_and_cites_runbooks(
+    database: db.Database,
+) -> None:
+    scope, incident_id = await timeout_incident_with_graph(database, 9110)
+    investigation_id = await queued_v3(database, scope, incident_id)
+    provider = FakeProvider(responder=roles_with())
+
+    await run_once(database, v3_engine(database, provider))
+
+    row = await row_of(database, investigation_id)
+    assert row.status == InvestigationStatus.COMPLETED
+    steps = await steps_by_key(database, investigation_id)
+    stored = findings_of(steps["dependency"])
+    assert stored.provenance.ended_by is AgentEnding.SUBMITTED
+    [finding] = stored.report.findings
+    assert "downstream-timeouts@v1" in finding.references
+    assert finding.evidence_signal_ids
+    assert finding.service_id is None
+    tools = {ref.tool for ref in stored.provenance.tool_calls}
+    assert tools == {ToolName.GET_SERVICE_DEPENDENCIES, ToolName.RETRIEVE_RUNBOOKS}
