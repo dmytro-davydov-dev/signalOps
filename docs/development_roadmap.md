@@ -26,11 +26,11 @@ PostgreSQL owns evidence, workflow progress, budgets, and the initial knowledge 
 | Field | Current value |
 | --- | --- |
 | Active phase | Phase 10 Evaluation infrastructure (in progress); Phase 9 gate passed on the fake provider |
-| Active task | Phase 10 gate (in progress) |
+| Active task | Phase 10 gate (blocked: Compose demonstration) |
 | Last completed task | P10-T06 |
 | Latest verified commit | `53db2c6` (gate fix); the `docs(P09)` gate commit follows |
-| Validation evidence | Phase 9 gate: `SIGNALOPS_INTEGRATION=1 uv run pytest` 1260 passed; on Compose, a `v3` investigation survived `docker compose kill investigation-worker` mid-branch, reusing completed branches and keeping the interrupted call `unknown` with its reservation; `pnpm e2e` passed on `v3`. A live-only bug (runbook references) was found and fixed at the gate. No model was called. Earlier evidence is in the work log |
-| Blockers | none |
+| Validation evidence | Phase 10 tasks P10-T01 to T06 checked. `SIGNALOPS_INTEGRATION=1 uv run pytest` 1316 passed at `4c849fa` (17 min); ruff, format, mypy, schema check, compose config, `pnpm lint`, `pnpm typecheck`, `pnpm test` (72), `pnpm build` pass. Kafka replay demonstrated on the running Compose services (P10-T02). No model was called |
+| Blockers | The Phase 10 gate needs the Compose stack rebuilt (`docker compose up -d --build`, then `--profile evaluation up -d evaluation-worker`): the running images predate Phase 10, so the old worker cannot run `d1` and services still connect as the owner. This shell has no Docker access |
 | Next task | Phase 10 gate |
 
 ### Scope and release boundaries
@@ -986,6 +986,8 @@ Start the React shell in Phase 1 and add API-backed incident views in Phase 5; P
 - **Left:** not yet exercised in a browser on Compose (the gate does that); the page parses metrics loosely because their fields may grow.
 
 **Phase gate:** All tasks above are checked, acceptance evidence is recorded in the ledger, and the phase outcome is demonstrated against real infrastructure where relevant.
+
+**Phase 10 gate (2026-11-08): open.** All six tasks are checked and the full integration suite passed (1316). Remaining: rebuild Compose so every service runs as `signalops_app` with the new code, start `evaluation-worker`, queue a held-out run through the API or UI on the fake provider, check that it completes over Kafka, and drill into a failed case in the browser.
 
 **Suggested phase commit:** `feat: add isolated replay and evaluation harness`. Split this into task-sized commits as needed.
 
