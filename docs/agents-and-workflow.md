@@ -1,6 +1,6 @@
 # Agents and workflow
 
-> Status: the single-agent slice is built (Phases 6–7). The multi-agent workflow `v3` is being built in Phase 9: roles and handoffs (P09-T01), parallel branches with budget shares (P09-T02), and contradictions with one bounded follow-up round (P09-T03) exist; recovery and injection checks are in progress. The source is [SignalOps_Implementation_Plan.md](SignalOps_Implementation_Plan.md) §7–8. Delivery order: durable runtime (Phase 6), gateway and one agent (Phase 7), multi-agent (Phase 9).
+> Status: the single-agent slice is built (Phases 6–7). The multi-agent workflow `v3` is being built in Phase 9: roles and handoffs (P09-T01), parallel branches with budget shares (P09-T02), and contradictions with one bounded follow-up round (P09-T03) exist, with recovery (P09-T04) and prompt-injection (P09-T05) checks. The source is [SignalOps_Implementation_Plan.md](SignalOps_Implementation_Plan.md) §7–8. Delivery order: durable runtime (Phase 6), gateway and one agent (Phase 7), multi-agent (Phase 9).
 
 ## Principles
 
@@ -64,7 +64,9 @@ All tools are **read-only** and typed. Each call enforces workspace scope, repla
 
 Implemented in `agents/tools.py` ([ADR-027](decisions.md#adr-027-tools-take-typed-arguments-and-code-alone-supplies-scope-and-cutoff)): at most 6 hours, 50 rows, and 16 KiB per call. A signal is visible only when it both happened and arrived by the cutoff, so a late arrival stays future evidence. A failed call returns a `ToolFailure` to the agent. `signalops seed` adds two synthetic demo runbooks.
 
-No tool exposes SQL, shell access, future evidence, or evaluation labels. Read-only results are cached in Redis for `SIGNALOPS_TOOL_CACHE_SECONDS` under keys that include workspace, replay scope, cutoff, and data version, and a stored value must prove the same identity to be read.
+No tool exposes SQL, shell access, future evidence, or evaluation labels.
+
+**Prompt injection (P09-T05).** `fixtures/adversarial/v1/injections.json` plants instructions in logs and a runbook: run a shell, restart a service, read another workspace, cite a planted signal from another run, self-approve a rollback, and leak secrets. `tests/integration/test_prompt_injection.py` lets a compromised model obey every one. Invented tools and another role's tools return "There is no such tool."; extra scope arguments fail validation; an outside service and a window past the cutoff are out of scope; the planted citation is refused as unread; `requires_approval: false` fails validation; no secret reaches any request, step, diagnosis, tool row, or log, because tool results and the verifier's packet are redacted before a model sees them; and nothing outside the investigation changes. Evidence that only asserts a cause, and an incident with no evidence, end in abstention. Redaction is a pattern match on sensitive `key=value` pairs and bearer tokens; a secret in another shape would pass through. Read-only results are cached in Redis for `SIGNALOPS_TOOL_CACHE_SECONDS` under keys that include workspace, replay scope, cutoff, and data version, and a stored value must prove the same identity to be read.
 
 ## LLM gateway
 

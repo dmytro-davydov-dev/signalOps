@@ -26,12 +26,12 @@ PostgreSQL owns evidence, workflow progress, budgets, and the initial knowledge 
 | Field | Current value |
 | --- | --- |
 | Active phase | Phase 9 Multi-agent investigations (in progress); Phase 8 gate passed on the fake provider |
-| Active task | P09-T05 (in progress) |
-| Last completed task | P09-T04 |
-| Latest verified commit | `14485ad` (P09-T03); the `test(P09-T04)` commit follows |
-| Validation evidence | P09-T04: `tests/integration/test_multi_agent_recovery.py` 3 passed, 3 runs in a row, killing real `v3` worker processes. P09-T03: `SIGNALOPS_INTEGRATION=1 uv run pytest tests/integration` 627 passed, including 7 new synthesis and verification tests; unit and contract 624 passed; `pnpm test` 69 passed. Phase 8 gate: `SIGNALOPS_INTEGRATION=1 uv run pytest` 1190 passed. The Playwright browser journey passed on Compose with the fake provider: fault ingestion, an automatic and one manual investigation (a double click started only one), a stream resumed with `Last-Event-ID` after a reload, a diagnosis naming `bank-gateway` with 10 verified citations and estimated cost, and a cancelled run. No model was called. Earlier evidence is in the work log |
+| Active task | Phase 9 gate (in progress) |
+| Last completed task | P09-T05 |
+| Latest verified commit | `443e844` (P09-T04); the `test(P09-T05)` commit follows |
+| Validation evidence | P09-T05: `tests/integration/test_prompt_injection.py` 5 passed; two mutations each failed it. P09-T04: `tests/integration/test_multi_agent_recovery.py` 3 passed, 3 runs in a row, killing real `v3` worker processes. P09-T03: `SIGNALOPS_INTEGRATION=1 uv run pytest tests/integration` 627 passed, including 7 new synthesis and verification tests; unit and contract 624 passed; `pnpm test` 69 passed. Phase 8 gate: `SIGNALOPS_INTEGRATION=1 uv run pytest` 1190 passed. The Playwright browser journey passed on Compose with the fake provider: fault ingestion, an automatic and one manual investigation (a double click started only one), a stream resumed with `Last-Event-ID` after a reload, a diagnosis naming `bank-gateway` with 10 verified citations and estimated cost, and a cancelled run. No model was called. Earlier evidence is in the work log |
 | Blockers | none |
-| Next task | P09-T05 |
+| Next task | Phase 9 gate |
 
 ### Scope and release boundaries
 
@@ -866,11 +866,18 @@ Start the React shell in Phase 1 and add API-backed incident views in Phase 5; P
 
 ### P09-T05 Add prompt-injection and abstention cases
 
-- [ ] Complete this task.
+- [x] Complete this task.
 
 **Implementation:** Place adversarial instructions in logs/runbooks and include missing-evidence incidents. Keep all tool authorization in code.
 
 **Acceptance:** Evidence text cannot add tools, widen workspace scope, expose secrets, or trigger remediation.
+
+**Notes (2026-11-08):**
+- **Fixture:** `fixtures/adversarial/v1/injections.json` (synthetic, labelled): six cases planted in logs and a runbook, each with the attempts it should provoke and the secrets it carries. Only tests read the labels; P10 evaluation can reuse them.
+- **Tests:** `tests/integration/test_prompt_injection.py`. A compromised telemetry model obeys the planted text: `run_shell`, `restart_service`, and the deployment role's `get_deployments` return "There is no such tool."; `workspace_id` and `replay_scope` arguments fail validation; an outside service and a window past the cutoff are `out_of_scope`; a real signal from another run, planted as a citation, is refused as unread. Tool definitions never change on any request. No fixture secret appears in any provider request, step output, diagnosis, tool-call row, or captured log at DEBUG; even the model's echo of the evidence holds only `[REDACTED]`. The incident, the scope's signals, and the outbox are unchanged except for the investigation's completion event. A runbook with instructions arrives as redacted tool data and leaves the honest diagnosis unchanged. A synthesizer's `requires_approval: false` is refused, and every stored action requires approval. An incident with no evidence, and one whose only evidence is logs asserting a cause, abstain.
+- **Mutation check:** with redaction disabled, two of these tests fail; with the per-role tool check removed, this file's main test and `test_a_specialist_cannot_call_another_roles_tools` fail. Both mutations were reverted.
+- **No code change was needed:** tool authorization, scope, cutoff, validation, and redaction were already in code (ADR-027, ADR-029, ADR-031).
+- **Left:** redaction matches sensitive `key=value` pairs and bearer tokens only; a secret in free text of another shape would reach a model.
 
 **Phase gate:** All tasks above are checked, acceptance evidence is recorded in the ledger, and the phase outcome is demonstrated against real infrastructure where relevant.
 
@@ -1517,13 +1524,23 @@ Keep these outside the release critical path unless measurements justify promoti
 
 ### 2026-11-08 — P09-T04
 - Status: completed
-- Commit: the `test(P09-T04)` commit (hash recorded in the P09-T05 entry)
+- Commit: `443e844`
 - Implemented: `tests/integration/test_multi_agent_recovery.py`, `tests/integration/multi_agent_victim.py`; `docs/reliability.md` recovery section, failure table, and checklist.
 - Validation commands and results: `uv run ruff check .`, `uv run ruff format --check .`, `uv run mypy` (180 files) pass; `SIGNALOPS_INTEGRATION=1 uv run pytest tests/integration/test_multi_agent_recovery.py` 3 passed, repeated 3 times.
 - Evidence or artifact references: see task notes.
 - Deviations and reasons: none.
 - Remaining issues: none specific; the recovery covers fake roles, not a live provider.
 - Next task: P09-T05.
+
+### 2026-11-08 — P09-T05
+- Status: completed
+- Commit: the `test(P09-T05)` commit (hash recorded in the Phase 9 gate entry)
+- Implemented: `fixtures/adversarial/v1/injections.json`; `tests/integration/test_prompt_injection.py`; `docs/agents-and-workflow.md` injection section.
+- Validation commands and results: `uv run ruff check .`, `uv run ruff format --check .`, `uv run mypy` (181 files) pass; `SIGNALOPS_INTEGRATION=1 uv run pytest tests/integration/test_prompt_injection.py` 5 passed; with redaction disabled 2 failed, and with the role tool check removed 2 failed (reverted).
+- Evidence or artifact references: see task notes.
+- Deviations and reasons: none.
+- Remaining issues: pattern-based redaction (see task notes).
+- Next task: Phase 9 gate.
 
 ## Work log template
 
