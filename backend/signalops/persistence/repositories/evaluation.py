@@ -15,6 +15,7 @@ from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from signalops.contracts.evaluation import (
+    AuditRecord,
     CaseStatus,
     ReplayStatus,
     RunStatus,
@@ -23,6 +24,7 @@ from signalops.contracts.evaluation import (
     SystemVariant,
 )
 from signalops.persistence.models import (
+    EvaluationAudit,
     EvaluationCase,
     EvaluationReplay,
     EvaluationRun,
@@ -319,3 +321,39 @@ class EvaluationRepository:
             .group_by(EvaluationCase.status)
         )
         return {str(status): int(count) for status, count in rows.tuples()}
+
+    async def record_detection(self, replay_id: uuid.UUID, detection: dict[str, Any]) -> None:
+        """Add a replay's detection score to its report."""
+        replay = await self._session.get_one(EvaluationReplay, replay_id)
+        replay.report = {**(replay.report or {}), "detection": detection}
+        await self._session.flush()
+
+    async def record_audit(self, case_id: uuid.UUID, record: AuditRecord) -> EvaluationAudit:
+        """Store an auditor's judgement of a citation; a later one from them replaces it."""
+        values = record.model_dump(mode="json")
+        statement = insert(EvaluationAudit).values(case_id=case_id, **values)
+        await self._session.execute(
+            statement.on_conflict_do_update(
+                index_elements=["case_id", "signal_id", "auditor"],
+                set_={"supported": statement.excluded.supported, "note": statement.excluded.note},
+            )
+        )
+        stored = await self._session.scalar(
+            select(EvaluationAudit).where(
+                EvaluationAudit.case_id == case_id,
+                EvaluationAudit.signal_id == record.signal_id,
+                EvaluationAudit.auditor == record.auditor,
+            )
+        )
+        if stored is None:
+            raise LookupError("audit vanished")
+        return stored
+
+    async def audits(self, run_id: uuid.UUID) -> list[EvaluationAudit]:
+        result = await self._session.scalars(
+            select(EvaluationAudit)
+            .join(EvaluationCase, EvaluationCase.id == EvaluationAudit.case_id)
+            .where(EvaluationCase.run_id == run_id)
+            .order_by(EvaluationAudit.created_at)
+        )
+        return list(result)

@@ -31,21 +31,24 @@ Find out whether agent investigations actually beat simpler approaches. Correctn
 
 `signalops evaluation-run --label L --split held_out [--variant …] [--trials N] [--execute]` queues a run, and `evaluation-worker` (Compose profile `evaluation`) executes queued runs. Both use `SIGNALOPS_EVALUATION_DATABASE_URL`. A run replays each scenario once into its own scope. Every variant and trial then investigates that scope's first incident with the same evidence cutoff (the incident's event-time detection), the same tools, and the same `budget_microusd`, `max_steps`, and deadline, all recorded in `runs.limits`. A scenario with no incident is scored without an investigation. The run records the split's dataset hash, workflow and prompt versions, model settings (including whether the provider measures model quality: the fake provider does not), pricing version and prices, and seed. Its metrics give, per variant, cases, samples, trials, per-trial accuracy and its standard deviation, abstentions, false diagnoses, harness failures (counted as incorrect), cost, unknown reservations, and model calls, next to the equal per-case budget.
 
-## Metrics
+## Metrics (P10-T05)
+
+Scores compare stored outcomes with deterministic labels (`evaluation/scoring.py`). Aggregates are in `evaluation/metrics.py`. No judge model scores anything (`judge_model_scores` is always null).
 
 | Metric | Definition |
 | --- | --- |
-| Detection precision and recall | Correct incident windows and affected services vs labels, with one-to-one matching |
-| Root-cause accuracy | Correct service **and** failure type on diagnosable cases |
-| Evidence precision | Supported cited claims ÷ all audited cited claims |
-| Unsupported diagnosis rate | Diagnoses asserting causes the available evidence doesn't contain |
-| Abstention quality | Correct `insufficient_evidence` on underdetermined cases |
-| Diagnosis latency | Diagnosis persisted minus incident detected (p50 and p95) |
-| Cost per investigation | Provider-attributed, including retries and ambiguous calls |
-| Recovery correctness | Checkpoints reused, no duplicate logical jobs or links |
-| Data quality | Invalid, unresolved, late, duplicate, and quarantined events per source |
+| Detection precision and recall | Per replay, shared by all variants. An incident matches the expected fault when it is detected (event time) between the fault's start and its end plus 5 minutes, and names an affected service. Matching is one-to-one: the earliest match is the true positive, other incidents are false positives, and an unmatched fault is a false negative |
+| Detection delay | Event time from fault start to the matched incident's detection (p50, p95) |
+| Outcome accuracy | Correct service and failure type, or a correct abstention, or no incident on healthy traffic. Harness failures count as incorrect |
+| Root-cause accuracy | Correct service **and** failure type, over diagnosable cases |
+| Evidence precision (automatic) | Cited signals among the records the fault produced (`supporting_event_ids`), over all cited signals |
+| Unsupported diagnosis | A diagnosis none of whose citations is fault evidence; rate over diagnoses |
+| Abstention quality | Correct abstentions on incidents whose cause is not in the evidence, and over-abstentions on diagnosable ones |
+| Investigation latency | Wall clock from request to stored outcome (p50, p95). Replay detection time is event time, so the two clocks are not subtracted |
+| Cost | Spent microUSD per investigation, unknown reservations, and model calls |
+| Human audit precision | People's judgements of sampled citations (`evaluation.audits`), reported separately with `source: human` |
 
-Deterministic labels are used wherever possible. Human audit samples cover semantic support. Judge-model scores are never presented as ground truth.
+Recovery correctness and data quality are covered by the reliability tests and the evidence quality summary, not by this report.
 
 ## Replay orchestration (P10-T02, ADR-035)
 

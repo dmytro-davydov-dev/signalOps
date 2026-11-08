@@ -149,7 +149,7 @@ class ObservedOutcome(ContractModel):
 
 
 class CaseScores(ContractModel):
-    """Deterministic scores of one case against its labels."""
+    """Deterministic scores of one case against its labels. No model judges anything."""
 
     # Diagnosed the labelled service and failure type, or abstained when that is correct.
     outcome_correct: bool
@@ -158,3 +158,39 @@ class CaseScores(ContractModel):
     abstained: bool
     # Asserted a cause that is wrong, or any cause where none is supported.
     false_diagnosis: bool
+    # Abstained on an incident whose cause the evidence cannot show; None otherwise.
+    correct_abstention: bool | None = None
+    # Citations, and those among the records the fault produced (deterministic labels).
+    cited: int = 0
+    cited_supported: int = 0
+    evidence_precision: float | None = None
+    # A diagnosis none of whose citations is fault evidence.
+    unsupported_diagnosis: bool = False
+    # Wall-clock seconds from request to the stored outcome.
+    latency_seconds: float | None = None
+
+
+class IncidentRef(ContractModel):
+    id: uuid.UUID
+    detected_at: UtcDatetime
+    services: tuple[Name, ...]
+
+
+class DetectionScore(ContractModel):
+    """One replay's incidents matched one-to-one against its expected fault."""
+
+    true_positives: int = Field(ge=0)
+    false_positives: int = Field(ge=0)
+    false_negatives: int = Field(ge=0)
+    matched_incident_id: uuid.UUID | None = None
+    # Event time from fault start to detection, for the matched incident.
+    detection_delay_seconds: float | None = None
+
+
+class AuditRecord(ContractModel):
+    """A person's judgement of whether one cited signal supports a case's diagnosis."""
+
+    signal_id: uuid.UUID
+    supported: bool
+    auditor: Name
+    note: str | None = Field(default=None, max_length=2000)

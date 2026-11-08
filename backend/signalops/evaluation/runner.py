@@ -47,6 +47,7 @@ from signalops.contracts.evaluation import (
     TERMINAL_CASE_STATUSES,
     CaseStatus,
     ExpectedOutcome,
+    IncidentRef,
     ObservedOutcome,
     ReplayStatus,
     RunStatus,
@@ -65,7 +66,7 @@ from signalops.evaluation.replay import (
     replay,
     seed_runbooks,
 )
-from signalops.evaluation.scoring import score_case
+from signalops.evaluation.scoring import match_detection, score_case
 from signalops.gateway.pricing import PRICES, PRICING_VERSION
 from signalops.persistence.database import Database
 from signalops.persistence.models import (
@@ -74,7 +75,9 @@ from signalops.persistence.models import (
     EvaluationRun,
     EvaluationScenario,
     Incident,
+    IncidentService,
     Investigation,
+    Service,
     Signal,
 )
 from signalops.persistence.repositories.evaluation import EvaluationRepository, NewRun
@@ -269,7 +272,8 @@ class RunExecutor:
             run = await repository.run(run_id)
             cases = await repository.cases(run_id)
             replays = await repository.replays(run_id)
-            metrics = summarize(run, cases, replays) if run is not None else None
+            audits = await repository.audits(run_id)
+            metrics = summarize(run, cases, replays, audits) if run is not None else None
             await repository.finish_run(
                 run_id,
                 self._owner,
@@ -312,6 +316,12 @@ class RunExecutor:
             replay_row.status = report.status
         expected = ExpectedOutcome.model_validate(scenario.expected_outcome)
         incidents = await self._incidents(scope)
+        if replay_row.status == ReplayStatus.COMPLETED:
+            detection = match_detection(expected, await self._incident_refs(incidents))
+            async with self._db.transaction() as session:
+                await EvaluationRepository(session).record_detection(
+                    replay_row.id, detection.model_dump(mode="json")
+                )
         cases: list[EvaluationCase] = []
         for variant in (SystemVariant(value) for value in run.variants):
             trials = 1 if variant is SystemVariant.DETERMINISTIC else run.trials
@@ -381,6 +391,25 @@ class RunExecutor:
                 .order_by(Incident.detected_at, Incident.id)
             )
             return list(rows)
+
+    async def _incident_refs(self, incidents: list[Incident]) -> list[IncidentRef]:
+        async with self._db.transaction() as session:
+            rows = await session.execute(
+                select(IncidentService.incident_id, Service.name)
+                .join(Service, Service.id == IncidentService.service_id)
+                .where(IncidentService.incident_id.in_([incident.id for incident in incidents]))
+            )
+            names: dict[uuid.UUID, list[str]] = {}
+            for incident_id, name in rows:
+                names.setdefault(incident_id, []).append(name)
+        return [
+            IncidentRef(
+                id=incident.id,
+                detected_at=incident.detected_at,
+                services=tuple(sorted(names.get(incident.id, []))),
+            )
+            for incident in incidents
+        ]
 
     async def _request(
         self, run: EvaluationRun, case: EvaluationCase, scope: EvidenceScope, incident: Incident

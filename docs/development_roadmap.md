@@ -26,12 +26,12 @@ PostgreSQL owns evidence, workflow progress, budgets, and the initial knowledge 
 | Field | Current value |
 | --- | --- |
 | Active phase | Phase 10 Evaluation infrastructure (in progress); Phase 9 gate passed on the fake provider |
-| Active task | P10-T05 (in progress) |
-| Last completed task | P10-T04 |
+| Active task | P10-T06 (in progress) |
+| Last completed task | P10-T05 |
 | Latest verified commit | `53db2c6` (gate fix); the `docs(P09)` gate commit follows |
 | Validation evidence | Phase 9 gate: `SIGNALOPS_INTEGRATION=1 uv run pytest` 1260 passed; on Compose, a `v3` investigation survived `docker compose kill investigation-worker` mid-branch, reusing completed branches and keeping the interrupted call `unknown` with its reservation; `pnpm e2e` passed on `v3`. A live-only bug (runbook references) was found and fixed at the gate. No model was called. Earlier evidence is in the work log |
 | Blockers | none |
-| Next task | P10-T06, then the Phase 10 gate |
+| Next task | Phase 10 gate |
 
 ### Scope and release boundaries
 
@@ -958,11 +958,18 @@ Start the React shell in Phase 1 and add API-backed incident views in Phase 5; P
 
 ### P10-T05 Implement scoring and evidence auditing
 
-- [ ] Complete this task.
+- [x] Complete this task.
 
 **Implementation:** Measure detection precision/recall, service-plus-failure accuracy, evidence support, unsupported diagnoses, abstention, latency, and cost. Define incident matching windows and one-to-one matching to avoid double-counting. Use deterministic labels where possible and human audit samples for semantic support.
 
 **Acceptance:** A known false diagnosis and unsupported citation reduce their respective scores; judge-model scores are not presented as ground truth.
+
+**Notes (2026-11-08):**
+- **Scoring (`evaluation/scoring.py`):** `score_case` adds citations, supported citations (cited records among the fault's `supporting_event_ids`), evidence precision, unsupported diagnosis (no supported citation), correct abstention (non-diagnosable incidents only), and wall-clock latency. `match_detection` matches incidents to the expected fault one-to-one: detected in [fault start, fault end + 5 min] (event time) and naming an affected service; the earliest match is the hit, the rest are false positives. The runner stores each replay's detection score in its report.
+- **Metrics (`evaluation/metrics.py`):** per variant, root-cause accuracy over diagnosable cases, unsupported rate, correct and over-abstentions, automatic evidence precision, human audit precision (separate, `source: human`), latency p50/p95, cost; per run, detection precision, recall, and event-time delay. `judge_model_scores` is always null.
+- **Human audits:** `evaluation.audits` (migration `0018_evaluation_audits`; the runtime role has no access through 0017's default privileges, checked by the access test) and `EvaluationRepository.record_audit` and `audits`. Recording them through the API comes with P10-T06.
+- **Verified:** `tests/unit/test_evaluation_scoring.py` 6 passed: a wrong service or wrong failure type loses accuracy and counts as a false diagnosis; one unsupported citation of two halves evidence precision and all-unsupported marks the diagnosis unsupported; two incidents for one fault give one hit and one false positive; a harness failure counts as incorrect; human audits stay apart. Mutations (all citations supported; every matching incident a hit) each failed tests (reverted). `test_evaluation_runs.py` now checks detection (3 replays, 2 hits, 0 false positives or misses) and the new metrics; `test_evaluation_access.py` covers `audits`.
+- **Left:** semantic support beyond the labels depends on people recording audits.
 
 ### P10-T06 Build the evaluation results view
 
@@ -1626,6 +1633,16 @@ Keep these outside the release critical path unless measurements justify promoti
 - Deviations and reasons: none.
 - Remaining issues: see task notes.
 - Next task: P10-T05.
+
+### 2026-11-08 — P10-T05
+- Status: completed
+- Commit: see git log for `feat(P10-T05)`
+- Implemented: extended `CaseScores`, `IncidentRef`, `DetectionScore`, `AuditRecord`; `match_detection`; detection stored per replay; full metrics; `evaluation.audits` and migration 0018; `docs/evaluation.md` metrics.
+- Validation commands and results: ruff check and format, mypy pass; `tests/unit/test_evaluation_scoring.py` 6 passed (and the mutation checks); `SIGNALOPS_INTEGRATION=1 uv run pytest tests/integration/test_evaluation_runs.py tests/integration/test_evaluation_access.py tests/integration/test_evidence_schema.py tests/integration/test_repositories.py` passed.
+- Evidence or artifact references: see task notes.
+- Deviations and reasons: latency is investigation wall-clock time, because replay detection is in event time.
+- Remaining issues: see task notes.
+- Next task: P10-T06.
 
 ## Work log template
 

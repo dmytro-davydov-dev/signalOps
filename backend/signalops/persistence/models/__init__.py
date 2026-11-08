@@ -6,6 +6,7 @@ from signalops.persistence.models.detection import (
     DetectionTrigger,
 )
 from signalops.persistence.models.evaluation import (
+    EvaluationAudit,
     EvaluationCase,
     EvaluationReplay,
     EvaluationRun,
@@ -41,6 +42,7 @@ __all__ = [
     "DetectionClock",
     "DetectionSample",
     "DetectionTrigger",
+    "EvaluationAudit",
     "EvaluationCase",
     "EvaluationReplay",
     "EvaluationRun",

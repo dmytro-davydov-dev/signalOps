@@ -46,7 +46,7 @@ from tests.integration.test_investigator import row_of, run_once
 
 pytestmark = pytest.mark.integration
 
-EVALUATION_TABLES = ("scenarios", "runs", "replays", "cases")
+EVALUATION_TABLES = ("scenarios", "runs", "replays", "cases", "audits")
 HASH = "0" * 64
 
 
@@ -244,7 +244,11 @@ async def test_the_evaluator_stores_ground_truth_and_scores_cases(
     )
     scores = score_case(expected, wrong)
     assert scores == CaseScores(
-        outcome_correct=False, root_cause_correct=False, abstained=False, false_diagnosis=True
+        outcome_correct=False,
+        root_cause_correct=False,
+        abstained=False,
+        false_diagnosis=True,
+        unsupported_diagnosis=True,
     )
     async with evaluator.transaction() as session:
         await EvaluationRepository(session).finish_case(

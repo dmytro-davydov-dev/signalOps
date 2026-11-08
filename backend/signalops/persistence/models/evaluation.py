@@ -219,3 +219,27 @@ class EvaluationCase(Base):
     error: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = created_at()
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class EvaluationAudit(Base):
+    """A person's judgement of one cited signal in a case: does it support the diagnosis?
+
+    Human audits sample semantic support that deterministic labels cannot see. They
+    are reported beside the automatic scores, never mixed into them.
+    """
+
+    __tablename__ = "audits"
+    __table_args__ = (
+        UniqueConstraint("case_id", "signal_id", "auditor"),
+        CheckConstraint(length_between("auditor", 1, MAX_NAME_LENGTH), name="auditor_length"),
+        CheckConstraint("note IS NULL OR char_length(note) BETWEEN 1 AND 2000", name="note_length"),
+        SCHEMA_ARGS,
+    )
+
+    id: Mapped[uuid.UUID] = uuid_pk()
+    case_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("evaluation.cases.id"))
+    signal_id: Mapped[uuid.UUID]
+    supported: Mapped[bool] = mapped_column(Boolean)
+    auditor: Mapped[str] = mapped_column(Text)
+    note: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = created_at()

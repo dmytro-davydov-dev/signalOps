@@ -163,6 +163,16 @@ async def test_every_variant_investigates_identical_evidence_under_equal_limits(
         )
     assert metrics["variants"]["deterministic"]["trials"] == 1
     assert metrics["variants"]["multi_agent"]["trials"] == 2
+    detection = metrics["detection"]
+    assert (detection["replays_scored"], detection["true_positives"]) == (3, 2)
+    assert (detection["false_positives"], detection["false_negatives"]) == (0, 0)
+    assert detection["delay_clock"] == "event time"
+    multi = metrics["variants"]["multi_agent"]
+    assert multi["evidence"]["source"] == "automatic"
+    assert multi["evidence"]["cited"] > 0
+    assert multi["latency_seconds_p95"] is not None
+    assert multi["human_audit"]["audited_citations"] == 0
+    assert metrics["judge_model_scores"] is None
     # The fake provider is deterministic, so trials agree.
     assert metrics["variants"]["multi_agent"]["accuracy_stdev"] == 0.0
 
