@@ -183,7 +183,10 @@ Backend processes read `SIGNALOPS_`-prefixed variables (`backend/signalops/confi
 
 | Variable | Default | Notes |
 | --- | --- | --- |
-| `SIGNALOPS_DATABASE_URL` | none (required) | `postgresql+psycopg://…`; contains a credential, never logged |
+| `SIGNALOPS_DATABASE_URL` | none (required) | `postgresql+psycopg://…`; contains a credential, never logged. Compose connects application processes as `signalops_app` (runtime role) and `migrate` as the owner |
+| `SIGNALOPS_EVALUATION_DATABASE_URL` | unset | The evaluator's connection (`signalops_eval`), the only one that can read ground truth. Unset: evaluation commands and routes are unavailable |
+| `SIGNALOPS_DB_RUNTIME_USER`, `SIGNALOPS_DB_RUNTIME_PASSWORD` | `signalops_app`, unset | Login role `signalops migrate` creates or updates in group `signalops_runtime`; unset password skips it. Compose falls back to `POSTGRES_PASSWORD` locally |
+| `SIGNALOPS_DB_EVALUATOR_USER`, `SIGNALOPS_DB_EVALUATOR_PASSWORD` | `signalops_eval`, unset | The same for group `signalops_evaluator` |
 | `SIGNALOPS_REDIS_URL` | `redis://localhost:56379/0` | |
 | `SIGNALOPS_KAFKA_BOOTSTRAP_SERVERS` | `localhost:19094` | `kafka:9092` inside Compose |
 | `SIGNALOPS_KAFKA_DELIVERY_TIMEOUT_MS` | `30000` | librdkafka `message.timeout.ms`: one message's send including internal retries; after it the caller gets a `timeout` result |

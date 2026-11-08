@@ -19,7 +19,10 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--version", action="version", version=f"signalops {__version__}")
     commands = parser.add_subparsers(dest="command", metavar="command")
     commands.add_parser("api", help="serve the HTTP API")
-    commands.add_parser("migrate", help="apply database migrations up to head, then exit")
+    commands.add_parser(
+        "migrate",
+        help="apply database migrations up to head and provision login roles, then exit",
+    )
     commands.add_parser("init-topics", help="create or verify Kafka topics, then exit")
     commands.add_parser(
         "outbox-publisher", help="publish committed outbox rows to Kafka until stopped"
@@ -140,10 +143,12 @@ def run_migrate() -> int:
     from signalops.config import get_settings
     from signalops.logs import configure_logging
     from signalops.persistence.migrations import upgrade_to_head
+    from signalops.persistence.roles import provision_login_roles
 
     settings = get_settings()
     configure_logging(settings.log_level)
     upgrade_to_head(settings)
+    provision_login_roles(settings)
     return 0
 
 

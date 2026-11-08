@@ -25,13 +25,13 @@ PostgreSQL owns evidence, workflow progress, budgets, and the initial knowledge 
 
 | Field | Current value |
 | --- | --- |
-| Active phase | Phase 10 Evaluation infrastructure (not started); Phase 9 gate passed on the fake provider |
-| Active task | none (Phase 9 gate passed) |
-| Last completed task | P09-T05 and the Phase 9 gate |
+| Active phase | Phase 10 Evaluation infrastructure (in progress); Phase 9 gate passed on the fake provider |
+| Active task | P10-T02 (in progress) |
+| Last completed task | P10-T01 |
 | Latest verified commit | `53db2c6` (gate fix); the `docs(P09)` gate commit follows |
 | Validation evidence | Phase 9 gate: `SIGNALOPS_INTEGRATION=1 uv run pytest` 1260 passed; on Compose, a `v3` investigation survived `docker compose kill investigation-worker` mid-branch, reusing completed branches and keeping the interrupted call `unknown` with its reservation; `pnpm e2e` passed on `v3`. A live-only bug (runbook references) was found and fixed at the gate. No model was called. Earlier evidence is in the work log |
 | Blockers | none |
-| Next task | P10-T01 |
+| Next task | P10-T03 |
 
 ### Scope and release boundaries
 
@@ -898,11 +898,20 @@ Start the React shell in Phase 1 and add API-backed incident views in Phase 5; P
 
 ### P10-T01 Create evaluation persistence and access roles
 
-- [ ] Complete this task.
+- [x] Complete this task.
 
 **Implementation:** Add evaluation_scenarios, evaluation_runs, and evaluation_cases. Store ground truth separately and deny investigation runtime access. Record dataset hash, workflow/prompt versions, model settings, seed, and pricing configuration.
 
 **Acceptance:** The evaluator can score outcomes; agent tools and database credentials cannot read expected outcomes or injection labels.
+
+**Notes (2026-11-08):**
+- **Decision (ADR-034):** schema `evaluation` (migration `0017_evaluation`) with `scenarios`, `runs`, `replays`, and `cases`. Group roles `signalops_runtime` (DML on `public`, nothing on `evaluation`) and `signalops_evaluator` (both); default privileges cover later tables; neither may write `alembic_version`. `signalops migrate` now also creates or updates login roles `signalops_app` and `signalops_eval` from `SIGNALOPS_DB_RUNTIME_PASSWORD` and `SIGNALOPS_DB_EVALUATOR_PASSWORD` (`persistence/roles.py`). Compose runs every application process as `signalops_app`; `migrate` stays the owner.
+- **Deviation from the plan's logical schema:** a run covers a split and several variants, rather than one scenario and one variant. `replays` gives each scenario one replay scope per run, so every variant and trial investigates identical evidence. Cases keep the expected outcome without its evidence labels.
+- **Code:** `contracts/evaluation.py` (families, splits, variants, `ExpectedOutcome`, `ObservedOutcome`, `CaseScores`), `persistence/models/evaluation.py`, `persistence/repositories/evaluation.py` (immutable scenario registration, run claim and lease, replays, cases), `evaluation/scoring.py` (`score_case`, deterministic labels only; P10-T05 extends it). Alembic compares both schemas (`migrations/env.py`).
+- **Verified (`tests/integration/test_evaluation_access.py`):** the runtime group has no table privilege of any kind on the four tables, no schema usage, and PUBLIC has none. As a provisioned runtime login, every read of an evaluation table, `SET ROLE signalops_evaluator`, an `alembic_version` update, and `CREATE TABLE` are refused with "permission denied". The same login claims and runs a whole `v3` investigation (tools, budget holds, model calls, ending) to a `bank-gateway` diagnosis. The evaluator login registers a scenario, is refused a changed one, creates a run, replay, and case, and stores a score in which a wrong service counts as a false diagnosis. Mutation: granting the runtime group schema usage and table reads failed two of the tests (reverted).
+- **Injection labels:** `fixtures/` is not copied into the backend image, and the adversarial labels are read only by tests. Scenario injection specs live in `evaluation.scenarios`.
+- **Choices the task did not state:** in Compose, the role passwords fall back to `POSTGRES_PASSWORD` when unset, so existing local `.env` files keep working; `.env.example` sets separate placeholders. Roles are cluster-wide, so the downgrade revokes grants and keeps the roles.
+- **Left:** the API's evaluation routes need `SIGNALOPS_EVALUATION_DATABASE_URL` (P10-T06). The Compose stack has not yet been restarted on the runtime login (this shell has no Docker access); the phase gate does that.
 
 ### P10-T02 Build isolated replay orchestration
 
@@ -1558,6 +1567,16 @@ Keep these outside the release critical path unless measurements justify promoti
 - Deviations and reasons: none.
 - Remaining issues: see the gate note's open items. The runs left investigations and demo data in the dev database.
 - Next task: P10-T01.
+
+### 2026-11-08 — P10-T01
+- Status: completed
+- Commit: see git log for `feat(P10-T01)`
+- Implemented: migration `0017_evaluation` (schema, tables, group roles, grants); `persistence/roles.py` and login-role provisioning in `signalops migrate`; evaluation contracts, models, repository, `score_case`; Compose runtime login and `.env.example` placeholders; settings `SIGNALOPS_EVALUATION_DATABASE_URL`, `SIGNALOPS_DB_RUNTIME_*`, `SIGNALOPS_DB_EVALUATOR_*`; ADR-034; data-model and development docs.
+- Validation commands and results: `uv run ruff check .`, `uv run ruff format --check .`, `uv run mypy` (187 files) pass; `uv run pytest` 624 passed (unit and contract); `SIGNALOPS_INTEGRATION=1 uv run pytest tests/integration/test_evaluation_access.py tests/integration/test_repositories.py tests/integration/test_evidence_schema.py tests/integration/test_one_shot_commands.py` passed (includes the downgrade round trip and the model/migration comparison over both schemas); `docker compose --env-file .env.example config --quiet` ok.
+- Evidence or artifact references: see task notes.
+- Deviations and reasons: run, replay, and case tables instead of the plan's single-scenario runs (see task notes).
+- Remaining issues: the Compose stack still runs as the owner until it is rebuilt and restarted.
+- Next task: P10-T02.
 
 ## Work log template
 

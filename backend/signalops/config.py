@@ -26,6 +26,15 @@ class Settings(BaseSettings):
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR"] = "INFO"
 
     database_url: SecretStr
+    # The evaluator's connection (role `signalops_evaluator`), which alone can read
+    # ground truth. Unset: evaluation commands and API routes are unavailable.
+    evaluation_database_url: SecretStr | None = None
+    # Login roles `signalops migrate` creates or updates after the upgrade, one per
+    # group role from migration 0017. Unset password: that role is left alone.
+    db_runtime_user: str = Field(default="signalops_app", pattern=r"^[a-z_][a-z0-9_]{0,62}$")
+    db_runtime_password: SecretStr | None = None
+    db_evaluator_user: str = Field(default="signalops_eval", pattern=r"^[a-z_][a-z0-9_]{0,62}$")
+    db_evaluator_password: SecretStr | None = None
     redis_url: RedisDsn = RedisDsn("redis://localhost:56379/0")
     kafka_bootstrap_servers: str = "localhost:19094"
     # Upper bound on one message's send, including librdkafka's internal retries.
@@ -229,6 +238,13 @@ class Settings(BaseSettings):
         raw = self.database_url.get_secret_value()
         PostgresDsn(raw)
         return raw
+
+    def evaluator_settings(self) -> "Settings":
+        """These settings with the evaluator's connection as the database URL."""
+        if self.evaluation_database_url is None:
+            raise ValueError("SIGNALOPS_EVALUATION_DATABASE_URL is not set")
+        PostgresDsn(self.evaluation_database_url.get_secret_value())
+        return self.model_copy(update={"database_url": self.evaluation_database_url})
 
 
 @lru_cache

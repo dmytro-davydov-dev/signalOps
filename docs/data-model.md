@@ -133,13 +133,22 @@ Diagnosis status and investigation status map one to one (`DIAGNOSIS_STATUS_BY_I
 | --- | --- |
 | `consumer_receipts` | PK `(consumer_group, event_id)`, `consumer_group` 1–256 chars, `processed_at` |
 | `outbox_events` | `aggregate_id`, `aggregate_version` ≥ 1, `topic` (1–256 chars), `message_key` (nonempty), `envelope` object, `created_at`, `published_at` (NULL while pending, otherwise ≥ `created_at`), `attempts` ≥ 0, `next_attempt_at` (retry deferral), `quarantined_at` (never set together with `published_at`), `last_error` (1–2048 chars). `UNIQUE(aggregate_id, aggregate_version, topic)` |
-| `evaluation_scenarios` | `name`, `version`, `dataset_ref`, `injection_spec`, `expected_outcome`. `UNIQUE(name, version)` |
-| `evaluation_runs` | `scenario_id`, `system_variant`, `workflow_version`, `model_config`, `prompt_versions`, `dataset_hash`, `seed`, `metrics` |
-| `evaluation_cases` | `run_id`, `case_key`, `investigation_id`, `expected_outcome`, `observed_outcome`, `scores`. `UNIQUE(run_id, case_key)` |
-
 Receipts and outbox rows are infrastructure records without a workspace: the event they describe carries its scope in the envelope. The publisher's pending query (`WHERE published_at IS NULL ORDER BY created_at LIMIT n`) is served by the partial index alone; an integration test checks the plan with 20,000 rows. No `processed_at` index yet; receipt retention cleanup adds one when it exists.
 
-The investigation runtime's database role has **no access** to evaluation ground truth (`expected_outcome`, `injection_spec`).
+### Evaluation schema (P10-T01, ADR-034)
+
+Evaluation tables live in a separate PostgreSQL schema, `evaluation`, rather than `public`.
+
+| Table | Key fields and constraints |
+| --- | --- |
+| `evaluation.scenarios` | `name`, `version`, `family`, `split` (`development` or `held_out`), `synthetic`, `dataset_ref`, `dataset_hash` (SHA-256), `record_count`, `injection_spec`, `expected_outcome`. `UNIQUE(name, version)`; a stored version never changes |
+| `evaluation.runs` | `workspace_id`, `label`, `split`, `status` (`queued`, `running`, `completed`, `failed`), `variants`, `trials`, `seed`, `dataset_hash` (over the split), `workflow_versions`, `prompt_versions`, `model_config`, `pricing_config`, `limits`, lease columns, `metrics` |
+| `evaluation.replays` | `run_id`, `scenario_id`, `replay_scope` (`replay:<id>`, unique), `status`, `report` (reconciliation). `UNIQUE(run_id, scenario_id)` |
+| `evaluation.cases` | `run_id`, `replay_id`, `scenario_id`, `case_key`, `variant`, `trial`, `status`, `investigation_id`, `expected_outcome` (without evidence labels), `observed_outcome`, `scores`, `error`. `UNIQUE(run_id, case_key)` |
+
+The plan's `evaluation_runs` held one scenario and one variant. Here a run covers a whole split and several variants, and each scenario is replayed once per run (`replays`). Every variant and trial then investigates the same incident in that replay scope, so all of them see identical evidence.
+
+**Access.** Migration 0017 creates two group roles. `signalops_runtime` can read and write the `public` tables but has no privilege on schema `evaluation`. `signalops_evaluator` can do both. Default privileges cover tables that later revisions add. Neither role can write `alembic_version`. `signalops migrate` creates the login roles `signalops_app` (runtime) and `signalops_eval` (evaluator) from `SIGNALOPS_DB_RUNTIME_PASSWORD` and `SIGNALOPS_DB_EVALUATOR_PASSWORD`. Compose runs every application process as `signalops_app`, so the investigation runtime and its tools cannot read `expected_outcome` or `injection_spec` even with arbitrary SQL. An integration test checks this as the runtime login, and checks that the same login can run a whole `v3` investigation.
 
 ## Initial indexes
 

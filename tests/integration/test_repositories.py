@@ -39,7 +39,9 @@ def test_empty_database_upgrades_to_head(scratch_database: Settings) -> None:
     try:
         with engine.connect() as conn:
             assert MigrationContext.configure(conn).get_current_revision() == head
-            tables = set(inspect(conn).get_table_names()) - {"alembic_version"}
+            inspector = inspect(conn)
+            tables = set(inspector.get_table_names()) - {"alembic_version"}
+            tables |= {f"evaluation.{name}" for name in inspector.get_table_names("evaluation")}
     finally:
         engine.dispose()
     assert tables == set(Base.metadata.tables)
@@ -62,7 +64,8 @@ def test_every_foreign_key_has_a_supporting_index(engine: Engine) -> None:
                 FROM pg_constraint c
                 CROSS JOIN LATERAL unnest(c.conkey) WITH ORDINALITY AS k(attnum, ord)
                 JOIN pg_attribute a ON a.attrelid = c.conrelid AND a.attnum = k.attnum
-                WHERE c.contype = 'f' AND c.connamespace = 'public'::regnamespace
+                WHERE c.contype = 'f'
+                  AND c.connamespace IN ('public'::regnamespace, 'evaluation'::regnamespace)
                 GROUP BY c.oid, c.conrelid, c.conname
                 """
             )

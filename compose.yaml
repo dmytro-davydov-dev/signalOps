@@ -7,7 +7,9 @@ name: signalops
 x-backend-env: &backend-env
   SIGNALOPS_ENVIRONMENT: development
   SIGNALOPS_LOG_LEVEL: ${SIGNALOPS_LOG_LEVEL:-INFO}
-  SIGNALOPS_DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-signalops}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env (see .env.example)}@postgres:5432/${POSTGRES_DB:-signalops}
+  # Application processes connect as the runtime login, which `migrate` creates
+  # and which has no privilege on the evaluation schema (migration 0017).
+  SIGNALOPS_DATABASE_URL: postgresql+psycopg://signalops_app:${SIGNALOPS_DB_RUNTIME_PASSWORD:-${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env (see .env.example)}}@postgres:5432/${POSTGRES_DB:-signalops}
   SIGNALOPS_REDIS_URL: redis://redis:6379/0
   SIGNALOPS_KAFKA_BOOTSTRAP_SERVERS: kafka:9092
   # Every process but the worker stays on the fake provider and never sees a key.
@@ -94,6 +96,12 @@ services:
   # One-shot jobs: run to completion on every `up`; both are idempotent.
   migrate:
     <<: *backend
+    environment:
+      <<: *backend-env
+      # The owner applies migrations and creates or updates the login roles.
+      SIGNALOPS_DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-signalops}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env (see .env.example)}@postgres:5432/${POSTGRES_DB:-signalops}
+      SIGNALOPS_DB_RUNTIME_PASSWORD: ${SIGNALOPS_DB_RUNTIME_PASSWORD:-${POSTGRES_PASSWORD}}
+      SIGNALOPS_DB_EVALUATOR_PASSWORD: ${SIGNALOPS_DB_EVALUATOR_PASSWORD:-${POSTGRES_PASSWORD}}
     command: ["migrate"]
     restart: "no"
     depends_on:

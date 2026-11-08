@@ -5,6 +5,12 @@ from signalops.persistence.models.detection import (
     DetectionSample,
     DetectionTrigger,
 )
+from signalops.persistence.models.evaluation import (
+    EvaluationCase,
+    EvaluationReplay,
+    EvaluationRun,
+    EvaluationScenario,
+)
 from signalops.persistence.models.evidence import (
     Deployment,
     Service,
@@ -35,6 +41,10 @@ __all__ = [
     "DetectionClock",
     "DetectionSample",
     "DetectionTrigger",
+    "EvaluationCase",
+    "EvaluationReplay",
+    "EvaluationRun",
+    "EvaluationScenario",
     "GraphEdge",
     "GraphNode",
     "IdempotencyKey",

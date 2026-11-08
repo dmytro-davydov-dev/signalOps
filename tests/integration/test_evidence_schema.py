@@ -26,7 +26,16 @@ pytestmark = pytest.mark.integration
 
 def test_migrations_match_models(engine: Engine) -> None:
     with engine.connect() as conn:
-        diff = compare_metadata(MigrationContext.configure(conn), Base.metadata)
+        context = MigrationContext.configure(
+            conn,
+            opts={
+                "include_schemas": True,
+                "include_name": lambda name, kind, _parents: (
+                    kind != "schema" or name in (None, "public", "evaluation")
+                ),
+            },
+        )
+        diff = compare_metadata(context, Base.metadata)
     assert diff == []
 
 

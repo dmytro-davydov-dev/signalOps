@@ -357,6 +357,16 @@ Revision `0015_investigation_outcomes` adds a partial unique index allowing one 
 
 **Revisit when:** P10 shows whether follow-up rounds change outcomes enough to pay for themselves, or a real model surfaces contradictions code cannot see.
 
+## ADR-034: Ground truth lives in its own schema, which the runtime role cannot read
+
+**Decision:** Evaluation tables are in PostgreSQL schema `evaluation`: `scenarios` (immutable per name and version, with injection spec, expected outcome, and dataset hash), `runs` (a split, variants, trials, seed, workflow and prompt versions, model, pricing, and limits), `replays` (one replay scope per scenario per run), and `cases` (one per scenario, variant, and trial). Migration 0017 creates group roles `signalops_runtime`, with read and write on `public` and nothing on `evaluation`, and `signalops_evaluator`, with both. Default privileges extend each to later tables. `signalops migrate` provisions the login roles from configured passwords. Compose runs every application process as the runtime login, and only evaluation commands use `SIGNALOPS_EVALUATION_DATABASE_URL`.
+
+**Reason:** Tools already cannot name a table, but a guarantee that rests on PostgreSQL's privileges holds even against a bug or a crafted query on the runtime connection. One schema makes the boundary a single grant to check, and default privileges mean a new table never quietly lands on the wrong side. A run covering a whole split and every variant, with one replay per scenario, gives the variants identical evidence, which is what a comparison under equal constraints needs.
+
+**Trade-off:** Every application process now needs a provisioned login. Locally, a missing password falls back to the owner's, which suits only a development machine. Roles are cluster-wide, so the downgrade revokes grants but leaves the roles. The plan's one-scenario, one-variant `evaluation_runs` became `runs` plus `replays` plus `cases`.
+
+**Revisit when:** P11-T02 adds operator authentication and secret references, or evaluation needs per-run isolation beyond replay scopes.
+
 ## Open questions
 
 | # | Question | Decide by |
