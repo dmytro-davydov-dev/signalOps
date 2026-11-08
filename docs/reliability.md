@@ -142,11 +142,39 @@ Consumers and the outbox publisher log one structured line every `SIGNALOPS_STRE
 | Redis restart or empty volume | Cache misses and briefly paused model calls. Investigations, windows, and SSE history intact; open progress streams fall back to catch-up reads every `SIGNALOPS_SSE_CATCHUP_SECONDS` |
 | Progress stream dropped or a wake-up lost | The client reconnects with `Last-Event-ID` and the server replays missed events from PostgreSQL in order; a lost wake-up delays an event by at most one catch-up interval (ADR-030) |
 | Provider ambiguous timeout | Unknown cost recorded, reservation retained, retry reserved separately |
+| Provider throttling past the call's retries | The step fails as transient; the job retries under a new lease and reuses completed steps (P11-T03) |
+| PostgreSQL outage | Ingestion 503 and retried by clients; consumers retry, then exit unless the database returns; workers and the closer exit on a failed claim. The restart policy restarts them, and offsets and leases resume where they stood (P11-T03) |
 | Kafka outage during ingest | No record reported accepted; 503 with per-record `failed` (`ambiguous_timeout` when the broker may have written it). Client retries with the same `source_event_id`s and gets the same event IDs. Verified against a stopped Compose broker (P04-T02) |
 | Permanent validation failure | Quarantined to `processing.failed.v1`, original not lost; redrivable while retained |
 | Failure event cannot be published | Original offset not committed; retried, then the consumer stops |
 | Consumer stopped or rebalanced mid-stream | Record in hand committed or redelivered; pending retry state dropped with the partition |
 | Database down during consumption | Partition paused and retried with backoff, then the consumer stops at the same offset; nothing quarantined |
+
+## Outage checks (P11-T03)
+
+`tests/integration/test_outages.py` stops, kills, restarts, and scales the shared Compose services, so it runs only on request:
+
+```bash
+set -a; . ./.env; set +a
+SIGNALOPS_INTEGRATION=1 SIGNALOPS_OUTAGE_CHECKS=1 uv run pytest tests/integration/test_outages.py -s
+```
+
+It needs the stack up with ingest and operator tokens and at least one live incident (any realtime demo run leaves one). It takes about two and a half minutes and leaves every service running at one member.
+
+1. **Signals:** one generated dataset (about 1000 records) is posted through the API in eight chunks: baseline; with Kafka stopped for 20 s; with PostgreSQL stopped for 10 s; with Redis stopped for 5 s; with normalizer and detector scaled to two members, then back to one (rebalances); with the outbox publisher killed for 5 s; then the first chunk again with the same source event IDs. One record for a source that does not exist is published directly. After lag, outbox, and receipts drain, `streaming.reconcile` must find every accepted record processed (normalizer receipt) or quarantined (a `processing.failed.v1` event naming it), each stored once with exactly one normalized outbox event, and the orphan quarantined.
+2. **Investigation:** a worker whose fake provider is delayed 2 s and throttled on every third call (`SIGNALOPS_FAKE_MODEL_THROTTLE_EVERY=3`) is killed after two completed steps while Redis restarts, then started again. The job must succeed with one row per step, steps completed before the kill unchanged, the killed attempt's in-flight calls `unknown`/`abandoned` with their reservations kept, and the throttled calls recorded as `failed`/`throttled`.
+
+Observed behaviour during the outages (2026-11-08):
+
+| Outage | What happened | Recovery |
+| --- | --- | --- |
+| Kafka stopped | Ingestion answered 503 with per-record `failed`; nothing was reported accepted | The poster resent with the same IDs after the broker returned (2 retries) |
+| PostgreSQL stopped | Ingestion 503 (source lookup); consumers paused and retried; one normalizer exhausted its retries and exited; worker and detector-closer exited on failed claims | Restart policy brought every process back; offsets had not advanced, so nothing was skipped |
+| Redis stopped or restarted | No effect on durable work; rate limits and caches empty | None needed |
+| Consumer scaled 1 → 2 → 1 | Partitions revoked and reassigned | Records in hand committed or redelivered; receipts absorbed redeliveries |
+| Outbox publisher killed | Unpublished rows waited | Published after restart |
+| Duplicate posts | The API accepted them again with the same event IDs | Receipts and `UNIQUE(source_id, replay_scope, source_event_id)` kept one signal |
+| Worker killed mid-call | Lease expired; in-flight calls stayed `unknown` with reservations | The next claim reused completed steps; throttled calls retried, and when a call's retries ran out the job retried as transient and still completed |
 
 ## Verification checklist
 
@@ -160,9 +188,9 @@ These come from the plan's §13. Each needs a meaningful automated or scripted c
 - [x] Worker killed after one step: lease expiry, checkpoint reuse, stale-writer rejection (P06-T03).
 - [x] Multi-agent worker killed after completed branches, during another branch's model call, and before final persistence: branch reuse, stale-writer rejection, unknown cost kept (P09-T04).
 - [x] Provider throttling, ambiguous timeout, malformed output, parallel budget exhaustion, on the fake provider (P07-T02, P07-T04, P07-T06).
-- [ ] Redis restart mid-investigation: durable work survives and SSE catches up. (P08-T03 tests a stream with no wake-ups at all catching up from PostgreSQL; the restart itself is P11-T03.)
+- [x] Redis restart mid-investigation: durable work survives (P11-T03 outage check: Redis restarted while a killed worker's job awaited lease expiry; the investigation completed). SSE catch-up without wake-ups is P08-T03.
 - [ ] Late and out-of-order signals, plus replay isolation. No access to future evidence or ground truth.
-- [ ] Reconciliation: every accepted in-retention record ends processed or explicitly quarantined.
+- [x] Reconciliation: every accepted in-retention record ends processed or explicitly quarantined (P11-T03, `streaming/reconcile.py`, across Kafka, PostgreSQL, and Redis outages, rebalances, an outbox crash, and duplicate posts).
 
 ## Known limits
 

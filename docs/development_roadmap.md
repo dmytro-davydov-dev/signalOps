@@ -26,12 +26,12 @@ PostgreSQL owns evidence, workflow progress, budgets, and the initial knowledge 
 | Field | Current value |
 | --- | --- |
 | Active phase | Phase 11 Operational hardening and scale |
-| Active task | P11-T03 (in progress) |
-| Last completed task | P11-T02 |
-| Latest verified commit | `bdcd5b2` (P11-T01); P11-T02 commit `feat(P11-T02)` follows |
-| Validation evidence | P11-T02: `SIGNALOPS_INTEGRATION=1 uv run pytest` 1356 passed, 2 skipped (opt-in outage checks), 1 unit failure from `.env` variables leaking into a settings test, fixed and rerun (`tests/unit` and `tests/contract` 707 passed with and without the sourced variables); ruff, format, mypy (218 files), `export-schemas --check` pass; Compose boundary and rotation checks in the task notes. No paid model was called |
+| Active task | P11-T04 (in progress) |
+| Last completed task | P11-T03 |
+| Latest verified commit | `3fa3792` (P11-T02); P11-T03 commit `test(P11-T03)` follows |
+| Validation evidence | P11-T03: outage checks passed on rebuilt Compose (task notes); unit and contract 708 passed; gateway, failure, lifecycle, and one-shot integration suites 44 passed; ruff, format, mypy pass. P11-T02: `SIGNALOPS_INTEGRATION=1 uv run pytest` 1356 passed, 2 skipped (opt-in outage checks), 1 unit failure from `.env` variables leaking into a settings test, fixed and rerun (`tests/unit` and `tests/contract` 707 passed with and without the sourced variables); ruff, format, mypy (218 files), `export-schemas --check` pass; Compose boundary and rotation checks in the task notes. No paid model was called |
 | Blockers | None |
-| Next task | P11-T03 |
+| Next task | P11-T04 |
 
 ### Scope and release boundaries
 
@@ -1036,11 +1036,18 @@ Start the React shell in Phase 1 and add API-backed incident views in Phase 5; P
 
 ### P11-T03 Run crash and outage integration checks
 
-- [ ] Complete this task.
+- [x] Complete this task.
 
 **Implementation:** Exercise PostgreSQL outage, Kafka outage, Redis restart, consumer rebalance, outbox crash, worker lease expiry, and model throttling. Reconcile accepted logical records after recovery.
 
 **Acceptance:** Every accepted in-retention record is processed or explicitly quarantined; duplicate physical events cause no duplicate logical effects.
+
+**Notes (2026-11-08):**
+- **Reconciliation (`streaming/reconcile.py`):** given the records a client sent (source and `source_event_id`) and a replay scope, it derives raw event IDs and reports each as processed (normalizer receipt), quarantined (a normalizer failure event on `processing.failed.v1` naming it, read from the topic start with a throwaway group), or missing, plus how many signals are stored. Queries are chunked by 10,000 IDs, so it also serves P11-T04.
+- **Outage checks (`tests/integration/test_outages.py`, opt-in `SIGNALOPS_OUTAGE_CHECKS=1`, procedure in docs/reliability.md):** they drive `docker compose` against the shared stack. New setting `SIGNALOPS_FAKE_MODEL_THROTTLE_EVERY` (fake provider only; every Nth call answers `throttled`, retry after 1 s), passed through to the Compose worker.
+- **Verified on Compose (rebuilt images, 2026-11-08, three runs of the signal check and two of the worker check, all passing; figures from the last combined run):** 972 records posted in 8 chunks through Kafka stopped 20 s (accepted after 2 retries), PostgreSQL stopped 10 s (3 retries), Redis stopped 5 s, normalizer and detector scaled 1 → 2 → 1, outbox publisher killed 5 s, and the first chunk posted again (1094 accepted responses for 972 records). Reconciliation: 972 accepted, 972 processed, 0 quarantined, 0 missing, 972 signals, and exactly one normalized outbox event per signal. A record published for an unknown source was reconciled as quarantined. Logs showed partitions assigned 9 and revoked 5 times, 28 scheduled retries, and one normalizer that exhausted its retries during the PostgreSQL outage and was restarted by policy (restart counts: normalizer 1, investigation-worker 6, detector-closer 5, others 0). Worker check: investigation `13665f77-7a8f-4806-83ec-f94446d61e4a`, worker killed after 2 completed steps while Redis restarted: job succeeded on attempt 2, generation 2, `last_error` `lease_expired`; 3 generation-1 calls `unknown`/`abandoned` with 564,645 microUSD reserved; 4 calls `failed`/`throttled`, 9 succeeded; `load_context` and `plan` unchanged.
+- **Found:** in an earlier worker run (`9dcabe79-d2ba-42a8-a7a2-24f4e72c862d`) parallel branches shared the throttle counter, so one branch was throttled three times running; its call exhausted the gateway retries, the attempt failed as transient, and attempt 3 reran only that branch and the later steps, then completed. Correct behaviour; the check now allows attempts ≥ 2 and asserts the abandoned calls instead. A first signal run raced the Kafka stop (posts finished before the broker went down); the check now stops a service before posting.
+- **Left:** the checks need the shared stack and a live incident, and are not in CI; the PostgreSQL outage is 10 s, inside the consumers' retry budget for most members; Kafka outages longer than the 30 s delivery timeout surface as client retries, as designed; single-broker Kafka cannot show broker failover.
 
 ### P11-T04 Benchmark and tune measured bottlenecks
 
@@ -1712,6 +1719,16 @@ Keep these outside the release critical path unless measurements justify promoti
 - Deviations and reasons: pydantic-settings merges dict settings from init arguments and the environment, so tests that need empty token maps must clear the variables rather than pass `{}`. No credential file is wired into the default Compose file; an override mounts one (documented).
 - Remaining issues: see task notes.
 - Next task: P11-T03.
+
+### 2026-11-08 — P11-T03
+- Status: completed
+- Commit: see git log for `test(P11-T03)`
+- Implemented: `streaming/reconcile.py`; `tests/integration/test_outages.py` (opt-in); `SIGNALOPS_FAKE_MODEL_THROTTLE_EVERY` and its Compose pass-through; docs/reliability.md outage section, failure table rows, and checklist.
+- Validation commands and results: `SIGNALOPS_INTEGRATION=1 SIGNALOPS_OUTAGE_CHECKS=1 uv run pytest tests/integration/test_outages.py -s` 2 passed (134 s); `uv run pytest tests/unit tests/contract` 708 passed; targeted integration suites 44 passed; ruff, format, mypy, `docker compose config --quiet` pass.
+- Evidence or artifact references: task notes; investigation `13665f77`.
+- Deviations and reasons: checks run against the shared Compose stack rather than in CI, because they stop shared services.
+- Remaining issues: see task notes.
+- Next task: P11-T04.
 
 ## Work log template
 

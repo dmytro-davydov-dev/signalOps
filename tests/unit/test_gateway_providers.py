@@ -122,6 +122,29 @@ async def test_the_fake_delay_pauses_before_each_reply(monkeypatch: pytest.Monke
     assert slept == [2.5]
 
 
+async def test_the_fake_throttles_every_nth_call(monkeypatch: pytest.MonkeyPatch) -> None:
+    from signalops.gateway import fake_roles
+
+    monkeypatch.setattr(
+        fake_roles, "role_step", lambda _request: FakeAnswer(content=(TextBlock(text="ok"),))
+    )
+    settings = Settings(
+        database_url="postgresql+psycopg://u:p@h/d",  # type: ignore[arg-type]
+        fake_model_throttle_every=3,
+    )
+    provider = build_provider(settings)
+    outcomes: list[str] = []
+    retry_after: list[float | None] = []
+    for _ in range(6):
+        try:
+            outcomes.append((await provider.complete(REQUEST)).text())
+        except ProviderError as error:
+            retry_after.append(error.retry_after_seconds)
+            outcomes.append(error.category.value)
+    assert outcomes == ["ok", "ok", "throttled", "ok", "ok", "throttled"]
+    assert retry_after == [1, 1]
+
+
 def test_the_real_provider_refuses_to_start_without_a_key() -> None:
     with pytest.raises(ValidationError, match="model_api_key"):
         Settings(

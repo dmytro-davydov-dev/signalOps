@@ -199,6 +199,8 @@ services:
       SIGNALOPS_MODEL_API_KEY: ${SIGNALOPS_MODEL_API_KEY:-}
       # Fake provider only: seconds before each reply, for the browser journey check.
       SIGNALOPS_FAKE_MODEL_DELAY_SECONDS: ${SIGNALOPS_FAKE_MODEL_DELAY_SECONDS:-0}
+      # Fake provider only: every Nth call answers throttled (outage checks, P11-T03).
+      SIGNALOPS_FAKE_MODEL_THROTTLE_EVERY: ${SIGNALOPS_FAKE_MODEL_THROTTLE_EVERY:-0}
     command: ["worker"]
     restart: unless-stopped
     depends_on:
