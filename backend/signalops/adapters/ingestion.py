@@ -13,9 +13,8 @@ sent without `source_event_id` gets a stable one derived from its content
 """
 
 import asyncio
-import hashlib
-import hmac
 import logging
+import re
 import threading
 import uuid
 from collections.abc import Callable, Iterable, Mapping, Sequence
@@ -23,7 +22,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Any, Protocol
 
-from pydantic import JsonValue, SecretStr, TypeAdapter, ValidationError
+from pydantic import JsonValue, TypeAdapter, ValidationError
 
 from signalops.adapters.quality import MissingIdentityError, derive_source_event_id
 from signalops.config import Settings
@@ -76,28 +75,6 @@ def raw_event_id(source_id: uuid.UUID, replay_scope: str, source_event_id: str) 
     return uuid.uuid5(RAW_EVENT_NAMESPACE, f"{source_id}:{replay_scope}:{source_event_id}")
 
 
-class SourceTokens:
-    """Per-source bearer tokens, compared as SHA-256 digests in constant time."""
-
-    def __init__(self, tokens: Mapping[uuid.UUID, SecretStr]) -> None:
-        self._digests = {
-            source_id: _digest(token.get_secret_value()) for source_id, token in tokens.items()
-        }
-
-    def verify(self, source_id: uuid.UUID, presented: str) -> bool:
-        presented_digest = _digest(presented)
-        expected = self._digests.get(source_id)
-        if expected is None:
-            # Same work as a known source, so timing does not reveal which have tokens.
-            hmac.compare_digest(presented_digest, presented_digest)
-            return False
-        return hmac.compare_digest(presented_digest, expected)
-
-
-def _digest(token: str) -> bytes:
-    return hashlib.sha256(token.encode()).digest()
-
-
 def normalize_field_name(name: str) -> str:
     return name.strip().lower().replace("-", "_").replace(" ", "_")
 
@@ -141,11 +118,35 @@ class IngestSource:
     redact_fields: tuple[str, ...] = ()
 
 
+class TextRedactor:
+    """Masks `key=value` pairs of sensitive keys in free text, which ingestion keeps as is."""
+
+    def __init__(self, fields: tuple[str, ...]) -> None:
+        self.fields = fields
+        names = "|".join(sorted((re.escape(field) for field in fields), key=len, reverse=True))
+        self._pairs = re.compile(rf"(?i)\b({names})\b(\s*[:=]\s*)(?:bearer\s+)?[^\s,;\"']+")
+        self._bearer = re.compile(r"(?i)\bbearer\s+[a-z0-9._~+/=-]+")
+
+    def redact(self, text: str) -> str:
+        masked = self._pairs.sub(rf"\1\2{REDACTED}", text)
+        return self._bearer.sub(f"Bearer {REDACTED}", masked)
+
+
 def source_redact_fields(config: Mapping[str, Any]) -> tuple[str, ...]:
     value = config.get("redact_fields", [])
     if not isinstance(value, list) or not all(isinstance(item, str) for item in value):
         raise SourceConfigError("redact_fields must be a list of strings")
     return tuple(value)
+
+
+def source_text_redactors(
+    base: TextRedactor, sources: Iterable[Any]
+) -> dict[uuid.UUID, TextRedactor]:
+    """Per source, `base` plus the source's own `redact_fields`; raises SourceConfigError."""
+    return {
+        source.id: TextRedactor((*base.fields, *source_redact_fields(source.config)))
+        for source in sources
+    }
 
 
 class SourceLookup(Protocol):

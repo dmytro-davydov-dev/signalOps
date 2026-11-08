@@ -24,7 +24,12 @@ from pydantic import ValidationError
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from signalops.adapters.ingestion import Redactor, SourceConfigError, source_redact_fields
+from signalops.adapters.ingestion import (
+    Redactor,
+    SourceConfigError,
+    TextRedactor,
+    source_redact_fields,
+)
 from signalops.api.auth import OperatorWorkspace
 from signalops.config import Settings
 from signalops.contracts.common import LIVE_REPLAY_SCOPE, ReplayScope, TraceId, UtcDatetime
@@ -183,18 +188,23 @@ def from_micros(value: object) -> datetime:
 
 
 class OutputRedaction:
-    """Redacts signal attributes with the process list plus each signal's source list."""
+    """Redacts signals with the process list plus each signal's source list.
+
+    Attributes are masked by field name; the free-text message gets the same
+    `key=value` and bearer-token masking the agents' tools apply, so an operator
+    never sees more of a secret in a log line than a model does.
+    """
 
     def __init__(self, global_fields: Sequence[str], sources: Sequence[Source]) -> None:
-        self._default = Redactor(global_fields)
+        self._default = (Redactor(global_fields), TextRedactor(tuple(global_fields)))
         # Raises SourceConfigError for an invalid config: fail closed, as ingestion does.
-        self._by_source = {
-            source.id: Redactor((*global_fields, *source_redact_fields(source.config)))
-            for source in sources
-        }
+        self._by_source: dict[uuid.UUID, tuple[Redactor, TextRedactor]] = {}
+        for source in sources:
+            fields = (*global_fields, *source_redact_fields(source.config))
+            self._by_source[source.id] = (Redactor(fields), TextRedactor(fields))
 
     def signal(self, row: Signal) -> NormalizedSignal:
-        redactor = self._by_source.get(row.source_id, self._default)
+        redactor, text = self._by_source.get(row.source_id, self._default)
         attributes, _ = redactor.redact(row.attributes)
         assert isinstance(attributes, dict)  # noqa: S101 - redaction preserves the top-level type.
         return NormalizedSignal(
@@ -208,7 +218,7 @@ class OutputRedaction:
             occurred_at=row.occurred_at,
             ingested_at=row.ingested_at,
             severity=Severity(row.severity),
-            message=row.message,
+            message=text.redact(row.message),
             trace_id=row.trace_id,
             attributes=attributes,
             quality_status=QualityStatus(row.quality_status),

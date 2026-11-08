@@ -70,6 +70,10 @@ def build_parser() -> argparse.ArgumentParser:
     commands.add_parser(
         "operations-snapshot", help="print queues, leases, outbox age, and Kafka lag as JSON"
     )
+    commands.add_parser(
+        "hash-token",
+        help="read a token on stdin and print the sha256 digest a credentials file stores",
+    )
     flush = commands.add_parser(
         "detector-flush",
         help="close a replay's remaining windows and evaluate them, then exit",
@@ -1027,6 +1031,18 @@ def run_metrics_exporter() -> int:
     return 0
 
 
+def run_hash_token() -> int:
+    """Digest for `SIGNALOPS_CREDENTIALS_FILE`. The token comes on stdin, never argv."""
+    from signalops.api.credentials import token_digest
+
+    token = sys.stdin.readline().rstrip("\r\n")
+    if len(token) < 16:
+        print("token must be at least 16 characters", file=sys.stderr)
+        return 2
+    print(token_digest(token))
+    return 0
+
+
 def run_operations_snapshot() -> int:
     import asyncio
 
@@ -1059,6 +1075,7 @@ COMMANDS = {
     "detector-closer": run_detector_closer,
     "metrics-exporter": run_metrics_exporter,
     "operations-snapshot": run_operations_snapshot,
+    "hash-token": run_hash_token,
 }
 
 

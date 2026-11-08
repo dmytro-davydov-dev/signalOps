@@ -113,6 +113,8 @@ Format: **Decision**, **Reason**, **Trade-off**, **Revisit when**.
 
 ## ADR-014: Interim operator tokens scoped to one workspace
 
+*Credential storage and rotation superseded by ADR-038; the workspace principal and scope rules stand.*
+
 **Decision:**
 - Evidence query routes require a bearer token from `SIGNALOPS_OPERATOR_TOKENS` (workspace ID to token), compared as SHA-256 digests in constant time against every configured token. The matching token's workspace is the query's workspace; no route takes a workspace parameter.
 - Settings refuse an operator token equal to any ingestion token, so a source credential cannot open an operator route, and operator tokens are not in the ingestion token set.
@@ -397,6 +399,16 @@ Revision `0015_investigation_outcomes` adds a partial unique index allowing one 
 
 **Revisit when:** A second host or a hosted metrics backend is introduced, or per-record tracing is needed (OpenTelemetry).
 
+## ADR-038: Hashed, named credentials that rotate without a restart; no public exposure yet
+
+**Decision:** Resolves Q9 for the single-host scope. Operator and source credentials come from an optional JSON file (`SIGNALOPS_CREDENTIALS_FILE`) of named entries with SHA-256 digests and optional expiry, plus the existing plaintext environment maps for development. The API re-reads the file when it changes, keeps the last valid set when an edit is invalid, and fails at startup on an invalid file. Operator and source sets must be disjoint. Each request logs its credential ID. Production settings refuse plaintext tokens and require the file and `https` CORS origins. Settings can come from files in `SIGNALOPS_SECRETS_DIR`. Every non-ingestion route caps bodies at 64 KiB in middleware. API evidence output and agent tool text both mask sensitive `key=value` pairs and bearer tokens with the process and per-source field lists. A unit test enumerates every route from the OpenAPI document to check its credential boundary.
+
+**Reason:** The acceptance condition is a boundary, not a user system: unauthenticated callers and source credentials must not reach operator routes. Hashed, named, expiring credentials with live rotation remove the plaintext and restart problems of ADR-014 without adding an identity provider or a user table that a one-workspace local system does not need. Masking API output the same way as model input means an operator screen never shows more of a secret than a prompt does.
+
+**Trade-off:** Still shared secrets per workspace: no per-person identity beyond the credential name, no roles, no sessions, no revocation faster than the reload interval. Public exposure needs an authenticating proxy or OIDC and TLS in front of the API, and authentication on Redis and Kafka; that is deferred with the cloud deployment backlog.
+
+**Revisit when:** The API is reachable from beyond one host, more than one workspace has users, or per-person audit is required.
+
 ## Open questions
 
 | # | Question | Decide by |
@@ -409,6 +421,6 @@ Revision `0015_investigation_outcomes` adds a partial unique index allowing one 
 | Q6 | ~~Diagnosis status ↔ investigation terminal status mapping~~ **Resolved (P02-T05):** one-to-one. `completed` ⇔ `diagnosed`, `insufficient_evidence` ⇔ `insufficient_evidence`, no diagnosis otherwise; enforced in contracts, a database CHECK, and the generated UI module. See data-model.md | P02-T05 |
 | Q7 | ~~Detector window closure metadata schema~~ **Resolved (P05-T02):** columns on `signal_aggregates` plus `detection_clocks`; see ADR-016 | P05-T02 |
 | Q8 | ~~Which real model provider is implemented first, and its pricing provenance format~~ **Resolved:** Anthropic (ADR-025); pricing in ADR-026 | P07-T01 / P07-T02 |
-| Q9 | Operator authentication mechanism before public exposure. Interim: static per-workspace tokens (ADR-014) | P11-T02 |
+| Q9 | ~~Operator authentication mechanism before public exposure~~ **Resolved (P11-T02):** hashed, named, expiring credentials in a reloadable file, disjoint from source credentials; public exposure needs an authenticating proxy or OIDC first (ADR-038) | P11-T02 |
 | Q10 | ~~Whether the OpenTelemetry Demo fits local resources, or a smaller synthetic app suffices~~ **Resolved (P10-T03):** a small real instrumented app (`demo/shop.py`, Compose `demo-shop`) | P10-T03 |
 | Q11 | ~~Planning files live in `docs/`, but `CLAUDE.md` expects them at the repository root. Move them, or update `CLAUDE.md`?~~ **Resolved (Phase 8 gate):** the files stay in `docs/`; `CLAUDE.md` points at `docs/development_roadmap.md` and `docs/SignalOps_Implementation_Plan.md` | Before P01-T01 |

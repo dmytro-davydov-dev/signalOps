@@ -8,9 +8,9 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from signalops import __version__
-from signalops.adapters.ingestion import IngestPolicy, SourceTokens
+from signalops.adapters.ingestion import IngestPolicy
 from signalops.api import evaluations, evidence, health, incidents, ingest, investigations
-from signalops.api.auth import OperatorTokens
+from signalops.api.credentials import CredentialStore
 from signalops.api.request_ids import RequestIdMiddleware
 from signalops.config import Settings, get_settings
 from signalops.dependencies import Resources, open_resources
@@ -43,9 +43,14 @@ def create_app(
 
     app = FastAPI(title="SignalOps API", version=__version__, lifespan=lifespan)
     app.state.settings = settings
-    app.state.source_tokens = SourceTokens(settings.ingest_tokens)
+    # Fails at startup on a missing or invalid credentials file.
+    app.state.credentials = CredentialStore(
+        settings.operator_tokens,
+        settings.ingest_tokens,
+        settings.credentials_file,
+        reload_seconds=settings.credentials_reload_seconds,
+    )
     app.state.ingest_policy = IngestPolicy.from_settings(settings)
-    app.state.operator_tokens = OperatorTokens(settings.operator_tokens)
     if settings.cors_origins:
         app.add_middleware(
             CORSMiddleware,
@@ -61,7 +66,7 @@ def create_app(
             expose_headers=["X-Request-ID"],
         )
     # Outermost, so CORS preflights and errors carry the ID too.
-    app.add_middleware(RequestIdMiddleware)
+    app.add_middleware(RequestIdMiddleware, max_body_bytes=settings.api_max_body_bytes)
     app.include_router(health.router)
     app.include_router(ingest.router)
     app.include_router(evidence.router)

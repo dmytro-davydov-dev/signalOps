@@ -59,6 +59,7 @@ uv run signalops detector-flush --workspace-id W --replay-run-id R  # close a re
 uv run signalops outbox-publisher        # publish pending outbox rows until SIGINT/SIGTERM
 uv run signalops redrive-record --topic T --partition P --offset O  # republish one quarantined record
 uv run signalops redrive-outbox EVENT_ID # make one quarantined outbox row due again
+printf '%s\n' "$TOKEN" | uv run signalops hash-token  # digest for a credentials file entry
 uv run signalops operations-snapshot     # print job queues, leases, outbox age, unknown model calls, and Kafka lag as JSON
 SIGNALOPS_METRICS_PORT=9100 uv run signalops metrics-exporter  # serve that state as Prometheus gauges until SIGINT/SIGTERM
 
@@ -207,7 +208,11 @@ Backend processes read `SIGNALOPS_`-prefixed variables (`backend/signalops/confi
 | `SIGNALOPS_LOG_LEVEL` | `INFO` | JSON logs on stdout |
 | `SIGNALOPS_ENVIRONMENT` | `development` | `development`, `test`, `production` |
 | `SIGNALOPS_API_HOST` / `SIGNALOPS_API_PORT` | `0.0.0.0` / `8000` | |
-| `SIGNALOPS_CORS_ORIGINS` | empty | JSON list; only needed when the UI is served from another origin |
+| `SIGNALOPS_CORS_ORIGINS` | empty | JSON list of exact `scheme://host[:port]` origins; only needed when the UI is served from another origin |
+| `SIGNALOPS_CREDENTIALS_FILE` | unset | Hashed, named operator and source credentials, reloaded on change ([security.md](security.md)) |
+| `SIGNALOPS_CREDENTIALS_RELOAD_SECONDS` | `5` | Least interval between credential file checks |
+| `SIGNALOPS_API_MAX_BODY_BYTES` | `65536` | Body limit on every route but ingestion |
+| `SIGNALOPS_SECRETS_DIR` | unset | Directory of files named after variables (for example `SIGNALOPS_DATABASE_URL`) that supply their values |
 | `SIGNALOPS_READINESS_TIMEOUT_SECONDS` | `2.0` | per-dependency probe limit |
 | `SIGNALOPS_INGEST_TOKENS` | `{}` | JSON object of source ID to bearer token for `POST /v1/ingest/{source_id}`; a source without a token cannot ingest. Contains credentials, never logged. See `.env.example` |
 | `SIGNALOPS_OPERATOR_TOKENS` | `{}` | JSON object of workspace ID to bearer token for the evidence, incident, and graph routes; the token's workspace bounds every query. Empty means every operator request is `401`. Must not share a value with `SIGNALOPS_INGEST_TOKENS` (startup fails). Credentials, never logged. Interim mechanism ([ADR-014](decisions.md#adr-014-interim-operator-tokens-scoped-to-one-workspace)) |

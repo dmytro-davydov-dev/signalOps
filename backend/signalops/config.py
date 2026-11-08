@@ -1,7 +1,10 @@
 """Process configuration loaded from environment variables."""
 
+import os
+import re
 import uuid
 from functools import lru_cache
+from pathlib import Path
 from typing import Literal, Self
 
 from pydantic import Field, PostgresDsn, RedisDsn, SecretStr, model_validator
@@ -61,7 +64,15 @@ class Settings(BaseSettings):
 
     api_host: str = "0.0.0.0"  # noqa: S104 - container listener; Compose publishes on loopback.
     api_port: int = Field(default=8000, ge=1, le=65535)
+    # Browser origins allowed to call the API, as exact `scheme://host[:port]`
+    # values. Empty: no CORS headers, so only same-origin pages (the nginx UI) call it.
     cors_origins: list[str] = Field(default_factory=list)
+    # Largest request body on every route but ingestion, which has its own limit.
+    api_max_body_bytes: int = Field(default=64 * 1024, ge=1024, le=1024**2)
+    # Named, hashed operator and source credentials, re-read when the file
+    # changes (ADR-038). Adds to the plaintext token settings below.
+    credentials_file: Path | None = None
+    credentials_reload_seconds: float = Field(default=5.0, ge=0.5, le=300)
 
     readiness_timeout_seconds: float = Field(default=2.0, gt=0, le=30)
 
@@ -228,6 +239,28 @@ class Settings(BaseSettings):
         return self
 
     @model_validator(mode="after")
+    def _check_cors_origins(self) -> Self:
+        for origin in self.cors_origins:
+            if not _ORIGIN.fullmatch(origin):
+                raise ValueError(
+                    f"cors origin {origin!r} must be scheme://host[:port] with no path or wildcard"
+                )
+        return self
+
+    @model_validator(mode="after")
+    def _check_production(self) -> Self:
+        # Production takes credentials only from the hashed file, never plaintext settings.
+        if self.environment != "production":
+            return self
+        if self.operator_tokens or self.ingest_tokens:
+            raise ValueError("production refuses SIGNALOPS_OPERATOR_TOKENS and _INGEST_TOKENS")
+        if self.credentials_file is None:
+            raise ValueError("production needs SIGNALOPS_CREDENTIALS_FILE")
+        if any(origin.startswith("http://") for origin in self.cors_origins):
+            raise ValueError("production cors origins must use https")
+        return self
+
+    @model_validator(mode="after")
     def _check_model_provider(self) -> Self:
         key = self.model_api_key
         if self.model_provider == "anthropic" and (key is None or not key.get_secret_value()):
@@ -253,6 +286,16 @@ class Settings(BaseSettings):
         return self.model_copy(update={"database_url": self.evaluation_database_url})
 
 
+_ORIGIN = re.compile(r"https?://[A-Za-z0-9.-]+(:\d{1,5})?")
+
+
 @lru_cache
 def get_settings() -> Settings:
-    return Settings()  # type: ignore[call-arg]  # values come from the environment
+    """Settings from the environment, and from secret files when a directory is named.
+
+    With `SIGNALOPS_SECRETS_DIR` set (for example `/run/secrets`), a file named
+    after a variable, such as `SIGNALOPS_DATABASE_URL`, supplies its value, so
+    credentials need not appear in the environment. Environment variables win.
+    """
+    secrets_dir = os.environ.get("SIGNALOPS_SECRETS_DIR")
+    return Settings(_secrets_dir=secrets_dir)  # type: ignore[call-arg]

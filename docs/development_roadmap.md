@@ -26,12 +26,12 @@ PostgreSQL owns evidence, workflow progress, budgets, and the initial knowledge 
 | Field | Current value |
 | --- | --- |
 | Active phase | Phase 11 Operational hardening and scale |
-| Active task | P11-T02 (in progress) |
-| Last completed task | P11-T01 |
-| Latest verified commit | `7b15b13` (Phase 10 gate); P11-T01 commit `feat(P11-T01)` follows |
-| Validation evidence | P11-T01: `SIGNALOPS_INTEGRATION=1 uv run pytest` 1328 passed on the P11-T01 tree; ruff, format, mypy (212 files), `export-schemas --check`, `docker compose config --quiet` pass; Compose observability profile demonstrated (task notes). No paid model was called |
+| Active task | P11-T03 (in progress) |
+| Last completed task | P11-T02 |
+| Latest verified commit | `bdcd5b2` (P11-T01); P11-T02 commit `feat(P11-T02)` follows |
+| Validation evidence | P11-T02: `SIGNALOPS_INTEGRATION=1 uv run pytest` 1356 passed, 2 skipped (opt-in outage checks), 1 unit failure from `.env` variables leaking into a settings test, fixed and rerun (`tests/unit` and `tests/contract` 707 passed with and without the sourced variables); ruff, format, mypy (218 files), `export-schemas --check` pass; Compose boundary and rotation checks in the task notes. No paid model was called |
 | Blockers | None |
-| Next task | P11-T02 |
+| Next task | P11-T03 |
 
 ### Scope and release boundaries
 
@@ -1020,11 +1020,19 @@ Start the React shell in Phase 1 and add API-backed incident views in Phase 5; P
 
 ### P11-T02 Verify security and query boundaries
 
-- [ ] Complete this task.
+- [x] Complete this task.
 
 **Implementation:** Add authenticated operator access before public exposure, source credential rotation, CORS configuration, payload limits, secret references, and workspace/replay checks. Bind stateful infrastructure privately and audit redaction paths.
 
 **Acceptance:** Unauthenticated users cannot query evidence/start runs; source credentials cannot access operator APIs.
+
+**Notes (2026-11-08):**
+- **Decision (ADR-038, resolves Q9 for one host):** `api/credentials.py` `CredentialStore`: named operator and source credentials from `SIGNALOPS_CREDENTIALS_FILE` (SHA-256 digests, optional `not_after`), plus the plaintext environment maps for development (IDs `env:operator:<workspace>`, `env:source:<source>`). The file is re-read when its mtime or size changes (at most every `SIGNALOPS_CREDENTIALS_RELOAD_SECONDS`, 5), so rotation needs no restart; an invalid edit keeps the last valid set and logs `credentials file rejected`; an invalid file at startup stops the API. Operator and source sets must be disjoint. Every candidate is compared in constant time, expired ones included. `signalops hash-token` reads a token on stdin and prints its digest. `OperatorTokens` and `SourceTokens` are gone; `auth.py` and `ingest.py` use the store and keep the credential ID on the request.
+- **Other boundaries:** `RequestIdMiddleware` now also caps bodies on every non-ingestion route at `SIGNALOPS_API_MAX_BODY_BYTES` (64 KiB, declared and streamed, 413 before any route code) and writes one `api request` audit line per request (method, path, status, duration, credential ID, never the token). Settings: CORS origins must be exact `scheme://host[:port]` (no `*`, paths, `null`); `SIGNALOPS_ENVIRONMENT=production` refuses plaintext tokens, requires the credentials file and `https` origins; `SIGNALOPS_SECRETS_DIR` lets files named after variables supply values. Compose already published only on `127.0.0.1`; a test now checks it.
+- **Redaction audit (`docs/security.md`):** every path that moves evidence text is listed with its masking and check. Two gaps fixed: the evidence API returned free-text messages unmasked although models saw them masked (now `OutputRedaction` applies the same `key=value`/bearer masking with process and source lists), and agent tools and the verifier masked text with the process list only (now each signal's source `redact_fields` too). `TextRedactor` moved to `adapters/ingestion.py` (re-exported from `agents/tools.py`).
+- **Verified:** `tests/unit/test_route_security.py` (21) walks all 21 OpenAPI paths: every operator route answers 401 with no token, a source token, an expired file credential, and a wrong token; ingestion answers 401 to operator tokens; a valid operator passes to 503 without a database; oversized bodies are 413 with or without credentials while ingestion keeps its own limit; audit lines carry the credential ID and never the token; CORS, production, and secret-file settings. `tests/unit/test_credentials.py` (7): file principals, rotation after the reload interval, broken edit and deleted file keep the last set, expiry, environment plus file, overlap refused, invalid files at startup. `test_evidence_api.py`: messages masked with both lists and bearer tokens (the earlier test asserted the unmasked behaviour and was changed). `test_agent_tools.py::test_free_text_also_masks_the_source_s_own_fields` fails when tools ignore source fields (mutation, reverted).
+- **Verified on Compose (rebuilt `api`):** no token → 401 on `GET /v1/signals` and `POST /v1/evaluation-runs`; source token → 401 on `GET /v1/incidents` and `POST /v1/evaluation-runs`; operator token → 401 on ingestion and 200 on `GET /v1/incidents`; a 70 KB body → 413. With a credentials file mounted through a temporary override: old token 200 / new 401; after adding the new entry both 200 within 6 s; after removing the old one old 401 / new 200; after a broken edit unchanged, with `credentials reloaded` and `credentials file rejected` logged. The API was then restored without the override.
+- **Left:** shared secrets per workspace, no users, roles, sessions, or SSO; metrics listeners unauthenticated on the private network; Redis and Kafka without authentication or TLS; text masking is pattern-based. Public exposure needs an authenticating proxy or OIDC and TLS first.
 
 ### P11-T03 Run crash and outage integration checks
 
@@ -1694,6 +1702,16 @@ Keep these outside the release critical path unless measurements justify promoti
 - Deviations and reasons: added `tests/unit/__init__.py` so unit tests can share fakes (`test_observability.py` reuses the consumer harness).
 - Remaining issues: see task notes.
 - Next task: P11-T02.
+
+### 2026-11-08 — P11-T02
+- Status: completed
+- Commit: see git log for `feat(P11-T02)`
+- Implemented: `api/credentials.py` and `hash-token`; store-based auth for operator and ingestion routes; body limit and audit line in `api/request_ids.py`; CORS, production, secret-file, and body-limit settings; message masking in API evidence output and per-source text masking in tools and the verifier; ADR-038 (Q9 resolved); `docs/security.md`; API and development docs; `.env.example`.
+- Validation commands and results: ruff check and format, mypy pass; `uv run pytest tests/unit tests/contract` 707 passed; `SIGNALOPS_INTEGRATION=1 uv run pytest` 1356 passed, 2 skipped, 1 failed (settings test saw sourced `.env` tokens; fixed with an autouse fixture, then rerun); Compose checks in the task notes.
+- Evidence or artifact references: task notes.
+- Deviations and reasons: pydantic-settings merges dict settings from init arguments and the environment, so tests that need empty token maps must clear the variables rather than pass `{}`. No credential file is wired into the default Compose file; an override mounts one (documented).
+- Remaining issues: see task notes.
+- Next task: P11-T03.
 
 ## Work log template
 

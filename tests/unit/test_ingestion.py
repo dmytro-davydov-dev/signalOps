@@ -17,11 +17,11 @@ from signalops.adapters.ingestion import (
     Redactor,
     ReplaceablePublisher,
     SourceConfigError,
-    SourceTokens,
     raw_event_id,
     source_redact_fields,
 )
 from signalops.api.app import create_app
+from signalops.api.credentials import CredentialStore
 from signalops.config import Settings
 from signalops.contracts.events import RawSignalPayload, decode_event
 from signalops.contracts.evidence import SourceKind
@@ -329,10 +329,10 @@ def test_source_without_a_configured_token_is_401() -> None:
 
 
 def test_source_tokens_verify_only_their_own_source() -> None:
-    tokens = SourceTokens({SOURCE_ID: SecretStr("a")})
-    assert tokens.verify(SOURCE_ID, "a")
-    assert not tokens.verify(SOURCE_ID, "b")
-    assert not tokens.verify(OTHER_SOURCE_ID, "a")
+    store = CredentialStore({}, {SOURCE_ID: SecretStr("a")})
+    assert store.source(SOURCE_ID, "a") is not None
+    assert store.source(SOURCE_ID, "b") is None
+    assert store.source(OTHER_SOURCE_ID, "a") is None
 
 
 @pytest.mark.parametrize(

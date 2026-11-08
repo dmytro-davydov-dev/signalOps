@@ -14,7 +14,7 @@ from pydantic import SecretStr, ValidationError
 
 from signalops.adapters.ingestion import REDACTED, SourceConfigError
 from signalops.api.app import create_app
-from signalops.api.auth import OperatorTokens
+from signalops.api.credentials import CredentialStore
 from signalops.api.evidence import (
     InvalidCursorError,
     InvalidQueryError,
@@ -63,14 +63,17 @@ def auth(token: str = OPERATOR_TOKEN) -> dict[str, str]:
 # Credentials
 
 
+def _workspace(store: CredentialStore, token: str) -> uuid.UUID | None:
+    match = store.operator(token)
+    return None if match is None else match.principal
+
+
 def test_operator_token_maps_to_its_workspace() -> None:
-    tokens = OperatorTokens(
-        {WORKSPACE: SecretStr("one"), OTHER_WORKSPACE: SecretStr("two")},
-    )
-    assert tokens.workspace_for("one") == WORKSPACE
-    assert tokens.workspace_for("two") == OTHER_WORKSPACE
-    assert tokens.workspace_for("three") is None
-    assert OperatorTokens({}).workspace_for("one") is None
+    store = CredentialStore({WORKSPACE: SecretStr("one"), OTHER_WORKSPACE: SecretStr("two")}, {})
+    assert _workspace(store, "one") == WORKSPACE
+    assert _workspace(store, "two") == OTHER_WORKSPACE
+    assert _workspace(store, "three") is None
+    assert _workspace(CredentialStore({}, {}), "one") is None
 
 
 def test_operator_token_equal_to_an_ingest_token_is_refused() -> None:
@@ -246,7 +249,7 @@ def _signal_row(attributes: dict[str, Any], source_id: uuid.UUID = SOURCE) -> Si
             occurred_at=NOW,
             ingested_at=NOW,
             severity="error",
-            message="password=hunter2 stays: free text is not scrubbed",
+            message="password=hunter2 in free text",
             trace_id=None,
             attributes=attributes,
             quality_status="degraded",
@@ -275,7 +278,19 @@ def test_output_redaction_applies_process_and_source_fields() -> None:
         "source": {"customer_email": REDACTED, "items": [{"PASSWORD": REDACTED}]},
         "status": 500,
     }
-    assert "hunter2" in signal.message
+    # Free text gets the tools' masking (P11-T02): sensitive key=value pairs, both lists.
+    assert "hunter2" not in signal.message
+    assert signal.message.startswith(f"password={REDACTED}")
+
+
+def test_output_redaction_masks_source_fields_and_bearer_tokens_in_messages() -> None:
+    redaction = OutputRedaction(["password"], [_source({"redact_fields": ["api_key"]})])
+    row = _signal_row({})
+    row.message = "retry with api_key=abc123 and Authorization: Bearer eyJ.x-y, user=bob"
+    message = redaction.signal(row).message
+    assert "abc123" not in message
+    assert "eyJ.x-y" not in message
+    assert "user=bob" in message
 
 
 def test_output_redaction_for_an_unlisted_source_uses_process_fields() -> None:

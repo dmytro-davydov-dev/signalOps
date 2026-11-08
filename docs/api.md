@@ -230,10 +230,11 @@ Last-Event-ID: 1042
 
 ## Security
 
-- Operator APIs require authentication. Evidence queries use interim per-workspace tokens (ADR-014); the full mechanism is P11-T02.
-- Ingestion uses separate source-specific credentials.
-- Request-size and query limits, plus workspace and replay scope checks, apply to every route.
-- CORS is configured explicitly (`SIGNALOPS_CORS_ORIGINS`); `Authorization` is an allowed request header.
+- Operator routes require an operator credential; ingestion requires a source credential for that source; only the health probes are open. Credentials, rotation, limits, CORS, and redaction: docs/security.md (ADR-038).
+- Bodies over 64 KiB on non-ingestion routes are `413` before authentication (`SIGNALOPS_API_MAX_BODY_BYTES`).
+- Workspace comes from the credential; replay scope is a validated parameter inside it.
+- Evidence messages are masked for sensitive `key=value` pairs and bearer tokens, as model inputs are.
+- Every response carries `X-Request-ID`, and each request is logged once with its credential ID.
 
 ## Evaluation runs (P10-T06)
 

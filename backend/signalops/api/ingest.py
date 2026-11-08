@@ -22,9 +22,9 @@ from signalops.adapters.ingestion import (
     IngestPolicy,
     IngestSource,
     SourceConfigError,
-    SourceTokens,
     ingest_batch,
 )
+from signalops.api.credentials import CredentialStore
 from signalops.config import Settings
 from signalops.contracts.ingestion import IngestRequest, IngestResponse
 from signalops.dependencies import Resources
@@ -151,10 +151,12 @@ async def ingest(
     """Publish a batch of source records; each is accepted only after Kafka acknowledges it."""
     settings: Settings = request.app.state.settings
     resources: Resources = request.app.state.resources
-    tokens: SourceTokens = request.app.state.source_tokens
+    store: CredentialStore = request.app.state.credentials
     policy: IngestPolicy = request.app.state.ingest_policy
-    if credentials is None or not tokens.verify(source_id, credentials.credentials):
+    match = None if credentials is None else store.source(source_id, credentials.credentials)
+    if match is None:
         raise _unauthorized()
+    request.state.credential_id = match.credential_id
     source = await _source(resources, source_id)
     if resources.ingest_publisher is None:
         raise _unavailable("ingestion is not configured")

@@ -33,7 +33,7 @@ from signalops.contracts.graph import GraphRelation
 from signalops.contracts.tools import TOOL_RESULT_ADAPTER, ToolErrorCategory, ToolFailure
 from signalops.contracts.workflow import AgentRole, ToolCallStatus, ToolName
 from signalops.persistence import database as db
-from signalops.persistence.models import Job, ToolCall
+from signalops.persistence.models import Job, Source, ToolCall
 from signalops.persistence.repositories.catalog import CatalogRepository
 from signalops.persistence.repositories.evidence import EvidenceRepository
 from signalops.persistence.repositories.graph import EdgeWrite, GraphRepository, RunbookVersion
@@ -362,6 +362,25 @@ async def test_secrets_in_free_text_are_masked(database: db.Database, lease: Job
     assert "abc123" not in message
     assert "xyz.789" not in message
     assert "[REDACTED]" in message
+
+
+async def test_free_text_also_masks_the_source_s_own_fields(
+    database: db.Database, lease: JobLease
+) -> None:
+    tag = uuid.uuid4().hex
+    async with database.transaction() as session:
+        source = await session.get_one(Source, LOGS)
+        original = dict(source.config)
+        source.config = {**original, "redact_fields": ["session_id"]}
+    try:
+        await store(database, [signal(f"{tag} session_id=s-42 user=alice")])
+        outcome = await call(database, lease, ToolName.QUERY_LOGS, {})
+    finally:
+        async with database.transaction() as session:
+            (await session.get_one(Source, LOGS)).config = original
+    [message] = [m for m in messages(outcome) if m.startswith(tag)]
+    assert "s-42" not in message
+    assert "user=alice" in message
 
 
 async def test_trace_summaries_filter_by_status_and_skip_quarantined_records(

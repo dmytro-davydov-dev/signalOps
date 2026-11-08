@@ -24,7 +24,6 @@ import asyncio
 import hashlib
 import json
 import logging
-import re
 import uuid
 from collections.abc import Awaitable, Callable, Collection, Mapping
 from dataclasses import dataclass
@@ -35,7 +34,9 @@ from pydantic import Field, ValidationError
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from signalops.adapters.ingestion import REDACTED
+# Re-exported: agents and tests construct it from here.
+from signalops.adapters.ingestion import TextRedactor as TextRedactor
+from signalops.adapters.ingestion import source_text_redactors
 from signalops.agents.read_cache import ReadCache, ReadKey, ToolScope
 from signalops.config import Settings
 from signalops.contracts.common import ContractModel, TraceId, UtcDatetime, json_size
@@ -60,6 +61,7 @@ from signalops.gateway.types import ToolDefinition
 from signalops.observability.metrics import TOOL_CALL_SECONDS
 from signalops.persistence.database import Database
 from signalops.persistence.models import Signal
+from signalops.persistence.repositories.catalog import CatalogRepository
 from signalops.persistence.repositories.evidence import EvidenceRepository, SignalFilter
 from signalops.persistence.repositories.graph import GraphDirection, GraphRepository
 from signalops.persistence.repositories.jobs import JobLease, JobRepository
@@ -147,19 +149,6 @@ class ToolRejectedError(Exception):
         self.argument = argument
 
 
-class TextRedactor:
-    """Masks `key=value` pairs of sensitive keys in free text, which ingestion keeps as is."""
-
-    def __init__(self, fields: tuple[str, ...]) -> None:
-        names = "|".join(sorted((re.escape(field) for field in fields), key=len, reverse=True))
-        self._pairs = re.compile(rf"(?i)\b({names})\b(\s*[:=]\s*)(?:bearer\s+)?[^\s,;\"']+")
-        self._bearer = re.compile(r"(?i)\bbearer\s+[a-z0-9._~+/=-]+")
-
-    def redact(self, text: str) -> str:
-        masked = self._pairs.sub(rf"\1\2{REDACTED}", text)
-        return self._bearer.sub(f"Bearer {REDACTED}", masked)
-
-
 def _window(arguments: WindowArguments, cutoff: datetime) -> tuple[datetime, datetime]:
     """The half-open read bounds; `until` includes the cutoff itself."""
     for name, value in (("since", arguments.since), ("until", arguments.until)):
@@ -189,10 +178,18 @@ def _severities_from(minimum: Severity | None) -> tuple[Severity, ...] | None:
 class _Reads:
     """The five reads, in one short transaction each."""
 
-    def __init__(self, session: AsyncSession, scope: ToolScope, redactor: TextRedactor) -> None:
+    def __init__(
+        self,
+        session: AsyncSession,
+        scope: ToolScope,
+        redactor: TextRedactor,
+        by_source: Mapping[uuid.UUID, TextRedactor] | None = None,
+    ) -> None:
         self._session = session
         self._scope = scope
         self._redactor = redactor
+        # Free text also gets each source's own redact_fields (P11-T02).
+        self._by_source = by_source or {}
 
     async def _check_service(self, service_id: uuid.UUID | None) -> None:
         if service_id is None:
@@ -203,8 +200,9 @@ class _Reads:
                 ToolErrorCategory.OUT_OF_SCOPE, "no such service in scope", "service_id"
             )
 
-    def _text(self, text: str) -> str:
-        return self._redactor.redact(text)[:MAX_EXCERPT_LENGTH]
+    def _text(self, text: str, source_id: uuid.UUID | None = None) -> str:
+        redactor = self._by_source.get(source_id, self._redactor) if source_id else self._redactor
+        return redactor.redact(text)[:MAX_EXCERPT_LENGTH]
 
     async def _signals(self, criteria: SignalFilter, limit: int) -> tuple[list[Signal], bool]:
         rows = await EvidenceRepository(self._session).list_signals(
@@ -238,7 +236,7 @@ class _Reads:
             service_id=row.service_id,
             occurred_at=row.occurred_at,
             severity=Severity(row.severity),
-            message=self._text(row.message),
+            message=self._text(row.message, row.source_id),
             trace_id=row.trace_id,
             quality_status=QualityStatus(row.quality_status),
         )
@@ -276,7 +274,7 @@ class _Reads:
             trace_id=row.trace_id,
             service_id=row.service_id,
             occurred_at=row.occurred_at,
-            operation=self._text(record["operation"])[:500],
+            operation=self._text(record["operation"], row.source_id)[:500],
             duration_ms=record["duration_ms"],
             status=record["status"],
             span_count=record["span_count"],
@@ -509,7 +507,10 @@ class ToolExecutor:
                 asyncio.timeout(self._limits.timeout_seconds),
                 self._database.transaction() as session,
             ):
-                reads = _Reads(session, scope, self._redactor)
+                sources = await CatalogRepository(session).list_sources(scope.evidence.workspace_id)
+                reads = _Reads(
+                    session, scope, self._redactor, source_text_redactors(self._redactor, sources)
+                )
                 if self._cache is None:
                     return _bounded(
                         await spec.read(reads, arguments), self._limits.max_result_bytes

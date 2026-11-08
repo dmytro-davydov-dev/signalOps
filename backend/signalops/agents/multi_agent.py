@@ -52,6 +52,7 @@ from typing import Final
 
 from sqlalchemy import func, select
 
+from signalops.adapters.ingestion import source_text_redactors
 from signalops.agents.agent_loop import AgentLoop, Reads, RoleTask
 from signalops.agents.briefs import LOAD_INCIDENT
 from signalops.agents.findings import verify_findings
@@ -643,6 +644,8 @@ async def cited_signals(
         known = await EvidenceRepository(session).known_signals(
             scope.evidence, signal_ids[:MAX_PACKET_SIGNALS], known_by=scope.cutoff
         )
+        sources = await CatalogRepository(session).list_sources(scope.evidence.workspace_id)
+    by_source = source_text_redactors(redactor, sources)
     packet: list[CitedSignal] = []
     size = 0
     for signal_id in signal_ids[:MAX_PACKET_SIGNALS]:
@@ -654,7 +657,7 @@ async def cited_signals(
             kind=row.kind,
             service_id=row.service_id,
             occurred_at=row.occurred_at,
-            text=signal_text(row, redactor),
+            text=signal_text(row, by_source.get(row.source_id, redactor)),
         )
         size += len(cited.model_dump_json())
         if size > MAX_PACKET_BYTES:
