@@ -6,6 +6,8 @@ import sys
 from datetime import UTC, datetime
 from typing import Any
 
+from signalops.observability import context
+
 # Attributes present on every LogRecord; anything else came from `extra=`.
 # `color_message` is uvicorn's ANSI-colored duplicate of the message.
 _RESERVED = frozenset(vars(logging.makeLogRecord({}))) | {
@@ -27,6 +29,7 @@ class JsonFormatter(logging.Formatter):
             "logger": record.name,
             "message": record.getMessage(),
         }
+        payload.update(context.current())
         for key, value in vars(record).items():
             if key not in _RESERVED:
                 payload[key] = value

@@ -50,6 +50,7 @@ from signalops.contracts.ingestion import (
     IngestRejectReason,
     IngestResponse,
 )
+from signalops.observability.metrics import INGEST_RECORDS
 from signalops.persistence.database import Database
 from signalops.persistence.repositories.catalog import CatalogRepository
 from signalops.streaming.producer import (
@@ -400,6 +401,9 @@ async def ingest_batch(
     counts = {status: 0 for status in IngestRecordStatus}
     for result in ordered:
         counts[result.status] += 1
+    for status, count in counts.items():
+        if count:
+            INGEST_RECORDS.labels(source.kind.value, status.value).inc(count)
     logger.info(
         "ingest batch",
         extra={

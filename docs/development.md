@@ -59,6 +59,8 @@ uv run signalops detector-flush --workspace-id W --replay-run-id R  # close a re
 uv run signalops outbox-publisher        # publish pending outbox rows until SIGINT/SIGTERM
 uv run signalops redrive-record --topic T --partition P --offset O  # republish one quarantined record
 uv run signalops redrive-outbox EVENT_ID # make one quarantined outbox row due again
+uv run signalops operations-snapshot     # print job queues, leases, outbox age, unknown model calls, and Kafka lag as JSON
+SIGNALOPS_METRICS_PORT=9100 uv run signalops metrics-exporter  # serve that state as Prometheus gauges until SIGINT/SIGTERM
 
 # Integration tests against the running Compose infrastructure
 set -a; . ./.env; set +a
@@ -153,11 +155,11 @@ The report is written to `apps/web/e2e-report/` and failure traces to `apps/web/
 
 The default `docker compose up` needs no paid model key and does not start the OpenTelemetry Demo. Optional profiles hold services that are not started by default:
 
-| Profile | Will contain | Added in |
+| Profile | Contains | Added in |
 | --- | --- | --- |
 | `demo` | `demo-seed` (runs `signalops seed`) and `demo` (posts one generated `downstream-timeout` run to the API); later an optional instrumented demo application | P04-T02 (exists), P10-T03 |
 | `evaluation` | Evaluation runner for isolated replays | P10-T02 |
-| `observability` | Metrics and dashboards | P11-T01 |
+| `observability` | `metrics-exporter` (durable-state gauges), Prometheus (`127.0.0.1:59090`), Grafana with the provisioned dashboard (`127.0.0.1:53000`); see docs/observability.md | P11-T01 |
 | `tools` | The bare backend image (`signalops --version`), used to build or run ad hoc commands | P01-T03 (exists) |
 
 ### Migrations
@@ -177,7 +179,8 @@ nginx serves the built UI and proxies `/health/` and `/v1/` to the API, resolvin
 - Containers reach each other on the private `signalops` network as `postgres:5432`, `redis:6379`, and `kafka:9092`.
 - Host ports exist so that host-run integration tests can use real infrastructure. They are bound to `127.0.0.1` and default to non-standard ports to avoid clashing with other local stacks.
 - Kafka topic auto-creation is disabled; topics are created explicitly.
-- Data lives in the named volumes `postgres-data`, `redis-data`, and `kafka-data`. `docker compose down -v` deletes them.
+- Every long-running backend process serves Prometheus metrics on port 9100 inside the network (`SIGNALOPS_METRICS_PORT`); it is never published to the host.
+- Data lives in the named volumes `postgres-data`, `redis-data`, and `kafka-data` (and `prometheus-data`, `grafana-data` with the observability profile). `docker compose down -v` deletes them.
 - Single-node Kafka (replication factor 1) and local volumes do not protect against host or disk loss.
 
 ## Configuration
@@ -198,6 +201,9 @@ Backend processes read `SIGNALOPS_`-prefixed variables (`backend/signalops/confi
 | `SIGNALOPS_RETRY_MAX_ATTEMPTS` | `5` | Attempts per consumed record (including the first) for transient failures before the consumer stops without committing. The outbox never gives up on transient failures |
 | `SIGNALOPS_RETRY_BASE_DELAY_MS` / `SIGNALOPS_RETRY_MAX_DELAY_MS` | `1000` / `30000` | Full-jitter backoff: retry n waits a random time up to min(max, base × 2^(n−1)) |
 | `SIGNALOPS_STREAMING_STATS_INTERVAL_MS` | `30000` | Interval of the `consumer stats` and `outbox stats` log lines (see [reliability.md](reliability.md#streaming-stats)) |
+| `SIGNALOPS_METRICS_PORT` | unset (Compose: `9100`) | Prometheus listener for this process; unset means none ([observability.md](observability.md)) |
+| `SIGNALOPS_METRICS_HOST` | `0.0.0.0` | Listener address |
+| `SIGNALOPS_METRICS_REFRESH_SECONDS` | `15` | How often `metrics-exporter` reads PostgreSQL and Kafka |
 | `SIGNALOPS_LOG_LEVEL` | `INFO` | JSON logs on stdout |
 | `SIGNALOPS_ENVIRONMENT` | `development` | `development`, `test`, `production` |
 | `SIGNALOPS_API_HOST` / `SIGNALOPS_API_PORT` | `0.0.0.0` / `8000` | |

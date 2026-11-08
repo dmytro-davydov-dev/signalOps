@@ -11,6 +11,7 @@ from signalops import __version__
 from signalops.adapters.ingestion import IngestPolicy, SourceTokens
 from signalops.api import evaluations, evidence, health, incidents, ingest, investigations
 from signalops.api.auth import OperatorTokens
+from signalops.api.request_ids import RequestIdMiddleware
 from signalops.config import Settings, get_settings
 from signalops.dependencies import Resources, open_resources
 
@@ -50,8 +51,17 @@ def create_app(
             CORSMiddleware,
             allow_origins=settings.cors_origins,
             allow_methods=["GET", "PATCH", "POST"],
-            allow_headers=["Authorization", "Content-Type", "Idempotency-Key", "Last-Event-ID"],
+            allow_headers=[
+                "Authorization",
+                "Content-Type",
+                "Idempotency-Key",
+                "Last-Event-ID",
+                "X-Request-ID",
+            ],
+            expose_headers=["X-Request-ID"],
         )
+    # Outermost, so CORS preflights and errors carry the ID too.
+    app.add_middleware(RequestIdMiddleware)
     app.include_router(health.router)
     app.include_router(ingest.router)
     app.include_router(evidence.router)

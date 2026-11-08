@@ -19,6 +19,9 @@ x-backend-env: &backend-env
   # JSON object of workspace ID to operator token for the evidence queries;
   # empty means every operator request is 401.
   SIGNALOPS_OPERATOR_TOKENS: ${SIGNALOPS_OPERATOR_TOKENS:-{}}
+  # Each long-running process serves Prometheus metrics here, on the private
+  # network only; the observability profile scrapes them (docs/observability.md).
+  SIGNALOPS_METRICS_PORT: "9100"
 
 # The evaluator's connection: the only one that can read ground truth (ADR-034).
 x-evaluation-db: &evaluation-db postgresql+psycopg://signalops_eval:${SIGNALOPS_DB_EVALUATOR_PASSWORD:-${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env (see .env.example)}}@postgres:5432/${POSTGRES_DB:-signalops}
@@ -291,6 +294,52 @@ services:
       migrate: { condition: service_completed_successfully }
       init-topics: { condition: service_completed_successfully }
 
+  # Observability profile: durable-state gauges, Prometheus, and Grafana.
+  # Start with `docker compose --profile observability up -d`.
+  metrics-exporter:
+    <<: *backend
+    profiles: [observability]
+    command: ["metrics-exporter"]
+    restart: unless-stopped
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+      init-topics: { condition: service_completed_successfully }
+
+  prometheus:
+    image: prom/prometheus:v3.5.0
+    profiles: [observability]
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=3d
+    volumes:
+      - ./infra/observability/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    ports:
+      - "127.0.0.1:${PROMETHEUS_HOST_PORT:-59090}:9090"
+    networks: [signalops]
+
+  grafana:
+    image: grafana/grafana:12.1.0
+    profiles: [observability]
+    environment:
+      # Loopback only. Anonymous viewers see the provisioned dashboard; set
+      # GRAFANA_ADMIN_PASSWORD in .env to edit through the admin account.
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+      GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: /var/lib/grafana/dashboards/signalops.json
+    volumes:
+      - ./infra/observability/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./infra/observability/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana-data:/var/lib/grafana
+    ports:
+      - "127.0.0.1:${GRAFANA_HOST_PORT:-53000}:3000"
+    depends_on: [prometheus]
+    networks: [signalops]
+
   backend:
     <<: *backend
     profiles: [tools]
@@ -303,3 +352,5 @@ volumes:
   postgres-data:
   redis-data:
   kafka-data:
+  prometheus-data:
+  grafana-data:

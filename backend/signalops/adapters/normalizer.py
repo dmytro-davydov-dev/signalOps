@@ -24,6 +24,7 @@ envelope faults (wrong event type, source, or source kind) raise
 """
 
 import uuid
+from functools import partial
 from typing import Final
 
 from pydantic import JsonValue, TypeAdapter, ValidationError
@@ -60,6 +61,8 @@ from signalops.contracts.evidence import (
     Severity,
     SourceKind,
 )
+from signalops.observability.metrics import NORMALIZED_SIGNALS, QUALITY_FLAGS
+from signalops.persistence.database import on_commit
 from signalops.persistence.repositories.catalog import CatalogRepository
 from signalops.persistence.repositories.evidence import EvidenceRepository
 from signalops.persistence.repositories.reliability import OutboxRepository
@@ -133,6 +136,7 @@ class Normalizer:
         if not await evidence.insert_signal(signal):
             # Stored by an earlier delivery; its deployment and event were staged then.
             return
+        on_commit(session, partial(_count_signal, payload.source_kind.value, signal))
         if adapted is not None and adapted.deployment is not None and signal.service_id:
             await evidence.insert_deployment(
                 deployment_id=uuid.uuid5(DEPLOYMENT_NAMESPACE, str(signal.id)),
@@ -319,6 +323,12 @@ class Normalizer:
                 quality_status=signal.quality_status,
             ),
         )
+
+
+def _count_signal(source_kind: str, signal: NormalizedSignal) -> None:
+    NORMALIZED_SIGNALS.labels(source_kind, signal.quality_status.value).inc()
+    for flag in signal.quality_flags:
+        QUALITY_FLAGS.labels(source_kind, flag.value).inc()
 
 
 def _provenance(

@@ -141,6 +141,15 @@ class IncidentRepository:
         )
         return [(signal, relevance) for signal, relevance in rows]
 
+    async def earliest_evidence_ingested_at(self, incident_id: uuid.UUID) -> datetime | None:
+        """When the incident's first cited signal reached ingestion; None without evidence."""
+        result: datetime | None = await self._session.scalar(
+            select(func.min(Signal.ingested_at))
+            .join(IncidentSignal, IncidentSignal.signal_id == Signal.id)
+            .where(IncidentSignal.incident_id == incident_id)
+        )
+        return result
+
     async def evidence_known_by(
         self, scope: EvidenceScope, incident_id: uuid.UUID, *, known_by: datetime, limit: int
     ) -> Sequence[uuid.UUID]:

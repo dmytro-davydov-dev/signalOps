@@ -387,6 +387,16 @@ Revision `0015_investigation_outcomes` adds a partial unique index allowing one 
 
 **Revisit when:** A paid model run is requested with a stated budget, or scenarios with several independent incidents are added.
 
+## ADR-037: Process metrics in Prometheus, durable state from a separate exporter
+
+**Decision:** Each long-running process serves Prometheus metrics from the default `prometheus-client` registry on `SIGNALOPS_METRICS_PORT` (Compose: 9100 on the private network, never published). They cover what only the process sees: ingestion outcomes, consumer outcomes and processing time, outbox publication, normalized signals by quality, incidents opened and live detection latency, job transitions, tool and model call durations, tokens, and settled cost. Counters that follow a database write increment after the commit (`persistence.database.on_commit`). Durable state comes from `signalops metrics-exporter` (observability profile): job counts, claimable job wait, expired unreclaimed leases, outbox backlog and age, investigations by status, in-flight and unknown model calls with reserved cost, and consumer-group lag read from the broker. Correlation is by log fields bound with a context variable (`request_id`, `event_id`, `correlation_id`, `job_id`, `investigation_id`, `lease_generation`) and by `GET /v1/investigations/{id}/trace`, which joins ingestion batches to steps in PostgreSQL. Prometheus and Grafana run only in the `observability` profile, with a provisioned dashboard.
+
+**Reason:** Lag and stuck work must be visible precisely when the process that owns them is stuck or down, so they are read from Kafka and PostgreSQL, not reported by the consumer or worker. Keeping those queries out of the API keeps scrapes from adding database work to request handling. The trace endpoint needs no tracing backend: every hop already stores its IDs (`raw_event_id` and `correlation_id` in provenance, incident evidence, jobs, steps, calls).
+
+**Trade-off:** One new dependency (`prometheus-client`) and one more optional process. Process counters reset on restart, which `rate()` and `increase()` absorb. Every process exports every metric family, so families a process never touches show as zero. There is no distributed tracing: per-record normalizer and detector work is not logged at INFO, so a batch ID links to an investigation through the trace route, not through consumer log lines. Live detection latency is measured from the first cited signal's ingestion, not the breaching one.
+
+**Revisit when:** A second host or a hosted metrics backend is introduced, or per-record tracing is needed (OpenTelemetry).
+
 ## Open questions
 
 | # | Question | Decide by |

@@ -25,13 +25,13 @@ PostgreSQL owns evidence, workflow progress, budgets, and the initial knowledge 
 
 | Field | Current value |
 | --- | --- |
-| Active phase | Phase 11 Operational hardening and scale (not started); Phase 10 gate passed on the fake provider |
-| Active task | None; next is P11-T01 |
-| Last completed task | Phase 10 gate |
-| Latest verified commit | `73e931d`; the gate commit `test(P10)` follows |
-| Validation evidence | Phase 10 gate: Compose rebuilt, services on `signalops_app`, held-out run `7ac381af` over Kafka completed with 35 scored cases on the fake provider, `evaluation.e2e.ts` passed in headless Chrome. Earlier: `SIGNALOPS_INTEGRATION=1 uv run pytest` 1316 passed at `4c849fa`; `pnpm lint`, `pnpm typecheck`, `docker compose config --quiet` pass on the working tree. No paid model was called |
+| Active phase | Phase 11 Operational hardening and scale |
+| Active task | P11-T02 (in progress) |
+| Last completed task | P11-T01 |
+| Latest verified commit | `7b15b13` (Phase 10 gate); P11-T01 commit `feat(P11-T01)` follows |
+| Validation evidence | P11-T01: `SIGNALOPS_INTEGRATION=1 uv run pytest` 1328 passed on the P11-T01 tree; ruff, format, mypy (212 files), `export-schemas --check`, `docker compose config --quiet` pass; Compose observability profile demonstrated (task notes). No paid model was called |
 | Blockers | None |
-| Next task | P11-T01 |
+| Next task | P11-T02 |
 
 ### Scope and release boundaries
 
@@ -1004,11 +1004,19 @@ Start the React shell in Phase 1 and add API-backed incident views in Phase 5; P
 
 ### P11-T01 Complete observability
 
-- [ ] Complete this task.
+- [x] Complete this task.
 
 **Implementation:** Expose ingestion throughput, lag, outbox age, data quality, detection latency, queued/running jobs, lease expiry, tool/model duration, tokens, and unknown costs. Add correlation IDs and an optional metrics/dashboard profile.
 
 **Acceptance:** A fault can be followed from ingestion to investigation; slow model calls and growing Kafka lag are distinguishable.
+
+**Notes (2026-11-08):**
+- **Decision (ADR-037):** `prometheus-client` (new dependency). Every long-running process serves the default registry on `SIGNALOPS_METRICS_PORT` (Compose: 9100, private network only; unset elsewhere). Process metrics (`observability/metrics.py`): ingestion outcomes, consumer outcomes and processing time, outbox publication, normalized signals by quality status and flag, incidents opened, live detection latency, job events (including `lease_expired` takeovers), tool and model call durations, tokens, settled cost. Counters that follow a write run after the commit (`persistence.database.on_commit`). Durable state comes from the new `signalops metrics-exporter` (`observability/snapshot.py`, `exporter.py`): jobs by status, claimable job wait, expired unreclaimed leases, outbox backlog and age, investigations by status, in-flight and unknown model calls with reserved cost, and consumer-group lag read from the broker (`AdminClient`), so lag rises even when a consumer is stopped. `signalops operations-snapshot` prints the same as JSON.
+- **Correlation:** `observability/context.bind` adds fields to every JSON log line in a block: `request_id` (API middleware; `X-Request-ID` accepted when well formed and echoed), `event_id`/`correlation_id`/`causation_id`/`replay_run_id` per consumed record, `job_id`/`investigation_id`/`lease_generation`/`job_attempt` per job attempt (parallel branches inherit them). New log line `incident opened`. New route `GET /v1/investigations/{id}/trace` (`persistence/repositories/trace.py`): ingestion batch IDs behind the incident's evidence, job, per-step model and tool counts and time, stage durations, and the log fields that select the path.
+- **Compose:** `SIGNALOPS_METRICS_PORT=9100` for every backend process; profile `observability` adds `metrics-exporter`, Prometheus `v3.5.0` (DNS discovery per replica, 3-day retention, `127.0.0.1:59090`) and Grafana `12.1.0` (`127.0.0.1:53000`, anonymous viewer, provisioned 20-panel dashboard `infra/observability/grafana/dashboards/signalops.json`). Docs: `docs/observability.md` (metrics, how to tell slow model calls from backlog, following a fault).
+- **Verified (`tests/integration/test_observability.py`, Compose PostgreSQL and Kafka):** a `downstream-timeout` replay through `ingest_batch` and a `v3` investigation on a fake provider delayed 0.2 s per call; the trace route (with `X-Request-ID` echoed, 404 in the wrong scope) lists ingestion batches that are the scope's provenance batches, the succeeded job, every model call, and `model_s` ≥ calls × 0.2 s; the gateway histogram grew by exactly the trace's call count and at least that time; every `model call settled` and `tool call finished` line carried the investigation, job, and generation. Second test: on a fresh topic, broker-side lag reads 20 after 25 records with offset 5 committed (25 with no commit); during slow model calls `model_calls_in_flight` ≥ 1 and the model histogram grew while that lag stayed 20; 15 more records raised lag to 35 while the model series stayed unchanged. Mutation: renaming the bound `job_id` failed the first test (reverted). `tests/unit/test_observability.py` (13): bound and explicit log fields, consumer outcome and timing counters, request IDs, exporter output, failed refresh keeps values, missing lag omitted.
+- **Verified on Compose:** `docker compose --profile observability up -d --build`: all 10 Prometheus targets up, Grafana healthy with the dashboard. With `normalizer` stopped, a 1004-record backfill showed `signalops_kafka_consumer_lag{consumer_group="normalizer-v1"}` 1004 and no model series; after restart lag returned to 0 with 1004 applied per group. A realtime `downstream-timeout` run opened live incident `fce3cfd5-eb53-438e-8b6d-e35f4c7339b6` (detection latency 65.9 s); its investigation `d8a3f8f5-95ae-4113-9ab7-46980e3a77ac` (`v3`, fake delay 3 s) completed, and the trace route showed 16 ingestion batches, 39 signals, `ingestion_to_detection_s` 65.85, `detection_to_request_s` 0.013, `request_to_first_step_s` 1.152, `running_s` 15.38, `model_s` 27.0 (9 calls, parallel). Model p95 read 4.9 s from the histogram while total lag was 0. The batch ID appears on the API's `ingest batch` line with its `request_id`; the worker's 9 `model call settled` lines carry the investigation and job IDs.
+- **Left:** per-record consumer work is not logged at INFO, so a batch reaches its investigation through the trace route, not consumer log lines; detection latency starts at the first cited signal's ingestion; every process exports every metric family (zeros where unused); the metrics ports are unauthenticated on the private network (P11-T02 records this).
 
 ### P11-T02 Verify security and query boundaries
 
@@ -1676,6 +1684,16 @@ Keep these outside the release critical path unless measurements justify promoti
 - Deviations and reasons: the drill-in ran in headless Chrome through Playwright because the Claude in Chrome extension was not connected.
 - Remaining issues: `demo-shop` not yet run on Compose; no paid-model trial.
 - Next task: P11-T01.
+
+### 2026-11-08 — P11-T01
+- Status: completed
+- Commit: see git log for `feat(P11-T01)`
+- Implemented: `observability/` (metrics, context, snapshot, exporter); instruments in ingestion, consumer, outbox, normalizer, detector, jobs, tools, gateway; `on_commit` hooks; request IDs; `GET /v1/investigations/{id}/trace`; `metrics-exporter` and `operations-snapshot` commands; Compose metrics ports and `observability` profile with Prometheus, Grafana, and a dashboard; ADR-037; `docs/observability.md`; API, development, reliability docs; `.env.example` ports.
+- Validation commands and results: `uv run ruff check .`, `uv run ruff format --check .`, `uv run mypy` pass; `uv run signalops export-schemas --check` exit 0; `uv run pytest` 679 passed (unit and contract); `SIGNALOPS_INTEGRATION=1 uv run pytest` 1328 passed (19 min); `docker compose config --quiet` ok; Compose demonstration in the task notes.
+- Evidence or artifact references: task notes (incident `fce3cfd5`, investigation `d8a3f8f5`).
+- Deviations and reasons: added `tests/unit/__init__.py` so unit tests can share fakes (`test_observability.py` reuses the consumer harness).
+- Remaining issues: see task notes.
+- Next task: P11-T02.
 
 ## Work log template
 

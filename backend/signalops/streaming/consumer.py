@@ -51,6 +51,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from signalops.config import Settings
 from signalops.contracts.common import ContractError
 from signalops.contracts.events import EventEnvelope, EventPayload, decode_event
+from signalops.observability.context import bind
+from signalops.observability.metrics import CONSUMER_PROCESSING, CONSUMER_RECORDS
 from signalops.persistence.database import Database
 from signalops.persistence.repositories.reliability import ReceiptRepository
 from signalops.streaming.failures import RecordPosition, failure_envelope, redrive_attempt_id
@@ -327,7 +329,11 @@ class ConsumerRunner:
         self._stats.consumed += 1
         started = self._clock()
         outcome = await self._handle(record, position)
-        self._stats.observe(outcome, self._clock() - started)
+        elapsed = self._clock() - started
+        self._stats.observe(outcome, elapsed)
+        CONSUMER_RECORDS.labels(self._consumer_group, outcome.value).inc()
+        if outcome is not ProcessOutcome.RETRY_SCHEDULED:
+            CONSUMER_PROCESSING.labels(self._consumer_group).observe(elapsed)
         return outcome
 
     async def _handle(self, record: Message, position: RecordPosition) -> ProcessOutcome:
@@ -338,12 +344,19 @@ class ConsumerRunner:
             envelope = decode_event(value)
         except ContractError as exc:
             return await self._quarantine(position, value, exc, None, redrive)
-        try:
-            outcome = await self._processor.process(envelope)
-        except ContractError as exc:
-            return await self._quarantine(position, value, exc, envelope, redrive)
-        except Exception as exc:  # noqa: BLE001 - never acknowledged; retried, then raised
-            return self._retry_or_stop(position, FailureStage.PROCESS, type(exc).__name__, exc)
+        with bind(
+            event_id=envelope.event_id,
+            event_type=envelope.event_type.value,
+            correlation_id=envelope.correlation_id,
+            causation_id=envelope.causation_id,
+            replay_run_id=envelope.replay_run_id,
+        ):
+            try:
+                outcome = await self._processor.process(envelope)
+            except ContractError as exc:
+                return await self._quarantine(position, value, exc, envelope, redrive)
+            except Exception as exc:  # noqa: BLE001 - never acknowledged; retried, then raised
+                return self._retry_or_stop(position, FailureStage.PROCESS, type(exc).__name__, exc)
         self._retries.pop((position.topic, position.partition), None)
         await asyncio.to_thread(self._commit, position)
         return outcome

@@ -36,6 +36,7 @@ import uuid
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from enum import StrEnum
+from functools import partial
 from typing import Any, Self
 
 from sqlalchemy.exc import SQLAlchemyError
@@ -48,7 +49,9 @@ from signalops.contracts.diagnosis import Diagnosis
 from signalops.contracts.investigations import terminal_status_for
 from signalops.contracts.workflow import InvestigationStatus, JobStatus
 from signalops.gateway.errors import BudgetExceededError
-from signalops.persistence.database import Database
+from signalops.observability.context import bind
+from signalops.observability.metrics import JOB_EVENTS
+from signalops.persistence.database import Database, on_commit
 from signalops.persistence.models import Job
 from signalops.persistence.repositories.jobs import (
     JobLease,
@@ -179,9 +182,17 @@ async def claim_job(database: Database, owner: str, policy: JobPolicy) -> JobLea
             elif job.attempts < job.max_attempts:
                 lease = await jobs.take(job, owner, policy.lease_seconds, error)
                 await jobs.start_investigation(job.investigation_id)
+                on_commit(session, partial(_count_claim, expired))
                 return lease
             else:
                 await _exhaust(session, job, error)
+
+
+def _count_claim(expired: bool) -> None:
+    JOB_EVENTS.labels("claimed").inc()
+    if expired:
+        # The previous owner stopped renewing; this claim takes over its lease.
+        JOB_EVENTS.labels("lease_expired").inc()
 
 
 async def complete_job(database: Database, lease: JobLease, diagnosis: Diagnosis) -> None:
@@ -288,6 +299,15 @@ class JobRunner:
 
     async def execute(self, lease: JobLease, stop: asyncio.Event) -> None:
         """Run the handler under heartbeats until it ends, the lease goes, or `stop` is set."""
+        with bind(
+            job_id=lease.job_id,
+            investigation_id=lease.investigation_id,
+            lease_generation=lease.generation,
+            job_attempt=lease.attempt,
+        ):
+            await self._execute(lease, stop)
+
+    async def _execute(self, lease: JobLease, stop: asyncio.Event) -> None:
         loop = asyncio.get_running_loop()
         work = asyncio.ensure_future(self._handler(lease))
         beats = loop.create_task(self._keep_lease(lease))
@@ -303,41 +323,52 @@ class JobRunner:
             await asyncio.gather(work, beats, stopping, return_exceptions=True)
         try:
             if finished:
-                await self._settle(lease, work)
+                event = await self._settle(lease, work)
             elif beat_ended and beats.exception() is None and beats.result() is not None:
                 await stop_job(self._database, lease)
+                event = "stopped"
             elif beat_ended:
                 logger.warning("job lease lost", extra={"job_id": str(lease.job_id)})
+                event = "lease_lost"
             else:
                 await release_job(self._database, lease)
+                event = "released"
         except LeaseLostError:
             logger.warning("job lease lost before settling", extra={"job_id": str(lease.job_id)})
+            event = "lease_lost"
+        JOB_EVENTS.labels(event).inc()
 
-    async def _settle(self, lease: JobLease, work: "asyncio.Future[Diagnosis]") -> None:
+    async def _settle(self, lease: JobLease, work: "asyncio.Future[Diagnosis]") -> str:
+        """Record the attempt's end; returns the job event it counts as."""
         error = None if work.cancelled() else work.exception()
         if work.cancelled():
             await release_job(self._database, lease)
-        elif error is None:
+            return "released"
+        if error is None:
             await complete_job(self._database, lease, work.result())
-        elif not isinstance(error, Exception):
+            return "completed"
+        if not isinstance(error, Exception):
             raise error
-        elif isinstance(error, JobStoppedError):
+        if isinstance(error, JobStoppedError):
             await stop_job(self._database, lease)
-        elif isinstance(error, BudgetExceededError):
+            return "stopped"
+        if isinstance(error, BudgetExceededError):
             await exhaust_budget(self._database, lease, error)
-        elif isinstance(error, PermanentJobError):
+            return "budget_exceeded"
+        if isinstance(error, PermanentJobError):
             await fail_job(self._database, lease, error)
-        else:
-            # Exception text and tracebacks can quote evidence, so only the type is logged.
-            logger.warning(
-                "job attempt failed",
-                extra={
-                    "job_id": str(lease.job_id),
-                    "attempt": lease.attempt,
-                    "error": type(error).__name__,
-                },
-            )
-            await retry_job(self._database, lease, error, self._policy)
+            return "failed"
+        # Exception text and tracebacks can quote evidence, so only the type is logged.
+        logger.warning(
+            "job attempt failed",
+            extra={
+                "job_id": str(lease.job_id),
+                "attempt": lease.attempt,
+                "error": type(error).__name__,
+            },
+        )
+        await retry_job(self._database, lease, error, self._policy)
+        return "retried"
 
     async def _keep_lease(self, lease: JobLease) -> JobStop | None:
         """Beat until the job must stop, or the lease is lost or runs out unrenewed (None).

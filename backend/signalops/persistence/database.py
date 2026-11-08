@@ -27,6 +27,9 @@ logger = logging.getLogger(__name__)
 # `session.info` key: investigations whose progress this transaction wrote.
 PROGRESS_WRITTEN = "signalops.progress_written"
 
+# `session.info` key: callbacks to run once this transaction commits.
+AFTER_COMMIT = "signalops.after_commit"
+
 # Told after a commit which investigations gained progress events. Best effort:
 # it must not raise, and readers never depend on it for correctness.
 ProgressHook = Callable[[frozenset[uuid.UUID]], Awaitable[None]]
@@ -35,6 +38,14 @@ ProgressHook = Callable[[frozenset[uuid.UUID]], Awaitable[None]]
 def mark_progress(session: AsyncSession, investigation_id: uuid.UUID) -> None:
     """Record that this transaction wrote progress for an investigation."""
     session.info.setdefault(PROGRESS_WRITTEN, set()).add(investigation_id)
+
+
+def on_commit(session: AsyncSession, callback: Callable[[], None]) -> None:
+    """Run `callback` after this transaction commits; a rollback drops it.
+
+    For process-local effects such as metrics. It must not raise or block.
+    """
+    session.info.setdefault(AFTER_COMMIT, []).append(callback)
 
 
 def create_engine(settings: Settings) -> AsyncEngine:
@@ -85,6 +96,14 @@ class Database:
             async with session.begin():
                 yield session
             written: set[uuid.UUID] | None = session.info.pop(PROGRESS_WRITTEN, None)
+            callbacks: list[Callable[[], None]] = session.info.pop(AFTER_COMMIT, [])
+        for callback in callbacks:
+            try:
+                callback()
+            except Exception as error:  # noqa: BLE001 - local bookkeeping only.
+                logger.warning(
+                    "after-commit callback failed", extra={"error": type(error).__name__}
+                )
         if written and self.on_progress is not None:
             try:
                 await self.on_progress(frozenset(written))

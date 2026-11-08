@@ -3,7 +3,7 @@
 import argparse
 import sys
 import uuid
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from typing import TYPE_CHECKING
 
 from signalops import __version__
@@ -12,6 +12,7 @@ if TYPE_CHECKING:
     from signalops.config import Settings
     from signalops.contracts.events import EventType
     from signalops.evaluation.runner import RunnerContext
+    from signalops.observability.snapshot import OperationsSnapshot
     from signalops.persistence.database import Database
     from signalops.streaming.consumer import EventHandler
 
@@ -61,6 +62,13 @@ def build_parser() -> argparse.ArgumentParser:
     )
     commands.add_parser(
         "detector-closer", help="close live detection windows by wall clock until stopped"
+    )
+    commands.add_parser(
+        "metrics-exporter",
+        help="serve PostgreSQL and Kafka operational state as Prometheus gauges until stopped",
+    )
+    commands.add_parser(
+        "operations-snapshot", help="print queues, leases, outbox age, and Kafka lag as JSON"
     )
     flush = commands.add_parser(
         "detector-flush",
@@ -204,9 +212,11 @@ def run_api() -> int:
     from signalops.api.app import create_app
     from signalops.config import get_settings
     from signalops.logs import configure_logging
+    from signalops.observability.metrics import start_metrics_server
 
     settings = get_settings()
     configure_logging(settings.log_level)
+    start_metrics_server(settings)
     uvicorn.run(
         create_app(settings),
         host=settings.api_host,
@@ -285,6 +295,7 @@ def run_outbox_publisher() -> int:
 
     from signalops.config import get_settings
     from signalops.logs import configure_logging
+    from signalops.observability.metrics import start_metrics_server
     from signalops.persistence.database import Database, create_engine
     from signalops.streaming.outbox import OutboxPublisher
     from signalops.streaming.producer import EventProducer
@@ -292,6 +303,7 @@ def run_outbox_publisher() -> int:
 
     settings = get_settings()
     configure_logging(settings.log_level)
+    start_metrics_server(settings)
 
     async def publish() -> None:
         stop = asyncio.Event()
@@ -329,6 +341,7 @@ def _run_consumer(
 
     from signalops.config import get_settings
     from signalops.logs import configure_logging
+    from signalops.observability.metrics import start_metrics_server
     from signalops.persistence.database import Database, create_engine
     from signalops.streaming.consumer import ConsumerRunner, TransactionalProcessor, create_consumer
     from signalops.streaming.producer import EventProducer
@@ -337,6 +350,7 @@ def _run_consumer(
 
     settings = get_settings()
     configure_logging(settings.log_level)
+    start_metrics_server(settings)
     client_id = f"signalops-{consumer_group.removesuffix('-v1')}"
 
     async def consume() -> None:
@@ -422,11 +436,13 @@ def run_worker() -> int:
     from signalops.config import get_settings
     from signalops.gateway.gateway import build_gateway
     from signalops.logs import configure_logging
+    from signalops.observability.metrics import start_metrics_server
     from signalops.persistence.database import Database, create_engine
     from signalops.wakeups import RedisProgressNotifier
 
     settings = get_settings()
     configure_logging(settings.log_level)
+    start_metrics_server(settings)
 
     async def work() -> None:
         stop = asyncio.Event()
@@ -466,10 +482,12 @@ def run_detector_closer() -> int:
     from signalops.detection.closure import WindowCloser
     from signalops.detection.detector import DetectionPolicy
     from signalops.logs import configure_logging
+    from signalops.observability.metrics import start_metrics_server
     from signalops.persistence.database import Database, create_engine
 
     settings = get_settings()
     configure_logging(settings.log_level)
+    start_metrics_server(settings)
 
     async def close() -> None:
         stop = asyncio.Event()
@@ -736,10 +754,12 @@ def run_evaluation_worker(args: argparse.Namespace) -> int:
     from signalops.config import get_settings
     from signalops.evaluation.runner import RunExecutor
     from signalops.logs import configure_logging
+    from signalops.observability.metrics import start_metrics_server
     from signalops.persistence.database import Database, create_engine
 
     settings = get_settings()
     configure_logging(settings.log_level)
+    start_metrics_server(settings)
     evaluator = settings.evaluator_settings()
 
     async def work() -> None:
@@ -942,6 +962,89 @@ def run_export_schemas(args: argparse.Namespace) -> int:
     return 0
 
 
+def _snapshot_reader(
+    settings: "Settings",
+) -> tuple[Callable[[], "Awaitable[OperationsSnapshot]"], Callable[[], "Awaitable[None]"]]:
+    """A snapshot reader on its own small engine, and its cleanup."""
+    import asyncio
+    from datetime import UTC, datetime
+
+    from confluent_kafka.admin import AdminClient
+
+    from signalops.observability.snapshot import OperationsSnapshot, database_state, kafka_lag
+    from signalops.persistence.database import Database, create_engine
+
+    engine = create_engine(settings)
+    database = Database.from_engine(engine)
+    admin = AdminClient(
+        {
+            "bootstrap.servers": settings.kafka_bootstrap_servers,
+            "client.id": "signalops-metrics-exporter",
+        }
+    )
+
+    async def read() -> OperationsSnapshot:
+        async with database.transaction() as session:
+            state = await database_state(session)
+        lag = await asyncio.to_thread(kafka_lag, admin)
+        return OperationsSnapshot(taken_at=datetime.now(UTC), database=state, kafka_lag=lag)
+
+    return read, engine.dispose
+
+
+def run_metrics_exporter() -> int:
+    import asyncio
+    import signal
+
+    from prometheus_client import CollectorRegistry, start_http_server
+
+    from signalops.config import get_settings
+    from signalops.logs import configure_logging
+    from signalops.observability.exporter import Exporter
+
+    settings = get_settings()
+    configure_logging(settings.log_level)
+    if settings.metrics_port is None:
+        print("metrics-exporter needs SIGNALOPS_METRICS_PORT", file=sys.stderr)
+        return 2
+
+    async def export() -> None:
+        stop = asyncio.Event()
+        loop = asyncio.get_running_loop()
+        for signum in (signal.SIGINT, signal.SIGTERM):
+            loop.add_signal_handler(signum, stop.set)
+        read, close = _snapshot_reader(settings)
+        registry = CollectorRegistry()
+        exporter = Exporter(read, registry, interval_seconds=settings.metrics_refresh_seconds)
+        assert settings.metrics_port is not None  # noqa: S101 - checked above
+        start_http_server(settings.metrics_port, addr=settings.metrics_host, registry=registry)
+        try:
+            await exporter.run(stop)
+        finally:
+            await close()
+
+    asyncio.run(export())
+    return 0
+
+
+def run_operations_snapshot() -> int:
+    import asyncio
+
+    from signalops.config import get_settings
+
+    settings = get_settings()
+
+    async def snapshot() -> str:
+        read, close = _snapshot_reader(settings)
+        try:
+            return (await read()).model_dump_json(indent=2)
+        finally:
+            await close()
+
+    print(asyncio.run(snapshot()))
+    return 0
+
+
 COMMANDS = {
     "api": run_api,
     "migrate": run_migrate,
@@ -954,6 +1057,8 @@ COMMANDS = {
     "dispatcher": run_dispatcher,
     "worker": run_worker,
     "detector-closer": run_detector_closer,
+    "metrics-exporter": run_metrics_exporter,
+    "operations-snapshot": run_operations_snapshot,
 }
 
 

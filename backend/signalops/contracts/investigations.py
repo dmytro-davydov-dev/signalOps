@@ -158,3 +158,79 @@ class InvestigationEvidence(ContractModel):
     evidence_cutoff_at: UtcDatetime
     items: tuple[NormalizedSignal, ...] = Field(max_length=MAX_EVIDENCE_IDS)
     unverified_signal_ids: tuple[uuid.UUID, ...] = Field(default=(), max_length=MAX_EVIDENCE_IDS)
+
+
+MAX_TRACE_BATCHES = 20
+
+
+class TraceEvidence(ContractModel):
+    """The incident's cited signals as they arrived."""
+
+    signals: NonNegativeInt
+    first_occurred_at: UtcDatetime | None
+    first_ingested_at: UtcDatetime | None
+    last_ingested_at: UtcDatetime | None
+    # Ingestion batch IDs (the envelopes' `correlation_id`), at most MAX_TRACE_BATCHES.
+    ingestion_batches: tuple[str, ...] = Field(max_length=MAX_TRACE_BATCHES)
+
+
+class TraceJob(ContractModel):
+    job_id: uuid.UUID
+    status: str
+    attempts: NonNegativeInt
+    lease_generation: NonNegativeInt
+    # Category only, for example `lease_expired`; error details stay in the job row.
+    last_error_category: str | None
+
+
+class TraceStep(ContractModel):
+    step_key: str
+    agent_role: str
+    status: str
+    attempt: NonNegativeInt
+    lease_generation: NonNegativeInt
+    started_at: UtcDatetime | None
+    completed_at: UtcDatetime | None
+    model_calls: NonNegativeInt
+    model_ms: NonNegativeInt
+    tool_calls: NonNegativeInt
+    tool_ms: NonNegativeInt
+
+
+class TraceStages(ContractModel):
+    """Wall-clock seconds between stages; null when a stage has not happened.
+
+    Replay incidents carry event-time detection, so their ingestion-to-detection
+    and detection-to-request stages are null. `model_s` and `tool_s` sum every
+    call's duration, so parallel specialist branches can make them exceed
+    `running_s`.
+    """
+
+    ingestion_to_detection_s: float | None
+    detection_to_request_s: float | None
+    request_to_first_step_s: float | None
+    running_s: float | None
+    model_s: float
+    tool_s: float
+
+
+class InvestigationTrace(ContractModel):
+    """One investigation followed back to the ingestion batches that opened its incident.
+
+    `log_fields` are the structured log fields that select this path's lines
+    across processes.
+    """
+
+    investigation_id: uuid.UUID
+    incident_id: uuid.UUID
+    replay_scope: ReplayScope
+    status: InvestigationStatus
+    workflow_version: Version
+    incident_detected_at: UtcDatetime
+    created_at: UtcDatetime
+    completed_at: UtcDatetime | None
+    evidence: TraceEvidence
+    job: TraceJob | None
+    steps: tuple[TraceStep, ...]
+    stages: TraceStages
+    log_fields: dict[str, tuple[str, ...]]

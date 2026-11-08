@@ -49,6 +49,7 @@ from signalops.gateway.pricing import (
 )
 from signalops.gateway.provider import ModelProvider, build_provider
 from signalops.gateway.types import ModelRequest, ModelResponse
+from signalops.observability.metrics import MODEL_CALL_SECONDS, MODEL_COST, MODEL_TOKENS
 from signalops.persistence.database import Database
 from signalops.persistence.repositories.jobs import JobLease, JobRepository
 from signalops.persistence.repositories.llm_calls import (
@@ -245,6 +246,17 @@ class ModelGateway:
                     provider_request_id=response.provider_request_id,
                 ),
             )
+        provider = self._provider.name
+        MODEL_CALL_SECONDS.labels(provider, "succeeded").observe(latency_ms / 1000)
+        for kind, tokens in (
+            ("input", usage.input_tokens),
+            ("output", usage.output_tokens),
+            ("cache_read", usage.cache_read_tokens),
+            ("cache_write", usage.cache_write_tokens),
+        ):
+            if tokens:
+                MODEL_TOKENS.labels(provider, kind).inc(tokens)
+        MODEL_COST.labels(provider, basis.value).inc(cost)
         logger.info(
             "model call settled",
             extra={
@@ -275,6 +287,9 @@ class ModelGateway:
             calls = LlmCallRepository(session)
             settle = calls.settle_unknown if error.ambiguous else calls.settle_failed
             await settle(reservation.call_id, error.category, latency_ms, error.provider_request_id)
+        MODEL_CALL_SECONDS.labels(
+            self._provider.name, "unknown" if error.ambiguous else "failed"
+        ).observe(latency_ms / 1000)
         logger.warning(
             "model call failed",
             extra={

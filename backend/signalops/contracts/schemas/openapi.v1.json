@@ -2140,6 +2140,111 @@
         "title": "InvestigationSummary",
         "type": "object"
       },
+      "InvestigationTrace": {
+        "additionalProperties": false,
+        "description": "One investigation followed back to the ingestion batches that opened its incident.\n\n`log_fields` are the structured log fields that select this path's lines\nacross processes.",
+        "properties": {
+          "completed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completed At"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "evidence": {
+            "$ref": "#/components/schemas/signalops__contracts__investigations__TraceEvidence"
+          },
+          "incident_detected_at": {
+            "format": "date-time",
+            "title": "Incident Detected At",
+            "type": "string"
+          },
+          "incident_id": {
+            "format": "uuid",
+            "title": "Incident Id",
+            "type": "string"
+          },
+          "investigation_id": {
+            "format": "uuid",
+            "title": "Investigation Id",
+            "type": "string"
+          },
+          "job": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TraceJob"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "log_fields": {
+            "additionalProperties": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "title": "Log Fields",
+            "type": "object"
+          },
+          "replay_scope": {
+            "maxLength": 128,
+            "minLength": 1,
+            "pattern": "^[a-z0-9][a-z0-9._:-]*$",
+            "title": "Replay Scope",
+            "type": "string"
+          },
+          "stages": {
+            "$ref": "#/components/schemas/TraceStages"
+          },
+          "status": {
+            "$ref": "#/components/schemas/InvestigationStatus"
+          },
+          "steps": {
+            "items": {
+              "$ref": "#/components/schemas/TraceStep"
+            },
+            "title": "Steps",
+            "type": "array"
+          },
+          "workflow_version": {
+            "maxLength": 64,
+            "minLength": 1,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]*$",
+            "title": "Workflow Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "investigation_id",
+          "incident_id",
+          "replay_scope",
+          "status",
+          "workflow_version",
+          "incident_detected_at",
+          "created_at",
+          "completed_at",
+          "evidence",
+          "job",
+          "steps",
+          "stages",
+          "log_fields"
+        ],
+        "title": "InvestigationTrace",
+        "type": "object"
+      },
       "InvestigationUsage": {
         "additionalProperties": false,
         "properties": {
@@ -3264,45 +3369,202 @@
         "title": "TimeWindow",
         "type": "object"
       },
-      "TraceEvidence": {
+      "TraceJob": {
         "additionalProperties": false,
-        "description": "Signals sharing a trace ID, by `occurred_at` ascending, then ID ascending.",
         "properties": {
-          "replay_scope": {
-            "maxLength": 128,
-            "minLength": 1,
-            "pattern": "^[a-z0-9][a-z0-9._:-]*$",
-            "title": "Replay Scope",
+          "attempts": {
+            "minimum": 0.0,
+            "title": "Attempts",
+            "type": "integer"
+          },
+          "job_id": {
+            "format": "uuid",
+            "title": "Job Id",
             "type": "string"
           },
-          "signals": {
-            "items": {
-              "$ref": "#/components/schemas/NormalizedSignal"
-            },
-            "maxItems": 1000,
-            "minItems": 1,
-            "title": "Signals",
-            "type": "array"
+          "last_error_category": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Error Category"
           },
-          "trace_id": {
-            "maxLength": 128,
-            "minLength": 1,
-            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]*$",
-            "title": "Trace Id",
+          "lease_generation": {
+            "minimum": 0.0,
+            "title": "Lease Generation",
+            "type": "integer"
+          },
+          "status": {
+            "title": "Status",
             "type": "string"
-          },
-          "truncated": {
-            "title": "Truncated",
-            "type": "boolean"
           }
         },
         "required": [
-          "trace_id",
-          "replay_scope",
-          "signals",
-          "truncated"
+          "job_id",
+          "status",
+          "attempts",
+          "lease_generation",
+          "last_error_category"
         ],
-        "title": "TraceEvidence",
+        "title": "TraceJob",
+        "type": "object"
+      },
+      "TraceStages": {
+        "additionalProperties": false,
+        "description": "Wall-clock seconds between stages; null when a stage has not happened.\n\nReplay incidents carry event-time detection, so their ingestion-to-detection\nand detection-to-request stages are null. `model_s` and `tool_s` sum every\ncall's duration, so parallel specialist branches can make them exceed\n`running_s`.",
+        "properties": {
+          "detection_to_request_s": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Detection To Request S"
+          },
+          "ingestion_to_detection_s": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ingestion To Detection S"
+          },
+          "model_s": {
+            "title": "Model S",
+            "type": "number"
+          },
+          "request_to_first_step_s": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Request To First Step S"
+          },
+          "running_s": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Running S"
+          },
+          "tool_s": {
+            "title": "Tool S",
+            "type": "number"
+          }
+        },
+        "required": [
+          "ingestion_to_detection_s",
+          "detection_to_request_s",
+          "request_to_first_step_s",
+          "running_s",
+          "model_s",
+          "tool_s"
+        ],
+        "title": "TraceStages",
+        "type": "object"
+      },
+      "TraceStep": {
+        "additionalProperties": false,
+        "properties": {
+          "agent_role": {
+            "title": "Agent Role",
+            "type": "string"
+          },
+          "attempt": {
+            "minimum": 0.0,
+            "title": "Attempt",
+            "type": "integer"
+          },
+          "completed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completed At"
+          },
+          "lease_generation": {
+            "minimum": 0.0,
+            "title": "Lease Generation",
+            "type": "integer"
+          },
+          "model_calls": {
+            "minimum": 0.0,
+            "title": "Model Calls",
+            "type": "integer"
+          },
+          "model_ms": {
+            "minimum": 0.0,
+            "title": "Model Ms",
+            "type": "integer"
+          },
+          "started_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Started At"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "step_key": {
+            "title": "Step Key",
+            "type": "string"
+          },
+          "tool_calls": {
+            "minimum": 0.0,
+            "title": "Tool Calls",
+            "type": "integer"
+          },
+          "tool_ms": {
+            "minimum": 0.0,
+            "title": "Tool Ms",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "step_key",
+          "agent_role",
+          "status",
+          "attempt",
+          "lease_generation",
+          "started_at",
+          "completed_at",
+          "model_calls",
+          "model_ms",
+          "tool_calls",
+          "tool_ms"
+        ],
+        "title": "TraceStep",
         "type": "object"
       },
       "ValidationError": {
@@ -3343,6 +3605,111 @@
           "type"
         ],
         "title": "ValidationError",
+        "type": "object"
+      },
+      "signalops__contracts__investigations__TraceEvidence": {
+        "additionalProperties": false,
+        "description": "The incident's cited signals as they arrived.",
+        "properties": {
+          "first_ingested_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "First Ingested At"
+          },
+          "first_occurred_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "First Occurred At"
+          },
+          "ingestion_batches": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 20,
+            "title": "Ingestion Batches",
+            "type": "array"
+          },
+          "last_ingested_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Ingested At"
+          },
+          "signals": {
+            "minimum": 0.0,
+            "title": "Signals",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "signals",
+          "first_occurred_at",
+          "first_ingested_at",
+          "last_ingested_at",
+          "ingestion_batches"
+        ],
+        "title": "TraceEvidence",
+        "type": "object"
+      },
+      "signalops__contracts__queries__TraceEvidence": {
+        "additionalProperties": false,
+        "description": "Signals sharing a trace ID, by `occurred_at` ascending, then ID ascending.",
+        "properties": {
+          "replay_scope": {
+            "maxLength": 128,
+            "minLength": 1,
+            "pattern": "^[a-z0-9][a-z0-9._:-]*$",
+            "title": "Replay Scope",
+            "type": "string"
+          },
+          "signals": {
+            "items": {
+              "$ref": "#/components/schemas/NormalizedSignal"
+            },
+            "maxItems": 1000,
+            "minItems": 1,
+            "title": "Signals",
+            "type": "array"
+          },
+          "trace_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]*$",
+            "title": "Trace Id",
+            "type": "string"
+          },
+          "truncated": {
+            "title": "Truncated",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "trace_id",
+          "replay_scope",
+          "signals",
+          "truncated"
+        ],
+        "title": "TraceEvidence",
         "type": "object"
       }
     },
@@ -4727,6 +5094,73 @@
         ]
       }
     },
+    "/v1/investigations/{investigation_id}/trace": {
+      "get": {
+        "description": "The investigation's path from the ingestion batches behind its incident to its steps.\n\nStage durations separate pipeline delay (ingestion to detection to request)\nfrom queueing and from time spent in model calls and tool reads.",
+        "operationId": "get_investigation_trace_v1_investigations__investigation_id__trace_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "investigation_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Investigation Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Replay dataset; `live` by default",
+            "in": "query",
+            "name": "replay_scope",
+            "required": false,
+            "schema": {
+              "default": "live",
+              "description": "Replay dataset; `live` by default",
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^[a-z0-9][a-z0-9._:-]*$",
+              "title": "Replay Scope",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvestigationTrace"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "description": "No such investigation"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "OperatorBearer": []
+          }
+        ],
+        "summary": "Get Investigation Trace",
+        "tags": [
+          "investigations"
+        ]
+      }
+    },
     "/v1/services/{service_id}/graph": {
       "get": {
         "description": "Dependencies and dependents of the service as of a time, up to `hops` away.\n\nA service known to the catalog but not yet observed has an empty neighborhood.",
@@ -5171,7 +5605,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/TraceEvidence"
+                  "$ref": "#/components/schemas/signalops__contracts__queries__TraceEvidence"
                 }
               }
             },

@@ -57,6 +57,7 @@ from signalops.contracts.tools import (
 from signalops.contracts.tools import ToolResult as ToolResultModel
 from signalops.contracts.workflow import ToolCallStatus, ToolName
 from signalops.gateway.types import ToolDefinition
+from signalops.observability.metrics import TOOL_CALL_SECONDS
 from signalops.persistence.database import Database
 from signalops.persistence.models import Signal
 from signalops.persistence.repositories.evidence import EvidenceRepository, SignalFilter
@@ -477,9 +478,12 @@ class ToolExecutor:
                 None if failed else f"sha256:{hashlib.sha256(content.encode()).hexdigest()}",
                 elapsed,
             )
+        TOOL_CALL_SECONDS.labels(tool.value, "failed" if failed else "succeeded").observe(
+            elapsed / 1000
+        )
         logger.info(
             "tool call finished",
-            extra={"tool": str(tool), "failed": failed, "duration_ms": elapsed},
+            extra={"tool": str(tool), "failed": failed, "duration_ms": elapsed, "step": step_key},
         )
         return ToolOutcome(tool, content, failed, call_key)
 

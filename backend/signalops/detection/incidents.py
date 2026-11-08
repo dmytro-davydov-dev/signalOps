@@ -38,6 +38,7 @@ incident an operator resolved, and the next healthy window resolves one an
 operator reopened if its services already recovered.
 """
 
+import logging
 import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
@@ -58,11 +59,15 @@ from signalops.contracts.events import (
 from signalops.contracts.incidents import MAX_INCIDENT_EVIDENCE
 from signalops.contracts.workflow import IncidentServiceRole, IncidentSeverity, IncidentStatus
 from signalops.detection.rules import DetectionRule, RuleKind, Window
+from signalops.observability.metrics import DETECTION_LATENCY, INCIDENTS_OPENED
+from signalops.persistence.database import on_commit
 from signalops.persistence.models import DetectionSample, Incident
 from signalops.persistence.repositories.detection import DetectionRepository, SeriesKey
 from signalops.persistence.repositories.incidents import IncidentRepository, NewIncident
 from signalops.persistence.repositories.reliability import OutboxRepository
 from signalops.persistence.repositories.scope import EvidenceScope
+
+logger = logging.getLogger(__name__)
 
 # Fixed namespace: a change's event ID derives from the incident and its version.
 INCIDENT_EVENT_NAMESPACE: Final = uuid.UUID("3e7a9d52-6c14-4b8f-a0d3-5f1c8e2b7a96")
@@ -229,6 +234,13 @@ async def record_breach(session: AsyncSession, policy: IncidentPolicy, breach: B
         await DetectionRepository(session).link_trigger(breach.trigger_id, incident_id)
 
     if incident is None:
+        await _count_opened(
+            session, incidents, incident_id, live=scope.replay_scope == LIVE_REPLAY_SCOPE
+        )
+        logger.info(
+            "incident opened",
+            extra={"incident_id": str(incident_id), "rule": rule.id, "service": service.name},
+        )
         await _publish(
             session,
             scope,
@@ -245,6 +257,20 @@ async def record_breach(session: AsyncSession, policy: IncidentPolicy, breach: B
             )
     else:
         await _extend(session, scope, breach, incident, grew=joined or cited > 0)
+
+
+async def _count_opened(
+    session: AsyncSession, incidents: IncidentRepository, incident_id: uuid.UUID, *, live: bool
+) -> None:
+    """Count the incident once committed; for live ones, time since its first evidence arrived."""
+    earliest = await incidents.earliest_evidence_ingested_at(incident_id) if live else None
+
+    def count() -> None:
+        INCIDENTS_OPENED.labels("live" if live else "replay").inc()
+        if earliest is not None:
+            DETECTION_LATENCY.observe(max(0.0, (datetime.now(UTC) - earliest).total_seconds()))
+
+    on_commit(session, count)
 
 
 async def record_healthy(

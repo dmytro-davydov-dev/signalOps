@@ -128,7 +128,7 @@ Consumers and the outbox publisher log one structured line every `SIGNALOPS_STRE
 | `outbox stats` | `interval_seconds`, `outbox_published`, `outbox_failed`, `outbox_quarantined`, `outbox_deferred`, `outbox_pending` (all unpublished rows), `outbox_pending_quarantined`, `outbox_oldest_age_seconds` |
 
 - Lag is the high watermark minus the group's committed offset, queried from the broker at report time; without a committed offset the low watermark is used. It is `null` when the broker does not answer in time. A rising `lag_total` or `outbox_oldest_age_seconds` across lines is backlog growth.
-- These are logs, not a metrics endpoint. Exported metrics and dashboards are P11-T01.
+- The same counts are exported as Prometheus metrics, and lag is also read from the broker by `metrics-exporter` (docs/observability.md).
 
 ## What survives what
 

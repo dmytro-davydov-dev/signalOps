@@ -52,6 +52,12 @@ class Settings(BaseSettings):
     retry_max_delay_ms: int = Field(default=30_000, ge=10, le=300_000)
     # How often consumers and the outbox publisher log counts, lag, and backlog.
     streaming_stats_interval_ms: int = Field(default=30_000, ge=1_000, le=3_600_000)
+    # Prometheus metrics listener for this process. Unset: no listener (tests,
+    # ordinary local runs). Compose sets it on the private network only.
+    metrics_port: int | None = Field(default=None, ge=1, le=65535)
+    metrics_host: str = "0.0.0.0"  # noqa: S104 - container listener, never published.
+    # How often `metrics-exporter` reads PostgreSQL and Kafka for its gauges.
+    metrics_refresh_seconds: float = Field(default=15.0, ge=1, le=300)
 
     api_host: str = "0.0.0.0"  # noqa: S104 - container listener; Compose publishes on loopback.
     api_port: int = Field(default=8000, ge=1, le=65535)

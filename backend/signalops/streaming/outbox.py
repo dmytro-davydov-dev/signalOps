@@ -34,6 +34,7 @@ from collections.abc import Callable, Sequence
 from dataclasses import asdict, dataclass
 from typing import Protocol
 
+from signalops.observability.metrics import OUTBOX_EVENTS
 from signalops.persistence.database import Database
 from signalops.persistence.models import OutboxEvent
 from signalops.persistence.repositories.reliability import OutboxRepository
@@ -173,6 +174,14 @@ class OutboxPublisher:
             failed += len(undelivered)
 
         summary = PublishSummary(published, failed, quarantined, deferred)
+        for outcome, count in (
+            ("published", published),
+            ("failed", failed),
+            ("quarantined", quarantined),
+            ("deferred", deferred),
+        ):
+            if count:
+                OUTBOX_EVENTS.labels(outcome).inc(count)
         self._totals += summary
         if rows:
             logger.info(

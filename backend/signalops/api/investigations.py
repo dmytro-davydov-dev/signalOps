@@ -50,6 +50,7 @@ from signalops.contracts.investigations import (
     InvestigationEvidence,
     InvestigationRequest,
     InvestigationSummary,
+    InvestigationTrace,
     InvestigationUsage,
     InvestigationView,
 )
@@ -64,6 +65,7 @@ from signalops.persistence.repositories.investigations import InvestigationRepos
 from signalops.persistence.repositories.llm_calls import LlmCallRepository, UsageTotals
 from signalops.persistence.repositories.progress import ProgressRepository
 from signalops.persistence.repositories.scope import EvidenceScope
+from signalops.persistence.repositories.trace import TraceRepository
 from signalops.wakeups import subscribe
 
 logger = logging.getLogger(__name__)
@@ -215,6 +217,29 @@ async def get_investigation(
             return _view(row, await LlmCallRepository(session).usage_of(row.id))
     except SQLAlchemyError as error:
         raise ReadFailed("investigations/detail", error) from None
+
+
+@router.get("/investigations/{investigation_id}/trace", responses=NOT_FOUND)
+async def get_investigation_trace(
+    request: Request,
+    workspace_id: OperatorWorkspace,
+    investigation_id: Annotated[uuid.UUID, Path()],
+    replay_scope: ReplayScopeQuery = LIVE_REPLAY_SCOPE,
+) -> InvestigationTrace:
+    """The investigation's path from the ingestion batches behind its incident to its steps.
+
+    Stage durations separate pipeline delay (ingestion to detection to request)
+    from queueing and from time spent in model calls and tool reads.
+    """
+    scope = EvidenceScope(workspace_id, replay_scope)
+    try:
+        async with read_database(request).transaction() as session:
+            trace = await TraceRepository(session).investigation(scope, investigation_id)
+    except SQLAlchemyError as error:
+        raise ReadFailed("investigations/trace", error) from None
+    if trace is None:
+        raise _not_found()
+    return trace
 
 
 @router.get("/investigations/{investigation_id}/evidence", responses=NOT_FOUND)
