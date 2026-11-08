@@ -9,10 +9,23 @@ a fixed tool set, and a typed output (`contracts/roles.py`):
   with only their own tools and brief, and submit findings that cite what they read.
 - The synthesizer reads the specialists' reports, not their evidence or tools, and
   ranks hypotheses that may only cite evidence a specialist cited.
-- The verifier reads the leading hypothesis and the cited signals, which code reads
-  again from PostgreSQL, and judges whether each citation supports the claim.
+- The verifier reads the leading hypothesis, the contradictions, and the cited signals,
+  which code reads again from PostgreSQL, and judges whether each citation supports
+  the claim. It may ask for one follow-up round: one specialist looks again with its
+  question, then a second verification gives the final verdict.
 - `conclude` keeps only the citations the verifier judged supporting, checks them
   against scope and cutoff once more, and names the service from the catalog.
+
+**Contradictions.** Code compares the specialists' findings and records every pair of
+roles naming different failing services, whatever the synthesizer writes. The
+diagnosis carries the synthesizer's contradictions and code's, diagnosed or not.
+
+**One follow-up, at most.** The first verification is offered a follow-up only when
+`plan` left it turns and one more specialist call and one more verification call fit
+the remaining budget and deadline at their maximum. `follow_up` checks again before it
+runs, holding back one verification call. The second verification is never offered
+one, and code refuses a `needs_follow_up` verdict that was not offered, so no verdict
+can start a loop: there is one `follow_up` node in the workflow.
 
 **Checks in code.** A specialist cannot cite a signal or runbook its own tool results
 did not return. The synthesizer cannot cite evidence no specialist cited, or credit a
@@ -37,6 +50,8 @@ from collections.abc import Collection, Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Final
 
+from sqlalchemy import func, select
+
 from signalops.agents.agent_loop import AgentLoop, Reads, RoleTask
 from signalops.agents.briefs import LOAD_INCIDENT
 from signalops.agents.findings import verify_findings
@@ -49,18 +64,22 @@ from signalops.contracts.common import ContractModel
 from signalops.contracts.diagnosis import (
     MAX_LIST_ITEMS,
     Alternative,
+    Contradiction,
     Diagnosis,
     DiagnosisStatus,
     RootCause,
 )
 from signalops.contracts.evidence import SignalKind
 from signalops.contracts.roles import (
+    MAX_CONTRADICTIONS,
     MAX_PACKET_SIGNALS,
     MAX_PROVENANCE_TOOL_CALLS,
     SPECIALIST_ROLES,
     AgentEnding,
     BranchPlan,
     CitedSignal,
+    FollowUpOutput,
+    Hypothesis,
     IncidentFacts,
     InvestigationPlan,
     Provenance,
@@ -82,7 +101,7 @@ from signalops.gateway.gateway import BudgetLimit
 from signalops.gateway.pricing import maximum_cost_of, price_of
 from signalops.gateway.types import ToolDefinition
 from signalops.persistence.database import Database
-from signalops.persistence.models import Signal
+from signalops.persistence.models import Investigation, Signal
 from signalops.persistence.repositories.catalog import CatalogRepository
 from signalops.persistence.repositories.evidence import EvidenceRepository
 from signalops.persistence.repositories.incidents import IncidentRepository
@@ -98,6 +117,13 @@ SYNTHESIS_TURNS: Final = 2
 VERIFICATION_TURNS: Final = 2
 # Synthesis and verification, one call each: the least that can finish.
 DOWNSTREAM_CALLS: Final = 2
+# A follow-up round: one specialist call and one final verification call at least.
+FOLLOW_UP_CALLS: Final = 2
+FOLLOW_UP_TURNS: Final = 3
+# A tool call and a submission.
+MIN_FOLLOW_UP_TURNS: Final = 2
+# Findings naming different services at this confidence or more are a contradiction.
+CONFLICT_CONFIDENCE: Final = 0.3
 # A bound on a downstream request: bounded reports, or the bounded evidence packet.
 DOWNSTREAM_INPUT_BYTES: Final = 48 * 1024
 MAX_PACKET_BYTES: Final = 16 * 1024
@@ -184,10 +210,11 @@ that reported findings.
 counts against a hypothesis. Never hide one to make the answer cleaner.
 - If no hypothesis is supported, set status to insufficient_evidence and list what is missing."""
 
-VERIFIER_PROMPT_VERSION: Final = "verifier-v1"
+VERIFIER_PROMPT_VERSION: Final = "verifier-v2"
 VERIFIER_PROMPT: Final = f"""\
 You check a leading incident hypothesis against its cited evidence. The user message \
-is a JSON brief with the synthesis and the cited signals as stored. You have no tools.
+is a JSON brief with the synthesis, its contradictions, and the cited signals as \
+stored. You have no tools.
 
 {UNTRUSTED}
 
@@ -195,7 +222,13 @@ Call {SUBMIT_VERIFICATION} exactly once:
 - Judge every cited signal once: does it support the hypothesis as stated, on its own text?
 - A signal listed as unreadable cannot support anything.
 - Set verdict to supported only if the supporting signals carry the claim; otherwise \
-unsupported, listing what is missing. Contradictions in the synthesis count against it."""
+unsupported, listing what is missing. Contradictions count against the hypothesis \
+until the evidence resolves them.
+- Only if follow_up_allowed is true, and one specialist could settle what is open, \
+you may set verdict to needs_follow_up with a follow_up naming that specialist's role \
+and a short question. This is offered once; the next verdict is final.
+- If the brief has follow_up findings, the round has run: judge its citations too and \
+give a final verdict."""
 
 ROLE_ENDINGS: Final[Mapping[AgentEnding, str]] = {
     AgentEnding.NO_TURNS: "The plan left this role no model turns",
@@ -291,19 +324,28 @@ async def _unknown_services(
 class TurnPlan:
     per_branch: int
     synthesis: int
+    # For each verification: the first, and the second after a follow-up.
     verification: int
     follow_up: int
 
 
 def allot_turns(available: int, branches: int) -> TurnPlan:
-    """Downstream roles first, so specialists cannot leave nothing to finish with."""
+    """Synthesis and both verifications first, then branches, then the optional follow-up.
+
+    So specialists cannot leave nothing to finish with, and a follow-up never costs a
+    branch its turns.
+    """
     left = max(available, 0)
     synthesis = min(SYNTHESIS_TURNS, left)
     left -= synthesis
-    verification = min(VERIFICATION_TURNS, left)
-    left -= verification
+    verification = min(VERIFICATION_TURNS, left // 2)
+    left -= 2 * verification
     per_branch = min(MAX_BRANCH_TURNS, left // branches) if branches else 0
-    return TurnPlan(per_branch, synthesis, verification, 0)
+    left -= per_branch * branches
+    follow_up = min(FOLLOW_UP_TURNS, left)
+    return TurnPlan(
+        per_branch, synthesis, verification, follow_up if follow_up >= MIN_FOLLOW_UP_TURNS else 0
+    )
 
 
 def downstream_call_reserve(runtime: AgentRuntime) -> int:
@@ -463,11 +505,54 @@ def check_synthesis(
     return None
 
 
+def _label(role: AgentRole) -> str:
+    return role.value.replace("_", " ")
+
+
+def detect_conflicts(
+    findings: Sequence[SpecialistFindings], names: Mapping[uuid.UUID, str]
+) -> tuple[Contradiction, ...]:
+    """Pairs of roles whose findings name different services as failing.
+
+    Code finds these, so a contradiction stays visible whatever the synthesizer writes.
+    """
+    causes = [
+        (stored.role, finding, service)
+        for stored in findings
+        for finding in stored.report.findings
+        if (service := finding.service_id) is not None
+        and finding.failure_type is not None
+        and finding.confidence >= CONFLICT_CONFIDENCE
+    ]
+    conflicts: list[Contradiction] = []
+    for index, (role_a, a, service_a) in enumerate(causes):
+        for role_b, b, service_b in causes[index + 1 :]:
+            if role_a is role_b or service_a == service_b:
+                continue
+            conflicts.append(
+                Contradiction(
+                    description=(
+                        f"The {_label(role_a)} points to {names.get(service_a, 'one service')} "
+                        f"({a.failure_type}, confidence {a.confidence:.2f}); the {_label(role_b)} "
+                        f"points to {names.get(service_b, 'another')} ({b.failure_type}, "
+                        f"confidence {b.confidence:.2f})."
+                    ),
+                    roles=(role_a, role_b),
+                    evidence_signal_ids=tuple(
+                        dict.fromkeys((*a.evidence_signal_ids[:5], *b.evidence_signal_ids[:5]))
+                    ),
+                )
+            )
+    return tuple(conflicts[:MAX_CONTRADICTIONS])
+
+
 async def synthesize(context: NodeContext) -> SynthesisOutput:
     runtime = _runtime(context)
     run = context.run
     brief = context.output(LOAD_INCIDENT)
     findings = specialist_findings(context)
+    names = {service.service_id: service.name for service in brief.services}
+    detected = detect_conflicts(findings, names)
     missing = _capped(item for f in findings for item in f.report.missing_evidence)
     if not any(f.report.findings for f in findings):
         report = SynthesisReport(
@@ -480,6 +565,7 @@ async def synthesize(context: NodeContext) -> SynthesisOutput:
             provenance=_provenance(
                 AgentRole.SYNTHESIZER, SYNTHESIZER_PROMPT_VERSION, runtime, AgentEnding.SKIPPED, 0
             ),
+            detected_contradictions=detected,
         )
 
     async def check(synthesis: SynthesisReport, _reads: Reads) -> str | None:
@@ -524,6 +610,7 @@ async def synthesize(context: NodeContext) -> SynthesisOutput:
             result.ended_by,
             result.turns,
         ),
+        detected_contradictions=detected,
     )
 
 
@@ -579,15 +666,21 @@ async def cited_signals(
 
 
 def check_verification(
-    verification: VerificationReport, cited: Sequence[uuid.UUID], unreadable: Collection[uuid.UUID]
+    verification: VerificationReport,
+    cited: Sequence[uuid.UUID],
+    unreadable: Collection[uuid.UUID],
+    *,
+    follow_up_allowed: bool = False,
 ) -> str | None:
     checked = [check.signal_id for check in verification.citation_checks]
     if set(checked) - set(cited):
-        return "citation_checks names signals the leading hypothesis does not cite."
+        return "citation_checks names signals that are not cited for the leading hypothesis."
     if missing := set(cited) - set(checked):
         return f"citation_checks misses {len(missing)} cited signals. Check each once."
     if any(c.supports and c.signal_id in unreadable for c in verification.citation_checks):
         return "An unreadable signal cannot support the hypothesis."
+    if verification.verdict is Verdict.NEEDS_FOLLOW_UP and not follow_up_allowed:
+        return "A follow-up round is not available. Give a final verdict: supported or unsupported."
     return None
 
 
@@ -595,26 +688,70 @@ def unsupported(reason: Sequence[str]) -> VerificationReport:
     return VerificationReport(verdict=Verdict.UNSUPPORTED, missing_evidence=_capped(reason))
 
 
-async def verify(context: NodeContext) -> VerificationOutput:
+@dataclass(frozen=True)
+class Room:
+    """What is left of an investigation's budget and deadline, by PostgreSQL's clock."""
+
+    budget_microusd: int
+    seconds: float
+
+
+async def room_left(database: Database, investigation_id: uuid.UUID) -> Room:
+    async with database.transaction() as session:
+        budget, seconds = (
+            await session.execute(
+                select(
+                    Investigation.budget_microusd
+                    - Investigation.reserved_microusd
+                    - Investigation.spent_microusd,
+                    func.extract("epoch", Investigation.deadline_at - func.clock_timestamp()),
+                ).where(Investigation.id == investigation_id)
+            )
+        ).one()
+    return Room(int(budget), float(seconds))
+
+
+def follow_up_fits(room: Room, *, turns: int, call_reserve: int, call_seconds: float) -> bool:
+    """One follow-up call and one final verification call must fit, at their maximum.
+
+    Only the first call of each is covered; a longer round may stop on its share.
+    """
+    return (
+        turns >= MIN_FOLLOW_UP_TURNS
+        and room.budget_microusd >= FOLLOW_UP_CALLS * call_reserve
+        and room.seconds >= FOLLOW_UP_CALLS * call_seconds
+    )
+
+
+async def _follow_up_room(context: NodeContext, runtime: AgentRuntime) -> bool:
+    room = await room_left(context.database, context.run.investigation_id)
+    return follow_up_fits(
+        room,
+        turns=context.output(PLAN).follow_up_turns,
+        call_reserve=downstream_call_reserve(runtime),
+        call_seconds=runtime.gateway.request_timeout_seconds,
+    )
+
+
+async def run_verifier(
+    context: NodeContext,
+    *,
+    citations: tuple[uuid.UUID, ...],
+    follow_up_allowed: bool,
+    follow_up: SpecialistFindings | None,
+) -> VerificationOutput:
     runtime = _runtime(context)
-    synthesis = context.output(SYNTHESIZE).report
-    leading = synthesis.leading
-    if leading is None:
-        return VerificationOutput(
-            report=unsupported(synthesis.missing_evidence or ("No hypothesis to verify",)),
-            provenance=_provenance(
-                AgentRole.VERIFIER, VERIFIER_PROMPT_VERSION, runtime, AgentEnding.SKIPPED, 0
-            ),
-        )
+    synthesis_output = context.output(SYNTHESIZE)
     scope = _scope(context)
-    citations = leading.evidence_signal_ids
     packet, unreadable = await cited_signals(
         context.database, scope, runtime.tools.redactor, citations
     )
     brief = context.output(LOAD_INCIDENT)
 
     async def check(verification: VerificationReport, _reads: Reads) -> str | None:
-        return check_verification(verification, citations, unreadable)
+        return check_verification(
+            verification, citations, unreadable, follow_up_allowed=follow_up_allowed
+        )
 
     task = RoleTask(
         prompt_version=VERIFIER_PROMPT_VERSION,
@@ -622,9 +759,12 @@ async def verify(context: NodeContext) -> VerificationOutput:
         brief=VerificationBrief(
             incident=facts_of(brief),
             services=brief.services,
-            synthesis=synthesis,
+            synthesis=synthesis_output.report,
+            contradictions=synthesis_output.contradictions(),
             cited=packet,
             unreadable_signal_ids=unreadable,
+            follow_up_allowed=follow_up_allowed,
+            follow_up=follow_up,
         ).model_dump_json(),
         tools=(),
         submit=VERIFICATION_SUBMIT,
@@ -641,10 +781,101 @@ async def verify(context: NodeContext) -> VerificationOutput:
         provenance=_provenance(
             AgentRole.VERIFIER, VERIFIER_PROMPT_VERSION, runtime, result.ended_by, result.turns
         ),
+        follow_up_allowed=follow_up_allowed,
+    )
+
+
+def _skipped_verification(context: NodeContext, reason: Sequence[str]) -> VerificationOutput:
+    return VerificationOutput(
+        report=unsupported(reason),
+        provenance=_provenance(
+            AgentRole.VERIFIER,
+            VERIFIER_PROMPT_VERSION,
+            _runtime(context),
+            AgentEnding.SKIPPED,
+            0,
+        ),
+    )
+
+
+async def verify(context: NodeContext) -> VerificationOutput:
+    runtime = _runtime(context)
+    synthesis = context.output(SYNTHESIZE).report
+    leading = synthesis.leading
+    if leading is None:
+        return _skipped_verification(
+            context, synthesis.missing_evidence or ("No hypothesis to verify",)
+        )
+    return await run_verifier(
+        context,
+        citations=leading.evidence_signal_ids,
+        follow_up_allowed=await _follow_up_room(context, runtime),
+        follow_up=None,
     )
 
 
 VERIFY: Final = Node("verify", AgentRole.VERIFIER, VerificationOutput, verify)
+
+
+# --- The one follow-up round ---
+
+
+def _not_run(reason: str) -> FollowUpOutput:
+    return FollowUpOutput(ran=False, reason=reason)
+
+
+async def follow_up(context: NodeContext) -> FollowUpOutput:
+    """Run the specialist the verifier asked for, once, if it still fits."""
+    runtime = _runtime(context)
+    verification = context.output(VERIFY)
+    request = verification.report.follow_up
+    if request is None:
+        return _not_run("The verifier gave a final verdict")
+    if not verification.follow_up_allowed:
+        # The check refuses this, so only a forged stored output gets here.
+        return _not_run("No follow-up round was offered")
+    if not await _follow_up_room(context, runtime):
+        return _not_run("The budget or deadline left no room for a follow-up round")
+    plan = context.output(PLAN)
+    spec = SPECIALIST_BY_ROLE[request.role]
+    brief = plan.branch(request.role).brief.model_copy(update={"question": request.question})
+    # Whatever is left, less one final verification call.
+    budget = BudgetLimit(held_back=downstream_call_reserve(runtime))
+    findings = await run_specialist(context, spec, brief, plan.follow_up_turns, budget)
+    return FollowUpOutput(ran=True, findings=findings)
+
+
+FOLLOW_UP: Final = Node("follow_up", AgentRole.COORDINATOR, FollowUpOutput, follow_up)
+
+
+def follow_up_citations(leading: Hypothesis, round_: FollowUpOutput) -> tuple[uuid.UUID, ...]:
+    """The follow-up's citations about the leading service, after the leading ones."""
+    if round_.findings is None:
+        return ()
+    added = (
+        signal_id
+        for finding in round_.findings.report.findings
+        if finding.service_id == leading.service_id
+        for signal_id in finding.evidence_signal_ids
+    )
+    return tuple(dict.fromkeys((*leading.evidence_signal_ids, *added)))[:MAX_PACKET_SIGNALS]
+
+
+async def reverify(context: NodeContext) -> VerificationOutput:
+    """The final verdict after a follow-up round. It can never ask for another."""
+    round_ = context.output(FOLLOW_UP)
+    leading = context.output(SYNTHESIZE).report.leading
+    if not round_.ran or leading is None:
+        return _skipped_verification(context, (round_.reason or "No follow-up round ran",))
+    return await run_verifier(
+        context,
+        citations=follow_up_citations(leading, round_),
+        follow_up_allowed=False,
+        follow_up=round_.findings,
+    )
+
+
+REVERIFY: Final = Node("reverify", AgentRole.VERIFIER, VerificationOutput, reverify)
 
 
 # --- Conclusion ---
@@ -652,38 +883,61 @@ VERIFY: Final = Node("verify", AgentRole.VERIFIER, VerificationOutput, verify)
 
 def _abstain(
     context: NodeContext,
-    synthesis: SynthesisReport,
+    synthesis: SynthesisOutput,
     missing: Sequence[str],
     limitations: Sequence[str] = (),
 ) -> Diagnosis:
     return Diagnosis(
         status=DiagnosisStatus.INSUFFICIENT_EVIDENCE,
-        summary=synthesis.summary,
+        summary=synthesis.report.summary,
         root_cause=None,
-        limitations=_capped((*synthesis.limitations, *limitations)),
+        limitations=_capped((*synthesis.report.limitations, *limitations)),
         missing_evidence=_capped(missing) or ("The evidence did not support a cause",),
+        contradictions=synthesis.contradictions()[:MAX_LIST_ITEMS],
         workflow_version=context.run.workflow_version,
     )
 
 
+def final_verification(context: NodeContext) -> tuple[VerificationReport, FollowUpOutput]:
+    """The second verification if a follow-up round ran, else the first."""
+    round_ = context.output(FOLLOW_UP)
+    if round_.ran:
+        return context.output(REVERIFY).report, round_
+    return context.output(VERIFY).report, round_
+
+
 async def conclude_verified(context: NodeContext) -> Diagnosis:
     run = context.run
-    synthesis = context.output(SYNTHESIZE).report
-    verification = context.output(VERIFY).report
+    synthesis_output = context.output(SYNTHESIZE)
+    synthesis = synthesis_output.report
+    verification, round_ = final_verification(context)
     leading = synthesis.leading
     if leading is None:
-        return _abstain(context, synthesis, synthesis.missing_evidence)
+        return _abstain(context, synthesis_output, synthesis.missing_evidence)
+    if verification.verdict is Verdict.NEEDS_FOLLOW_UP:
+        # Offered, but the round could not run: no final verdict was given.
+        return _abstain(
+            context,
+            synthesis_output,
+            (round_.reason or "The follow-up round did not run",),
+            verification.limitations,
+        )
     if verification.verdict is not Verdict.SUPPORTED:
-        return _abstain(context, synthesis, verification.missing_evidence, verification.limitations)
+        return _abstain(
+            context, synthesis_output, verification.missing_evidence, verification.limitations
+        )
     # Checked again here, because this is the last step before the outcome is stored.
-    findings = specialist_findings(context)
+    findings = [*specialist_findings(context)]
+    if round_.findings is not None:
+        findings.append(round_.findings)
     specialist_cited = frozenset().union(*(f.report.cited() for f in findings))
     supporting = set(verification.supporting())
-    kept = tuple(
-        i for i in leading.evidence_signal_ids if i in supporting and i in specialist_cited
-    )
+    candidates = follow_up_citations(leading, round_) or leading.evidence_signal_ids
+    kept = tuple(i for i in candidates if i in supporting and i in specialist_cited)
     if not kept:
-        return _abstain(context, synthesis, ("No cited signal supported the leading hypothesis",))
+        return _abstain(
+            context, synthesis_output, ("No cited signal supported the leading hypothesis",)
+        )
     proposal = ProposedDiagnosis(
         status=DiagnosisStatus.DIAGNOSED,
         summary=synthesis.summary,
@@ -695,15 +949,17 @@ async def conclude_verified(context: NodeContext) -> Diagnosis:
         ),
     )
     if await verify_findings(context.database, _scope(context), proposal) is not None:
-        return _abstain(context, synthesis, ("The cited evidence could not be verified",))
+        return _abstain(context, synthesis_output, ("The cited evidence could not be verified",))
     services = {h.service_id for h in synthesis.hypotheses}
     async with context.database.transaction() as session:
         found = await CatalogRepository(session).get_services(
             run.scope.workspace_id, list(services)
         )
     names = {service.id: service.name for service in found}
-    dropped = len(leading.evidence_signal_ids) - len(kept)
+    dropped = len(candidates) - len(kept)
     notes = [f"The verifier did not accept {dropped} cited signals"] if dropped else []
+    if round_.ran:
+        notes.append("One follow-up round ran before the final verdict")
     return Diagnosis(
         status=DiagnosisStatus.DIAGNOSED,
         summary=synthesis.summary,
@@ -723,11 +979,20 @@ async def conclude_verified(context: NodeContext) -> Diagnosis:
         )[:MAX_LIST_ITEMS],
         suggested_actions=synthesis.suggested_actions,
         limitations=_capped((*synthesis.limitations, *verification.limitations, *notes)),
+        contradictions=synthesis_output.contradictions()[:MAX_LIST_ITEMS],
         workflow_version=run.workflow_version,
     )
 
 
 CONCLUDE_VERIFIED: Final = Node("conclude", AgentRole.SYNTHESIZER, Diagnosis, conclude_verified)
 
-V3_NODES: Final = (LOAD_INCIDENT, PLAN, Parallel(SPECIALIST_NODES), SYNTHESIZE, VERIFY)
+V3_NODES: Final = (
+    LOAD_INCIDENT,
+    PLAN,
+    Parallel(SPECIALIST_NODES),
+    SYNTHESIZE,
+    VERIFY,
+    FOLLOW_UP,
+    REVERIFY,
+)
 assert {spec.role for spec in SPECIALISTS} == set(SPECIALIST_ROLES)  # noqa: S101

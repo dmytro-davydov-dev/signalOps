@@ -37,6 +37,8 @@ V3_STEPS = [
     "dependency",
     "synthesize",
     "verify",
+    "follow_up",
+    "reverify",
     "conclude",
 ]
 

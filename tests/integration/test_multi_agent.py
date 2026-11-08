@@ -59,7 +59,7 @@ ROLE_TOOLS = {
     "deployment-v1": {"get_deployments", "query_logs", "submit_findings"},
     "dependency-v1": {"get_service_dependencies", "retrieve_runbooks", "submit_findings"},
     "synthesizer-v1": {"submit_synthesis"},
-    "verifier-v1": {"submit_verification"},
+    "verifier-v2": {"submit_verification"},
 }
 
 
@@ -96,6 +96,8 @@ async def test_specialists_synthesis_and_verification_name_the_faulty_service(
         "dependency": AgentRole.DEPENDENCY_INVESTIGATOR,
         "synthesize": AgentRole.SYNTHESIZER,
         "verify": AgentRole.VERIFIER,
+        "follow_up": AgentRole.COORDINATOR,
+        "reverify": AgentRole.VERIFIER,
         "conclude": AgentRole.SYNTHESIZER,
     }
     assert {step.status for step in steps.values()} == {StepStatus.COMPLETED}
@@ -181,8 +183,8 @@ async def test_each_role_receives_only_its_own_context_and_tools(database: db.Da
 
     steps = await steps_by_key(database, investigation_id)
     plan = InvestigationPlan.model_validate(steps["plan"].output)
-    # 40 steps less 8 nodes: 2 synthesis and 2 verification turns, 5 per branch at most.
-    assert (plan.synthesis_turns, plan.verification_turns) == (2, 2)
+    # 40 steps less 10 nodes: synthesis and verifications first, 5 per branch, 3 to follow up.
+    assert (plan.synthesis_turns, plan.verification_turns, plan.follow_up_turns) == (2, 2, 3)
     assert {branch.max_turns for branch in plan.branches} == {5}
     assert sum(branch.budget_share_microusd for branch in plan.branches) <= (
         5_000_000 - plan.downstream_reserve_microusd
@@ -300,7 +302,7 @@ async def test_the_synthesizer_cannot_cite_evidence_no_specialist_cited(
     # No hypothesis, so the verifier had nothing to check and made no call.
     verification = VerificationOutput.model_validate(steps["verify"].output)
     assert verification.provenance.ended_by is AgentEnding.SKIPPED
-    assert "verifier-v1" not in {r.prompt_version for r in provider.requests}
+    assert "verifier-v2" not in {r.prompt_version for r in provider.requests}
 
 
 async def test_citations_the_verifier_rejects_never_reach_the_diagnosis(
@@ -315,7 +317,7 @@ async def test_citations_the_verifier_rejects_never_reach_the_diagnosis(
             check["supports"] = False
         return _submitting("submit_verification", payload)
 
-    provider = FakeProvider(responder=roles_with({"verifier-v1": verifier}))
+    provider = FakeProvider(responder=roles_with({"verifier-v2": verifier}))
     await run_once(database, v3_engine(database, provider))
 
     steps = await steps_by_key(database, investigation_id)
@@ -337,7 +339,7 @@ async def test_the_verifier_must_check_every_cited_signal(database: db.Database)
         payload["citation_checks"] = payload["citation_checks"][:1]
         return _submitting("submit_verification", payload)
 
-    provider = FakeProvider(responder=roles_with({"verifier-v1": verifier}))
+    provider = FakeProvider(responder=roles_with({"verifier-v2": verifier}))
     await run_once(database, v3_engine(database, provider))
 
     row = await row_of(database, investigation_id)
@@ -380,8 +382,8 @@ async def test_no_findings_skip_synthesis_and_verification_calls(database: db.Da
 
 async def test_too_few_steps_leave_branches_no_turns_and_abstain(database: db.Database) -> None:
     scope, incident_id = await timeout_incident(database, 9109)
-    # 8 nodes leave 4 turns, all for synthesis and verification.
-    investigation_id = await queued_v3(database, scope, incident_id, max_steps=12)
+    # 10 nodes leave 4 turns, all for synthesis and the two verifications.
+    investigation_id = await queued_v3(database, scope, incident_id, max_steps=14)
     provider = FakeProvider(responder=roles_with())
 
     await run_once(database, v3_engine(database, provider))

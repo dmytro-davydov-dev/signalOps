@@ -28,6 +28,7 @@ from signalops.contracts.common import (
 from signalops.contracts.diagnosis import (
     MAX_EVIDENCE_IDS,
     MAX_LIST_ITEMS,
+    Contradiction,
     DiagnosisStatus,
     FailureType,
     SuggestedAction,
@@ -247,18 +248,6 @@ class Hypothesis(ContractModel):
         return self
 
 
-class Contradiction(ContractModel):
-    description: LongText
-    roles: tuple[AgentRole, ...] = Field(default=(), max_length=MAX_BRANCHES)
-    evidence_signal_ids: tuple[uuid.UUID, ...] = Field(default=(), max_length=MAX_FINDING_EVIDENCE)
-
-    @model_validator(mode="after")
-    def _check(self) -> Self:
-        _unique_ids(self.evidence_signal_ids, "evidence_signal_ids")
-        require_unique(self.roles, "roles")
-        return self
-
-
 class SynthesisReport(ContractModel):
     """What the synthesizer submits: ranked hypotheses, the first one leading."""
 
@@ -288,6 +277,24 @@ class SynthesisReport(ContractModel):
 class SynthesisOutput(ContractModel):
     report: SynthesisReport
     provenance: Provenance
+    # Conflicts code found between findings, kept whatever the synthesizer listed.
+    detected_contradictions: tuple[Contradiction, ...] = Field(
+        default=(), max_length=MAX_CONTRADICTIONS
+    )
+
+    def contradictions(self) -> tuple[Contradiction, ...]:
+        """The synthesizer's contradictions, then code's that it did not already list."""
+        listed = list(self.report.contradictions)
+        for found in self.detected_contradictions:
+            if not any(_same_conflict(found, item) for item in listed):
+                listed.append(found)
+        return tuple(listed[:MAX_CONTRADICTIONS])
+
+
+def _same_conflict(found: Contradiction, listed: Contradiction) -> bool:
+    return set(found.roles) == set(listed.roles) and bool(
+        set(found.evidence_signal_ids) & set(listed.evidence_signal_ids)
+    )
 
 
 # --- Verifier ---
@@ -307,15 +314,34 @@ class VerificationBrief(ContractModel):
     incident: IncidentFacts
     services: tuple[ServiceBrief, ...] = Field(default=(), max_length=MAX_BRIEF_SERVICES)
     synthesis: SynthesisReport
-    # The leading hypothesis's citations, read again by code.
+    # The synthesis's and code's contradictions together.
+    contradictions: tuple[Contradiction, ...] = Field(default=(), max_length=MAX_CONTRADICTIONS)
+    # The citations to judge, read again by code: the leading hypothesis's, then the
+    # follow-up's for the same service.
     cited: tuple[CitedSignal, ...] = Field(default=(), max_length=MAX_PACKET_SIGNALS)
     # Cited IDs that code could not read within scope and cutoff.
     unreadable_signal_ids: tuple[uuid.UUID, ...] = Field(default=(), max_length=MAX_EVIDENCE_IDS)
+    # Whether a verdict of needs_follow_up may be given: once, budget and deadline allowing.
+    follow_up_allowed: bool = False
+    # Set on the second verification: what the follow-up round found.
+    follow_up: "SpecialistFindings | None" = None
 
 
 class Verdict(StrEnum):
     SUPPORTED = "supported"
     UNSUPPORTED = "unsupported"
+    # Only when the brief allows it: one specialist looks again, then a final verdict.
+    NEEDS_FOLLOW_UP = "needs_follow_up"
+
+
+class FollowUpRequest(ContractModel):
+    role: AgentRole
+    question: ShortText
+
+    @model_validator(mode="after")
+    def _check_role(self) -> Self:
+        _specialist(self.role)
+        return self
 
 
 class CitationCheck(ContractModel):
@@ -329,6 +355,7 @@ class VerificationReport(ContractModel):
 
     verdict: Verdict
     citation_checks: tuple[CitationCheck, ...] = Field(default=(), max_length=MAX_EVIDENCE_IDS)
+    follow_up: FollowUpRequest | None = None
     missing_evidence: tuple[ShortText, ...] = Field(default=(), max_length=MAX_LIST_ITEMS)
     limitations: tuple[ShortText, ...] = Field(default=(), max_length=MAX_LIST_ITEMS)
 
@@ -337,6 +364,8 @@ class VerificationReport(ContractModel):
         require_unique(tuple(check.signal_id for check in self.citation_checks), "citation_checks")
         if self.verdict is Verdict.UNSUPPORTED and not self.missing_evidence:
             raise ValueError("an unsupported verdict must list missing_evidence")
+        if (self.verdict is Verdict.NEEDS_FOLLOW_UP) != (self.follow_up is not None):
+            raise ValueError("a follow_up goes with a needs_follow_up verdict, and only with it")
         return self
 
     def supporting(self) -> tuple[uuid.UUID, ...]:
@@ -346,3 +375,21 @@ class VerificationReport(ContractModel):
 class VerificationOutput(ContractModel):
     report: VerificationReport
     provenance: Provenance
+    # Whether code offered a follow-up round to this verification.
+    follow_up_allowed: bool = False
+
+
+class FollowUpOutput(ContractModel):
+    """The one follow-up round: the requested specialist's findings, or why it did not run."""
+
+    ran: bool
+    reason: ShortText | None = None
+    findings: SpecialistFindings | None = None
+
+    @model_validator(mode="after")
+    def _check(self) -> Self:
+        if self.ran != (self.findings is not None):
+            raise ValueError("findings go with a round that ran, and only with it")
+        if not self.ran and self.reason is None:
+            raise ValueError("a round that did not run needs a reason")
+        return self

@@ -27,5 +27,6 @@
     "No database connection metrics were available"
   ],
   "missing_evidence": [],
+  "contradictions": [],
   "workflow_version": "v1"
 }

@@ -1,5 +1,18 @@
 {
   "$defs": {
+    "AgentRole": {
+      "enum": [
+        "investigator",
+        "coordinator",
+        "telemetry_investigator",
+        "deployment_investigator",
+        "dependency_investigator",
+        "synthesizer",
+        "verifier"
+      ],
+      "title": "AgentRole",
+      "type": "string"
+    },
     "Alternative": {
       "additionalProperties": false,
       "properties": {
@@ -23,6 +36,42 @@
       "title": "Alternative",
       "type": "object"
     },
+    "Contradiction": {
+      "additionalProperties": false,
+      "description": "Findings that point different ways, kept visible rather than merged away.",
+      "properties": {
+        "description": {
+          "maxLength": 2000,
+          "minLength": 1,
+          "title": "Description",
+          "type": "string"
+        },
+        "evidence_signal_ids": {
+          "default": [],
+          "items": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "maxItems": 20,
+          "title": "Evidence Signal Ids",
+          "type": "array"
+        },
+        "roles": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/AgentRole"
+          },
+          "maxItems": 3,
+          "title": "Roles",
+          "type": "array"
+        }
+      },
+      "required": [
+        "description"
+      ],
+      "title": "Contradiction",
+      "type": "object"
+    },
     "Diagnosis": {
       "additionalProperties": false,
       "properties": {
@@ -33,6 +82,15 @@
           },
           "maxItems": 10,
           "title": "Alternatives",
+          "type": "array"
+        },
+        "contradictions": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/Contradiction"
+          },
+          "maxItems": 10,
+          "title": "Contradictions",
           "type": "array"
         },
         "limitations": {

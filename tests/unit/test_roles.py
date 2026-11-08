@@ -10,23 +10,29 @@ from pydantic import ValidationError
 from signalops.agents.agent_loop import Reads
 from signalops.agents.multi_agent import (
     SPECIALISTS,
+    Room,
     TurnPlan,
     allot_turns,
     check_synthesis,
     check_verification,
+    detect_conflicts,
+    follow_up_fits,
 )
-from signalops.contracts.diagnosis import DiagnosisStatus
+from signalops.contracts.diagnosis import Contradiction, DiagnosisStatus
 from signalops.contracts.roles import (
     AgentEnding,
     BranchPlan,
     CitationCheck,
     Finding,
+    FollowUpOutput,
+    FollowUpRequest,
     Hypothesis,
     IncidentFacts,
     Provenance,
     SpecialistBrief,
     SpecialistFindings,
     SpecialistReport,
+    SynthesisOutput,
     SynthesisReport,
     Verdict,
     VerificationReport,
@@ -170,7 +176,7 @@ def test_the_verifier_judges_exactly_the_leading_citations() -> None:
     assert check_verification(report((SIGNALS[0], True), (SIGNALS[1], False)), cited, ()) is None
     assert "misses 1" in str(check_verification(report((SIGNALS[0], True)), cited, ()))
     extra = report((SIGNALS[0], True), (SIGNALS[1], True), (SIGNALS[2], True))
-    assert "does not cite" in str(check_verification(extra, cited, ()))
+    assert "not cited" in str(check_verification(extra, cited, ()))
     unreadable = report((SIGNALS[0], True), (SIGNALS[1], True))
     assert "unreadable" in str(check_verification(unreadable, cited, (SIGNALS[1],)))
 
@@ -178,15 +184,18 @@ def test_the_verifier_judges_exactly_the_leading_citations() -> None:
 @pytest.mark.parametrize(
     ("available", "expected"),
     [
-        (32, TurnPlan(5, 2, 2, 0)),
-        (13, TurnPlan(3, 2, 2, 0)),
+        (30, TurnPlan(5, 2, 2, 3)),
+        (20, TurnPlan(4, 2, 2, 2)),
+        (13, TurnPlan(2, 2, 2, 0)),
         (6, TurnPlan(0, 2, 2, 0)),
-        (3, TurnPlan(0, 2, 1, 0)),
+        (3, TurnPlan(0, 2, 0, 0)),
         (0, TurnPlan(0, 0, 0, 0)),
         (-4, TurnPlan(0, 0, 0, 0)),
     ],
 )
-def test_turns_go_to_downstream_roles_first(available: int, expected: TurnPlan) -> None:
+def test_turns_go_to_downstream_roles_then_branches_then_a_follow_up(
+    available: int, expected: TurnPlan
+) -> None:
     assert allot_turns(available, len(SPECIALISTS)) == expected
 
 
@@ -224,4 +233,107 @@ def test_reads_keep_signal_ids_and_runbook_versions_from_results_only() -> None:
         "query_logs:a",
         "retrieve_runbooks:b",
         "query_logs:c",
+    ]
+
+
+def test_a_follow_up_verdict_needs_a_request_and_an_offer() -> None:
+    request = FollowUpRequest(role=TELEMETRY, question="Look again")
+    with pytest.raises(ValidationError, match="follow_up"):
+        VerificationReport(verdict=Verdict.NEEDS_FOLLOW_UP)
+    with pytest.raises(ValidationError, match="follow_up"):
+        VerificationReport(verdict=Verdict.SUPPORTED, follow_up=request)
+    with pytest.raises(ValidationError, match="not a specialist role"):
+        FollowUpRequest(role=AgentRole.VERIFIER, question="q")
+    asking = VerificationReport(verdict=Verdict.NEEDS_FOLLOW_UP, follow_up=request)
+    assert check_verification(asking, (), (), follow_up_allowed=True) is None
+    refused = check_verification(asking, (), ())
+    assert refused is not None
+    assert "not available" in refused
+
+
+def test_a_round_that_did_not_run_says_why_and_holds_no_findings() -> None:
+    with pytest.raises(ValidationError, match="reason"):
+        FollowUpOutput(ran=False)
+    with pytest.raises(ValidationError, match="findings"):
+        FollowUpOutput(ran=True)
+    with pytest.raises(ValidationError, match="findings"):
+        FollowUpOutput(
+            ran=False,
+            reason="r",
+            findings=stored(TELEMETRY, SpecialistReport(missing_evidence=("x",))),
+        )
+
+
+@pytest.mark.parametrize(
+    ("room", "turns", "fits"),
+    [
+        (Room(1_000, 100.0), 3, True),
+        (Room(999, 100.0), 3, False),
+        (Room(1_000, 99.0), 3, False),
+        (Room(1_000, 100.0), 1, False),
+        (Room(10_000, -5.0), 3, False),
+    ],
+)
+def test_a_follow_up_needs_room_for_two_calls_and_turns(room: Room, turns: int, fits: bool) -> None:
+    assert follow_up_fits(room, turns=turns, call_reserve=500, call_seconds=50.0) is fits
+
+
+def test_code_records_roles_naming_different_failing_services() -> None:
+    other = uuid.uuid4()
+    telemetry = finding(SIGNALS[0])
+    deployment = Finding(
+        claim="deployed",
+        service_id=other,
+        failure_type="deployment_regression",
+        confidence=0.3,
+        uncertainty="timing",
+        evidence_signal_ids=(SIGNALS[1],),
+    )
+    weak = deployment.model_copy(update={"confidence": 0.2})
+    structural = finding(SIGNALS[2], service=None)
+    findings = (
+        stored(TELEMETRY, SpecialistReport(findings=(telemetry,))),
+        stored(AgentRole.DEPLOYMENT_INVESTIGATOR, SpecialistReport(findings=(deployment,))),
+        stored(AgentRole.DEPENDENCY_INVESTIGATOR, SpecialistReport(findings=(structural,))),
+    )
+    [conflict] = detect_conflicts(findings, {SERVICE: "bank-gateway", other: "inventory"})
+    assert conflict.roles == (TELEMETRY, AgentRole.DEPLOYMENT_INVESTIGATOR)
+    assert set(conflict.evidence_signal_ids) == set(SIGNALS[:2])
+    assert "bank-gateway" in conflict.description
+    assert "inventory" in conflict.description
+    below = (
+        findings[0],
+        stored(AgentRole.DEPLOYMENT_INVESTIGATOR, SpecialistReport(findings=(weak,))),
+    )
+    assert detect_conflicts(below, {}) == ()
+    # Two findings of one role are that role's own uncertainty, not a contradiction.
+    alone = (stored(TELEMETRY, SpecialistReport(findings=(telemetry, deployment))),)
+    assert detect_conflicts(alone, {}) == ()
+
+
+def test_the_diagnosis_keeps_the_synthesizers_and_codes_contradictions() -> None:
+    def conflict(roles: tuple[AgentRole, ...], *ids: uuid.UUID) -> Contradiction:
+        return Contradiction(description="d", roles=roles, evidence_signal_ids=ids)
+
+    pair = (TELEMETRY, AgentRole.DEPLOYMENT_INVESTIGATOR)
+    listed = conflict(pair, SIGNALS[0])
+    output = SynthesisOutput(
+        report=SynthesisReport(
+            status=DiagnosisStatus.INSUFFICIENT_EVIDENCE,
+            summary="s",
+            missing_evidence=("x",),
+            contradictions=(listed,),
+        ),
+        provenance=Provenance(
+            role=AgentRole.SYNTHESIZER, prompt_version="p", ended_by=AgentEnding.SUBMITTED
+        ),
+        detected_contradictions=(
+            conflict(pair, SIGNALS[0], SIGNALS[1]),
+            conflict((TELEMETRY, AgentRole.DEPENDENCY_INVESTIGATOR), SIGNALS[2]),
+        ),
+    )
+    # The first found conflict is the one the synthesizer already listed.
+    assert [c.roles for c in output.contradictions()] == [
+        pair,
+        (TELEMETRY, AgentRole.DEPENDENCY_INVESTIGATOR),
     ]

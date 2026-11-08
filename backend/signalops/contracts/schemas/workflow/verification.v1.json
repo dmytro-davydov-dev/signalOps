@@ -53,6 +53,26 @@
       "title": "CitationCheck",
       "type": "object"
     },
+    "FollowUpRequest": {
+      "additionalProperties": false,
+      "properties": {
+        "question": {
+          "maxLength": 500,
+          "minLength": 1,
+          "title": "Question",
+          "type": "string"
+        },
+        "role": {
+          "$ref": "#/$defs/AgentRole"
+        }
+      },
+      "required": [
+        "role",
+        "question"
+      ],
+      "title": "FollowUpRequest",
+      "type": "object"
+    },
     "Provenance": {
       "additionalProperties": false,
       "description": "How a role's output came about. Never the model's reasoning.",
@@ -150,7 +170,8 @@
     "Verdict": {
       "enum": [
         "supported",
-        "unsupported"
+        "unsupported",
+        "needs_follow_up"
       ],
       "title": "Verdict",
       "type": "string"
@@ -167,6 +188,17 @@
           "maxItems": 50,
           "title": "Citation Checks",
           "type": "array"
+        },
+        "follow_up": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/FollowUpRequest"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
         },
         "limitations": {
           "default": [],
@@ -204,6 +236,11 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "additionalProperties": false,
   "properties": {
+    "follow_up_allowed": {
+      "default": false,
+      "title": "Follow Up Allowed",
+      "type": "boolean"
+    },
     "provenance": {
       "$ref": "#/$defs/Provenance"
     },

@@ -347,6 +347,16 @@ Revision `0015_investigation_outcomes` adds a partial unique index allowing one 
 
 **Revisit when:** several worker processes share a provider quota tightly enough to need a fleet-wide branch limit, or measured reservations show the reserve or shares are badly sized.
 
+## ADR-033: Code records contradictions, and the verifier gets at most one follow-up round
+
+**Decision:** `synthesize` compares the specialists' findings in code and records every pair of roles naming different failing services at confidence 0.3 or more (`SynthesisOutput.detected_contradictions`). The diagnosis carries the synthesizer's contradictions, then code's that it did not already list, in a new `Diagnosis.contradictions` field (additive, default empty), whether it names a cause or abstains; the verifier sees them too, and the UI shows them. The workflow gains two nodes, `follow_up` and `reverify`, between `verify` and `conclude`. The first verification is offered a follow-up (`follow_up_allowed`) only when the plan left it at least 2 turns and the remaining budget and deadline, read from PostgreSQL's clock, fit one more specialist call and one more verification call at their maximum (twice the downstream call reserve, twice the request timeout). The verifier may then answer `needs_follow_up` with a specialist role and a question; code refuses that verdict when it was not offered. `follow_up` checks the room again, then runs that specialist once with its original brief plus the question, its calls holding back one verification call. `reverify` judges the leading citations plus the follow-up's citations for the leading service, and is never offered a follow-up. `conclude` uses the second verification if a round ran, and abstains if a round was granted but could not run. Turns go to synthesis, both verifications, the branches, then up to 3 for the follow-up. The verifier prompt became `verifier-v2`.
+
+**Reason:** A synthesizer that smooths a disagreement away should not be able to hide it, so code finds the simplest kind itself: two roles blaming different services. One fixed `follow_up` node makes the bound structural: there is no edge back, and no output can add one. Checking room before offering and again before running keeps a follow-up from spending what the final verdict needs.
+
+**Trade-off:** Code finds only service-level disagreement; contradictions inside one role's findings, or about failure type, depend on the synthesizer. The room check covers the first call of each, so a long follow-up may stop on its share and leave the second verification to judge less. Two more nodes mean `max_steps` must be at least 10 for `v3` to finish. A round granted and then refused for room ends in abstention rather than the first verdict, because the verifier said the evidence was not yet enough.
+
+**Revisit when:** P10 shows whether follow-up rounds change outcomes enough to pay for themselves, or a real model surfaces contradictions code cannot see.
+
 ## Open questions
 
 | # | Question | Decide by |

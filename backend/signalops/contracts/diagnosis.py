@@ -19,9 +19,12 @@ from signalops.contracts.common import (
     Version,
     require_unique,
 )
+from signalops.contracts.workflow import AgentRole
 
 MAX_EVIDENCE_IDS = 50
 MAX_LIST_ITEMS = 10
+MAX_CONTRADICTION_ROLES = 3
+MAX_CONTRADICTION_EVIDENCE = 20
 
 FailureType = Annotated[str, StringConstraints(max_length=64, pattern=r"^[a-z][a-z0-9_]*$")]
 
@@ -56,6 +59,23 @@ class SuggestedAction(ContractModel):
     requires_approval: Literal[True] = True
 
 
+class Contradiction(ContractModel):
+    """Findings that point different ways, kept visible rather than merged away."""
+
+    description: LongText
+    # The roles whose findings disagree.
+    roles: tuple[AgentRole, ...] = Field(default=(), max_length=MAX_CONTRADICTION_ROLES)
+    evidence_signal_ids: tuple[uuid.UUID, ...] = Field(
+        default=(), max_length=MAX_CONTRADICTION_EVIDENCE
+    )
+
+    @model_validator(mode="after")
+    def _check(self) -> Self:
+        require_unique(self.evidence_signal_ids, "evidence_signal_ids")
+        require_unique(self.roles, "roles")
+        return self
+
+
 class Diagnosis(ContractModel):
     status: DiagnosisStatus
     summary: LongText
@@ -65,6 +85,8 @@ class Diagnosis(ContractModel):
     limitations: tuple[ShortText, ...] = Field(default=(), max_length=MAX_LIST_ITEMS)
     # Evidence that would have been needed; required when abstaining.
     missing_evidence: tuple[ShortText, ...] = Field(default=(), max_length=MAX_LIST_ITEMS)
+    # Disagreements between specialists (workflow v3), whatever the outcome.
+    contradictions: tuple[Contradiction, ...] = Field(default=(), max_length=MAX_LIST_ITEMS)
     workflow_version: Version
 
     @model_validator(mode="after")

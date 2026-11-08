@@ -65,6 +65,7 @@ export const diagnosed: Investigation = {
     suggested_actions: [{ action: "Review the gateway timeout", requires_approval: true }],
     limitations: ["No database connection metrics were available"],
     missing_evidence: [],
+    contradictions: [],
     workflow_version: "v1",
   },
 };
@@ -81,6 +82,7 @@ export const abstained: Investigation = {
     suggested_actions: [],
     limitations: [],
     missing_evidence: ["Traces from the payment service"],
+    contradictions: [],
     workflow_version: "v1",
   },
 };

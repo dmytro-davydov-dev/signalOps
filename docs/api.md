@@ -147,6 +147,8 @@ The body is `InvestigationView` (`contracts/investigations.py`). Its `diagnosis`
 
 `replay_scope` selects a replay run, as on the incident routes. Until P07, the body has no evidence or cost basis.
 
+`diagnosis.contradictions` (added in P09-T03, additive, default empty) lists specialists whose findings point to different causes, with the roles and up to 20 signal IDs each, for diagnosed and abstained results alike. Workflow `v3` fills it; `v1` and `v2` leave it empty. A client that predates it can ignore it, and the UI reads a missing field as empty.
+
 ## Incident investigations and cited evidence
 
 Added in P08-T02 for the investigation workspace. Credential, `replay_scope`, and `503` are those of the incident routes; outside the workspace or scope → `404`.

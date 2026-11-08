@@ -7,6 +7,7 @@ import {
   cancelInvestigation,
   fetchInvestigation,
   fetchInvestigationEvidence,
+  type Contradiction,
   type Diagnosis,
   type Investigation,
   type InvestigationUsage,
@@ -326,6 +327,7 @@ function DiagnosisDetails({ investigation, diagnosis }: DiagnosisDetailsProps) {
           </ul>
         </>
       )}
+      {diagnosis.contradictions.length > 0 && <Contradictions items={diagnosis.contradictions} />}
       {diagnosis.suggested_actions.length > 0 && (
         <>
           <h2>Suggested actions</h2>
@@ -349,6 +351,38 @@ function DiagnosisDetails({ investigation, diagnosis }: DiagnosisDetailsProps) {
       )}
     </>
   );
+}
+
+function Contradictions({ items }: { items: Contradiction[] }) {
+  return (
+    <>
+      <h2>Contradictions</h2>
+      <p className="hint">
+        Specialists whose findings point different ways. They are shown, not resolved away.
+      </p>
+      <ul>
+        {items.map((item) => (
+          <li key={item.description}>
+            {item.description}
+            {item.roles.length > 0 && (
+              <span className="hint"> ({item.roles.map(roleLabel).join(", ")})</span>
+            )}
+            {item.evidence_signal_ids.length > 0 && (
+              <span className="hint">
+                {" "}
+                {item.evidence_signal_ids.length} cited{" "}
+                {item.evidence_signal_ids.length === 1 ? "signal" : "signals"}
+              </span>
+            )}
+          </li>
+        ))}
+      </ul>
+    </>
+  );
+}
+
+function roleLabel(role: string): string {
+  return role.replaceAll("_", " ");
 }
 
 function CitedEvidence({ investigation, cited }: { investigation: Investigation; cited: number }) {

@@ -7,6 +7,7 @@ import type { ProgressEvent } from "../api/progress";
 import { fetchByPath, type Route } from "../test/incidentFixtures";
 import {
   abstained,
+  CITED,
   diagnosed,
   ended,
   evidence,
@@ -250,6 +251,41 @@ describe("InvestigationPage", () => {
     expect(screen.getByText("Review the gateway timeout")).toBeInTheDocument();
     expect(screen.getByText(/needs a person to apply it/)).toBeInTheDocument();
     expect(screen.getByText("No database connection metrics were available")).toBeInTheDocument();
+  });
+
+  it("shows contradictions between specialists, even when it abstains", async () => {
+    const disagreeing = {
+      ...abstained,
+      workflow_version: "v3",
+      diagnosis: {
+        ...abstained.diagnosis,
+        contradictions: [
+          {
+            description: "The telemetry investigator points to bank-gateway; the deployment investigator points to inventory.",
+            roles: ["telemetry_investigator", "deployment_investigator"],
+            evidence_signal_ids: [CITED, MISSING],
+          },
+        ],
+      },
+    };
+    stub({ investigation: () => jsonResponse(disagreeing) });
+    renderRoute(PATH);
+
+    expect(await screen.findByText("Contradictions")).toBeInTheDocument();
+    expect(screen.getByText(/points to inventory/)).toBeInTheDocument();
+    expect(screen.getByText(/telemetry investigator, deployment investigator/)).toBeInTheDocument();
+    expect(screen.getByText(/2 cited signals/)).toBeInTheDocument();
+    expect(screen.getByText("Insufficient evidence")).toBeInTheDocument();
+  });
+
+  it("reads a diagnosis from an older server without contradictions", async () => {
+    const older: Record<string, unknown> = { ...diagnosed.diagnosis };
+    delete older.contradictions;
+    stub({ investigation: () => jsonResponse({ ...diagnosed, diagnosis: older }) });
+    renderRoute(PATH);
+
+    expect(await screen.findByText("bank-gateway")).toBeInTheDocument();
+    expect(screen.queryByText("Contradictions")).not.toBeInTheDocument();
   });
 
   it("warns when a citation cannot be verified", async () => {

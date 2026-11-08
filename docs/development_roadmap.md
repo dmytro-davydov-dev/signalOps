@@ -26,12 +26,12 @@ PostgreSQL owns evidence, workflow progress, budgets, and the initial knowledge 
 | Field | Current value |
 | --- | --- |
 | Active phase | Phase 9 Multi-agent investigations (in progress); Phase 8 gate passed on the fake provider |
-| Active task | P09-T03 (in progress) |
-| Last completed task | P09-T02 |
-| Latest verified commit | `e91588f` (P09-T01); the `feat(P09-T02)` commit follows |
-| Validation evidence | P09-T02: `SIGNALOPS_INTEGRATION=1 uv run pytest tests/integration` 620 passed, including 8 new parallel-branch tests; unit 614 passed. Phase 8 gate: `SIGNALOPS_INTEGRATION=1 uv run pytest` 1190 passed. The Playwright browser journey passed on Compose with the fake provider: fault ingestion, an automatic and one manual investigation (a double click started only one), a stream resumed with `Last-Event-ID` after a reload, a diagnosis naming `bank-gateway` with 10 verified citations and estimated cost, and a cancelled run. No model was called. Earlier evidence is in the work log |
+| Active task | P09-T04 (in progress) |
+| Last completed task | P09-T03 |
+| Latest verified commit | `11d34ba` (P09-T02); the `feat(P09-T03)` commit follows |
+| Validation evidence | P09-T03: `SIGNALOPS_INTEGRATION=1 uv run pytest tests/integration` 627 passed, including 7 new synthesis and verification tests; unit and contract 624 passed; `pnpm test` 69 passed. Phase 8 gate: `SIGNALOPS_INTEGRATION=1 uv run pytest` 1190 passed. The Playwright browser journey passed on Compose with the fake provider: fault ingestion, an automatic and one manual investigation (a double click started only one), a stream resumed with `Last-Event-ID` after a reload, a diagnosis naming `bank-gateway` with 10 verified citations and estimated cost, and a cancelled run. No model was called. Earlier evidence is in the work log |
 | Blockers | none |
-| Next task | P09-T03 |
+| Next task | P09-T04 |
 
 ### Scope and release boundaries
 
@@ -835,11 +835,19 @@ Start the React shell in Phase 1 and add API-backed incident views in Phase 5; P
 
 ### P09-T03 Implement synthesis and verification
 
-- [ ] Complete this task.
+- [x] Complete this task.
 
 **Implementation:** Merge compatible findings, surface contradictions, inspect citation support, and permit at most one follow-up round within the remaining budget and deadline.
 
 **Acceptance:** Contradictory evidence is visible; a verifier cannot trigger an unbounded investigation loop.
+
+**Notes (2026-11-08):**
+- **Decision (ADR-033):** merging and citation support came with P09-T01 (the synthesizer ranks merged hypotheses; the verifier judges each citation and `conclude` keeps only accepted ones). This task adds code-detected contradictions and the follow-up round.
+- **Contradictions:** `detect_conflicts` records every pair of roles naming different failing services at confidence ≥ 0.3, stored as `SynthesisOutput.detected_contradictions`. `Diagnosis.contradictions` (additive, default empty; schemas, OpenAPI, and four contract fixtures regenerated) carries the synthesizer's and code's, for diagnosed and abstained results. The verifier sees them, and the investigation page has a Contradictions section; it reads a missing field from an older server as empty.
+- **Follow-up:** nodes `follow_up` and `reverify` (10 nodes in `v3`). A round is offered only with at least 2 turns left for it and room in budget and deadline for two calls at their maximum, read from PostgreSQL; code refuses `needs_follow_up` when not offered; `follow_up` rechecks room and holds back one verification call; `reverify` is never offered a round. Verifier prompt `verifier-v2`.
+- **Verified:** a synthesizer that drops the disagreement still yields a diagnosis listing `bank-gateway` against the `inventory` deployment; an abstention keeps it; one round runs and the final verdict names `bank-gateway`; a verifier that always asks gets one round, then is refused until it abstains (3 verifier calls in total); no round is offered with 90 s left against a 60 s request timeout; a round granted but out of room by its start does not run and the investigation abstains.
+- **Choices the task did not state:** the follow-up step's role is `coordinator`, since code dispatches it; its findings record the specialist that ran. A granted round that cannot run abstains rather than falling back to the first verdict.
+- **Left:** code sees service-level disagreement only; the room check covers the first call of each role in the round.
 
 ### P09-T04 Verify multi-agent recovery
 
@@ -1482,13 +1490,23 @@ Keep these outside the release critical path unless measurements justify promoti
 
 ### 2026-11-08 — P09-T02
 - Status: completed
-- Commit: the `feat(P09-T02)` commit (hash recorded in the P09-T03 entry)
+- Commit: `11d34ba`
 - Implemented: `nodes.Parallel` and the engine's parallel stage with `branch_slots`; `BudgetLimit`, `BudgetShareExhaustedError`, `LlmCallRepository.step_usage`, `hold_budget(held_back=)`; enforced branch shares and reserve in `v3`; worker runners and slots; two settings; `tests/integration/test_parallel_branches.py`, unit tests for stages, failure precedence, and settings; ADR-032; docs.
 - Validation commands and results: `uv run ruff check .`, `uv run ruff format --check .`, `uv run mypy` (177 files) pass; `uv run pytest` 614 passed; `SIGNALOPS_INTEGRATION=1 uv run pytest tests/integration` 620 passed on Compose.
 - Evidence or artifact references: see task notes, "Verified".
 - Deviations and reasons: the global limit is per worker process, not fleet-wide (ADR-032).
 - Remaining issues: see task notes.
 - Next task: P09-T03.
+
+### 2026-11-08 — P09-T03
+- Status: completed
+- Commit: the `feat(P09-T03)` commit (hash recorded in the P09-T04 entry)
+- Implemented: `Diagnosis.contradictions` and `Contradiction`; `FollowUpRequest`, `FollowUpOutput`, `Verdict.NEEDS_FOLLOW_UP`, `detected_contradictions`; `detect_conflicts`, `room_left`, `follow_up_fits`, the `follow_up` and `reverify` nodes, `verifier-v2`; fake verifier rounds; regenerated schemas and fixtures; the UI Contradictions section; `tests/integration/test_synthesis_verification.py`, unit and component tests; ADR-033; `docs/api.md`, `docs/agents-and-workflow.md`.
+- Validation commands and results: `uv run ruff check .`, `uv run ruff format --check .`, `uv run mypy` (178 files), `uv run signalops export-schemas` pass; `uv run pytest` (unit and contract) 624 passed; `SIGNALOPS_INTEGRATION=1 uv run pytest tests/integration` 627 passed on Compose; `pnpm lint`, `pnpm typecheck`, `pnpm build` pass; `pnpm test` 69 passed.
+- Evidence or artifact references: see task notes, "Verified".
+- Deviations and reasons: none.
+- Remaining issues: see task notes.
+- Next task: P09-T04.
 
 ## Work log template
 

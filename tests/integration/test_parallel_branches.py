@@ -293,7 +293,7 @@ async def test_a_failed_branch_keeps_its_siblings_work_for_the_retry(
     assert {r.prompt_version for r in later} == {
         "deployment-v1",
         "synthesizer-v1",
-        "verifier-v1",
+        "verifier-v2",
     }
     steps = await steps_by_key(database, investigation_id)
     assert steps["telemetry"].attempt == 1

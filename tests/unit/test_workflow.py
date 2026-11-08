@@ -130,6 +130,8 @@ def test_v3_step_keys_are_stable_with_specialists_in_one_parallel_stage() -> Non
         "dependency",
         "synthesize",
         "verify",
+        "follow_up",
+        "reverify",
         "conclude",
     ]
     [stage] = [stage for stage in workflow.stages if isinstance(stage, Parallel)]

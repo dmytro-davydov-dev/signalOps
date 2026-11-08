@@ -37,6 +37,7 @@
       "Trace summaries for checkout requests",
       "Deployment events for checkout dependencies"
     ],
+    "contradictions": [],
     "workflow_version": "v1"
   }
 }

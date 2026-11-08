@@ -13,12 +13,12 @@ from collections.abc import Callable, Mapping
 from datetime import datetime, timedelta
 from typing import Any, Final
 
-from signalops.contracts.diagnosis import DiagnosisStatus
+from signalops.contracts.diagnosis import Contradiction, DiagnosisStatus
 from signalops.contracts.roles import (
     MAX_FINDING_EVIDENCE,
     CitationCheck,
-    Contradiction,
     Finding,
+    FollowUpRequest,
     Hypothesis,
     SpecialistBrief,
     SpecialistReport,
@@ -28,7 +28,7 @@ from signalops.contracts.roles import (
     VerificationBrief,
     VerificationReport,
 )
-from signalops.contracts.workflow import ToolName
+from signalops.contracts.workflow import AgentRole, ToolName
 from signalops.gateway.fake import FakeAnswer, FakeStep
 from signalops.gateway.fake_investigator import (
     MAXIMUM_CITATIONS,
@@ -257,7 +257,10 @@ def verifier_step(request: ModelRequest) -> FakeAnswer:
     name = names.get(leading.service_id, "")
     by_id = {cited.signal_id: cited for cited in brief.cited}
     checks = []
-    for signal_id in leading.evidence_signal_ids:
+    judged = [*leading.evidence_signal_ids]
+    judged += [cited.signal_id for cited in brief.cited if cited.signal_id not in judged]
+    judged += [i for i in brief.unreadable_signal_ids if i not in judged]
+    for signal_id in judged:
         cited = by_id.get(signal_id)
         supports = cited is not None and (
             cited.service_id == leading.service_id or (bool(name) and name in cited.text)
@@ -274,6 +277,15 @@ def verifier_step(request: ModelRequest) -> FakeAnswer:
         report = VerificationReport(
             verdict=Verdict.SUPPORTED, citation_checks=tuple(checks), limitations=(LIMITATION,)
         )
+    elif brief.follow_up_allowed:
+        report = VerificationReport(
+            verdict=Verdict.NEEDS_FOLLOW_UP,
+            citation_checks=tuple(checks),
+            follow_up=FollowUpRequest(
+                role=AgentRole.TELEMETRY_INVESTIGATOR,
+                question="Find errors or slow calls from or naming the leading service.",
+            ),
+        )
     else:
         report = VerificationReport(
             verdict=Verdict.UNSUPPORTED,
@@ -289,7 +301,7 @@ ROLE_STEPS: Final[Mapping[str, Callable[[ModelRequest], FakeAnswer]]] = {
     "deployment-v1": deployment_step,
     "dependency-v1": dependency_step,
     "synthesizer-v1": synthesizer_step,
-    "verifier-v1": verifier_step,
+    "verifier-v2": verifier_step,
 }
 
 

@@ -37,6 +37,12 @@ export interface RootCause {
   evidence_signal_ids: string[];
 }
 
+export interface Contradiction {
+  description: string;
+  roles: string[];
+  evidence_signal_ids: string[];
+}
+
 export interface Diagnosis {
   status: DiagnosisStatus;
   summary: string;
@@ -45,6 +51,8 @@ export interface Diagnosis {
   suggested_actions: { action: string; requires_approval: boolean }[];
   limitations: string[];
   missing_evidence: string[];
+  /** Specialists that disagree (workflow v3). Older servers omit it, which reads as none. */
+  contradictions: Contradiction[];
   workflow_version: string;
 }
 
@@ -132,6 +140,15 @@ const isDiagnosis = matches({
   ),
   limitations: isListOf(isString),
   missing_evidence: isListOf(isString),
+  contradictions: (value: unknown) =>
+    value === undefined ||
+    isListOf(
+      matches({
+        description: isString,
+        roles: isListOf(isString),
+        evidence_signal_ids: isListOf(isString),
+      }),
+    )(value),
   workflow_version: isString,
 });
 
@@ -181,8 +198,18 @@ const isAccepted = matches({
   created_at: isString,
 });
 
-const parseInvestigation = (value: unknown) =>
-  isInvestigation(value) ? (value as Investigation) : undefined;
+function parseInvestigation(value: unknown): Investigation | undefined {
+  if (!isInvestigation(value)) return undefined;
+  const investigation = value as Investigation;
+  const diagnosis = investigation.diagnosis as
+    | (Omit<Diagnosis, "contradictions"> & { contradictions?: Contradiction[] })
+    | null;
+  if (diagnosis === null) return investigation;
+  return {
+    ...investigation,
+    diagnosis: { ...diagnosis, contradictions: diagnosis.contradictions ?? [] },
+  };
+}
 const parseEvidence = (value: unknown) =>
   isEvidence(value) ? (value as InvestigationEvidence) : undefined;
 const parseIncidentInvestigations = (value: unknown) =>

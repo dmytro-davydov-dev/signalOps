@@ -28,6 +28,7 @@
     },
     "Contradiction": {
       "additionalProperties": false,
+      "description": "Findings that point different ways, kept visible rather than merged away.",
       "properties": {
         "description": {
           "maxLength": 2000,
@@ -316,6 +317,15 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "additionalProperties": false,
   "properties": {
+    "detected_contradictions": {
+      "default": [],
+      "items": {
+        "$ref": "#/$defs/Contradiction"
+      },
+      "maxItems": 10,
+      "title": "Detected Contradictions",
+      "type": "array"
+    },
     "provenance": {
       "$ref": "#/$defs/Provenance"
     },

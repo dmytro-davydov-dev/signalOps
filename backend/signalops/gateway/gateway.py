@@ -118,6 +118,10 @@ class ModelGateway:
     def provider_name(self) -> str:
         return self._provider.name
 
+    @property
+    def request_timeout_seconds(self) -> float:
+        return self._policy.request_timeout_seconds
+
     async def complete(
         self,
         lease: JobLease,
