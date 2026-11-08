@@ -37,6 +37,243 @@
         "title": "Alternative",
         "type": "object"
       },
+      "AuditRecord": {
+        "additionalProperties": false,
+        "description": "A person's judgement of whether one cited signal supports a case's diagnosis.",
+        "properties": {
+          "auditor": {
+            "maxLength": 128,
+            "minLength": 1,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]*$",
+            "title": "Auditor",
+            "type": "string"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "maxLength": 2000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
+          "signal_id": {
+            "format": "uuid",
+            "title": "Signal Id",
+            "type": "string"
+          },
+          "supported": {
+            "title": "Supported",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "signal_id",
+          "supported",
+          "auditor"
+        ],
+        "title": "AuditRecord",
+        "type": "object"
+      },
+      "AuditView": {
+        "additionalProperties": false,
+        "properties": {
+          "auditor": {
+            "title": "Auditor",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
+          "signal_id": {
+            "format": "uuid",
+            "title": "Signal Id",
+            "type": "string"
+          },
+          "supported": {
+            "title": "Supported",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "signal_id",
+          "supported",
+          "auditor",
+          "note",
+          "created_at"
+        ],
+        "title": "AuditView",
+        "type": "object"
+      },
+      "CaseScores": {
+        "additionalProperties": false,
+        "description": "Deterministic scores of one case against its labels. No model judges anything.",
+        "properties": {
+          "abstained": {
+            "title": "Abstained",
+            "type": "boolean"
+          },
+          "cited": {
+            "default": 0,
+            "title": "Cited",
+            "type": "integer"
+          },
+          "cited_supported": {
+            "default": 0,
+            "title": "Cited Supported",
+            "type": "integer"
+          },
+          "correct_abstention": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Correct Abstention"
+          },
+          "evidence_precision": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Evidence Precision"
+          },
+          "false_diagnosis": {
+            "title": "False Diagnosis",
+            "type": "boolean"
+          },
+          "latency_seconds": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Latency Seconds"
+          },
+          "outcome_correct": {
+            "title": "Outcome Correct",
+            "type": "boolean"
+          },
+          "root_cause_correct": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Root Cause Correct"
+          },
+          "unsupported_diagnosis": {
+            "default": false,
+            "title": "Unsupported Diagnosis",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "outcome_correct",
+          "root_cause_correct",
+          "abstained",
+          "false_diagnosis"
+        ],
+        "title": "CaseScores",
+        "type": "object"
+      },
+      "CaseStatus": {
+        "enum": [
+          "pending",
+          "investigating",
+          "scored",
+          "failed"
+        ],
+        "title": "CaseStatus",
+        "type": "string"
+      },
+      "CitedSignal": {
+        "additionalProperties": false,
+        "properties": {
+          "fault_evidence": {
+            "title": "Fault Evidence",
+            "type": "boolean"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "occurred_at": {
+            "format": "date-time",
+            "title": "Occurred At",
+            "type": "string"
+          },
+          "service_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Service Name"
+          },
+          "severity": {
+            "title": "Severity",
+            "type": "string"
+          },
+          "signal_id": {
+            "format": "uuid",
+            "title": "Signal Id",
+            "type": "string"
+          },
+          "source_event_id": {
+            "title": "Source Event Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "signal_id",
+          "source_event_id",
+          "service_name",
+          "kind",
+          "severity",
+          "occurred_at",
+          "message",
+          "fault_evidence"
+        ],
+        "title": "CitedSignal",
+        "type": "object"
+      },
       "Contradiction": {
         "additionalProperties": false,
         "description": "Findings that point different ways, kept visible rather than merged away.",
@@ -326,6 +563,526 @@
         "title": "DiagnosisStatus",
         "type": "string"
       },
+      "EvaluationCaseDetail": {
+        "additionalProperties": false,
+        "properties": {
+          "audits": {
+            "items": {
+              "$ref": "#/components/schemas/AuditView"
+            },
+            "title": "Audits",
+            "type": "array"
+          },
+          "case_key": {
+            "title": "Case Key",
+            "type": "string"
+          },
+          "citations": {
+            "items": {
+              "$ref": "#/components/schemas/CitedSignal"
+            },
+            "title": "Citations",
+            "type": "array"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "expected": {
+            "$ref": "#/components/schemas/ExpectedOutcome"
+          },
+          "family": {
+            "$ref": "#/components/schemas/ScenarioFamily"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "investigation_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Investigation Id"
+          },
+          "observed": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ObservedOutcome"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "replay_report": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Replay Report"
+          },
+          "replay_scope": {
+            "title": "Replay Scope",
+            "type": "string"
+          },
+          "scenario_name": {
+            "title": "Scenario Name",
+            "type": "string"
+          },
+          "scenario_version": {
+            "title": "Scenario Version",
+            "type": "string"
+          },
+          "scores": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CaseScores"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "split": {
+            "$ref": "#/components/schemas/ScenarioSplit"
+          },
+          "status": {
+            "$ref": "#/components/schemas/CaseStatus"
+          },
+          "synthetic": {
+            "title": "Synthetic",
+            "type": "boolean"
+          },
+          "trial": {
+            "title": "Trial",
+            "type": "integer"
+          },
+          "variant": {
+            "$ref": "#/components/schemas/SystemVariant"
+          }
+        },
+        "required": [
+          "id",
+          "case_key",
+          "scenario_name",
+          "scenario_version",
+          "family",
+          "split",
+          "synthetic",
+          "variant",
+          "trial",
+          "status",
+          "replay_scope",
+          "investigation_id",
+          "expected",
+          "observed",
+          "scores",
+          "error",
+          "replay_report",
+          "citations",
+          "audits"
+        ],
+        "title": "EvaluationCaseDetail",
+        "type": "object"
+      },
+      "EvaluationCaseRow": {
+        "additionalProperties": false,
+        "properties": {
+          "case_key": {
+            "title": "Case Key",
+            "type": "string"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "expected": {
+            "$ref": "#/components/schemas/ExpectedOutcome"
+          },
+          "family": {
+            "$ref": "#/components/schemas/ScenarioFamily"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "investigation_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Investigation Id"
+          },
+          "observed": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ObservedOutcome"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "replay_scope": {
+            "title": "Replay Scope",
+            "type": "string"
+          },
+          "scenario_name": {
+            "title": "Scenario Name",
+            "type": "string"
+          },
+          "scenario_version": {
+            "title": "Scenario Version",
+            "type": "string"
+          },
+          "scores": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CaseScores"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "split": {
+            "$ref": "#/components/schemas/ScenarioSplit"
+          },
+          "status": {
+            "$ref": "#/components/schemas/CaseStatus"
+          },
+          "synthetic": {
+            "title": "Synthetic",
+            "type": "boolean"
+          },
+          "trial": {
+            "title": "Trial",
+            "type": "integer"
+          },
+          "variant": {
+            "$ref": "#/components/schemas/SystemVariant"
+          }
+        },
+        "required": [
+          "id",
+          "case_key",
+          "scenario_name",
+          "scenario_version",
+          "family",
+          "split",
+          "synthetic",
+          "variant",
+          "trial",
+          "status",
+          "replay_scope",
+          "investigation_id",
+          "expected",
+          "observed",
+          "scores",
+          "error"
+        ],
+        "title": "EvaluationCaseRow",
+        "type": "object"
+      },
+      "EvaluationRunDetail": {
+        "additionalProperties": false,
+        "properties": {
+          "case_counts": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Case Counts",
+            "type": "object"
+          },
+          "cases": {
+            "items": {
+              "$ref": "#/components/schemas/EvaluationCaseRow"
+            },
+            "title": "Cases",
+            "type": "array"
+          },
+          "completed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completed At"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "dataset_hash": {
+            "title": "Dataset Hash",
+            "type": "string"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "limits": {
+            "additionalProperties": true,
+            "title": "Limits",
+            "type": "object"
+          },
+          "metrics": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Metrics"
+          },
+          "model_settings": {
+            "additionalProperties": true,
+            "title": "Model Settings",
+            "type": "object"
+          },
+          "pricing_config": {
+            "additionalProperties": true,
+            "title": "Pricing Config",
+            "type": "object"
+          },
+          "prompt_versions": {
+            "additionalProperties": true,
+            "title": "Prompt Versions",
+            "type": "object"
+          },
+          "seed": {
+            "title": "Seed",
+            "type": "integer"
+          },
+          "split": {
+            "$ref": "#/components/schemas/ScenarioSplit"
+          },
+          "started_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Started At"
+          },
+          "status": {
+            "$ref": "#/components/schemas/RunStatus"
+          },
+          "trials": {
+            "title": "Trials",
+            "type": "integer"
+          },
+          "variants": {
+            "items": {
+              "$ref": "#/components/schemas/SystemVariant"
+            },
+            "title": "Variants",
+            "type": "array"
+          },
+          "workflow_versions": {
+            "additionalProperties": true,
+            "title": "Workflow Versions",
+            "type": "object"
+          }
+        },
+        "required": [
+          "id",
+          "label",
+          "split",
+          "status",
+          "variants",
+          "trials",
+          "dataset_hash",
+          "created_at",
+          "started_at",
+          "completed_at",
+          "error",
+          "seed",
+          "workflow_versions",
+          "prompt_versions",
+          "model_settings",
+          "pricing_config",
+          "limits",
+          "metrics",
+          "cases"
+        ],
+        "title": "EvaluationRunDetail",
+        "type": "object"
+      },
+      "EvaluationRunList": {
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/EvaluationRunSummary"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "EvaluationRunList",
+        "type": "object"
+      },
+      "EvaluationRunSummary": {
+        "additionalProperties": false,
+        "properties": {
+          "case_counts": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Case Counts",
+            "type": "object"
+          },
+          "completed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completed At"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "dataset_hash": {
+            "title": "Dataset Hash",
+            "type": "string"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "split": {
+            "$ref": "#/components/schemas/ScenarioSplit"
+          },
+          "started_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Started At"
+          },
+          "status": {
+            "$ref": "#/components/schemas/RunStatus"
+          },
+          "trials": {
+            "title": "Trials",
+            "type": "integer"
+          },
+          "variants": {
+            "items": {
+              "$ref": "#/components/schemas/SystemVariant"
+            },
+            "title": "Variants",
+            "type": "array"
+          }
+        },
+        "required": [
+          "id",
+          "label",
+          "split",
+          "status",
+          "variants",
+          "trials",
+          "dataset_hash",
+          "created_at",
+          "started_at",
+          "completed_at",
+          "error"
+        ],
+        "title": "EvaluationRunSummary",
+        "type": "object"
+      },
       "EvidenceRef": {
         "additionalProperties": false,
         "properties": {
@@ -364,6 +1121,106 @@
           "relevance"
         ],
         "title": "EvidenceRef",
+        "type": "object"
+      },
+      "ExpectedOutcome": {
+        "additionalProperties": false,
+        "description": "What a correct system concludes about one scenario. Evaluator truth only.",
+        "properties": {
+          "affected_services": {
+            "default": [],
+            "items": {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]*$",
+              "type": "string"
+            },
+            "title": "Affected Services",
+            "type": "array"
+          },
+          "diagnosable": {
+            "title": "Diagnosable",
+            "type": "boolean"
+          },
+          "failure_type": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "pattern": "^[a-z][a-z0-9_]*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Failure Type"
+          },
+          "fault_window": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/FaultWindow"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "incident_expected": {
+            "title": "Incident Expected",
+            "type": "boolean"
+          },
+          "root_cause_service": {
+            "anyOf": [
+              {
+                "maxLength": 128,
+                "minLength": 1,
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Root Cause Service"
+          },
+          "supporting_event_ids": {
+            "default": [],
+            "items": {
+              "maxLength": 512,
+              "minLength": 1,
+              "type": "string"
+            },
+            "maxItems": 5000,
+            "title": "Supporting Event Ids",
+            "type": "array"
+          }
+        },
+        "required": [
+          "incident_expected",
+          "diagnosable"
+        ],
+        "title": "ExpectedOutcome",
+        "type": "object"
+      },
+      "FaultWindow": {
+        "additionalProperties": false,
+        "properties": {
+          "end": {
+            "format": "date-time",
+            "title": "End",
+            "type": "string"
+          },
+          "start": {
+            "format": "date-time",
+            "title": "Start",
+            "type": "string"
+          }
+        },
+        "required": [
+          "start",
+          "end"
+        ],
+        "title": "FaultWindow",
         "type": "object"
       },
       "GraphRelation": {
@@ -1598,6 +2455,154 @@
         "title": "NormalizedSignal",
         "type": "object"
       },
+      "ObservedOutcome": {
+        "additionalProperties": false,
+        "description": "What the system produced for one case, read back from runtime tables.",
+        "properties": {
+          "cited_event_ids": {
+            "default": [],
+            "items": {
+              "maxLength": 512,
+              "minLength": 1,
+              "type": "string"
+            },
+            "title": "Cited Event Ids",
+            "type": "array"
+          },
+          "cited_signal_ids": {
+            "default": [],
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "title": "Cited Signal Ids",
+            "type": "array"
+          },
+          "completed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completed At"
+          },
+          "detected_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Detected At"
+          },
+          "diagnosis_status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Diagnosis Status"
+          },
+          "failure_type": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "pattern": "^[a-z][a-z0-9_]*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Failure Type"
+          },
+          "incident_ids": {
+            "default": [],
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "title": "Incident Ids",
+            "type": "array"
+          },
+          "investigation_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Investigation Id"
+          },
+          "investigation_status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Investigation Status"
+          },
+          "model_calls": {
+            "default": 0,
+            "title": "Model Calls",
+            "type": "integer"
+          },
+          "root_cause_service": {
+            "anyOf": [
+              {
+                "maxLength": 128,
+                "minLength": 1,
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Root Cause Service"
+          },
+          "spent_microusd": {
+            "default": 0,
+            "title": "Spent Microusd",
+            "type": "integer"
+          },
+          "started_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Started At"
+          },
+          "unknown_reserved_microusd": {
+            "default": 0,
+            "title": "Unknown Reserved Microusd",
+            "type": "integer"
+          }
+        },
+        "title": "ObservedOutcome",
+        "type": "object"
+      },
       "ProgressEventType": {
         "enum": [
           "step.started",
@@ -1819,6 +2824,133 @@
         ],
         "title": "RootCause",
         "type": "object"
+      },
+      "RunRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "budget_microusd": {
+            "anyOf": [
+              {
+                "maximum": 1000000000.0,
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Budget Microusd"
+          },
+          "deadline_seconds": {
+            "anyOf": [
+              {
+                "maximum": 86400.0,
+                "minimum": 60.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Deadline Seconds"
+          },
+          "label": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Label",
+            "type": "string"
+          },
+          "max_steps": {
+            "anyOf": [
+              {
+                "maximum": 200.0,
+                "minimum": 10.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Steps"
+          },
+          "scenarios": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 50,
+            "title": "Scenarios",
+            "type": "array"
+          },
+          "seed": {
+            "default": 0,
+            "maximum": 2147483647.0,
+            "minimum": 0.0,
+            "title": "Seed",
+            "type": "integer"
+          },
+          "split": {
+            "$ref": "#/components/schemas/ScenarioSplit",
+            "default": "held_out"
+          },
+          "trials": {
+            "default": 3,
+            "maximum": 20.0,
+            "minimum": 1.0,
+            "title": "Trials",
+            "type": "integer"
+          },
+          "variants": {
+            "default": [
+              "deterministic",
+              "single_agent",
+              "multi_agent"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/SystemVariant"
+            },
+            "maxItems": 3,
+            "minItems": 1,
+            "title": "Variants",
+            "type": "array"
+          }
+        },
+        "required": [
+          "label"
+        ],
+        "title": "RunRequest",
+        "type": "object"
+      },
+      "RunStatus": {
+        "enum": [
+          "queued",
+          "running",
+          "completed",
+          "failed"
+        ],
+        "title": "RunStatus",
+        "type": "string"
+      },
+      "ScenarioFamily": {
+        "enum": [
+          "downstream_timeout",
+          "connection_pool_exhaustion",
+          "deployment_regression",
+          "memory_pressure",
+          "healthy_noise",
+          "mixed",
+          "insufficient_evidence"
+        ],
+        "title": "ScenarioFamily",
+        "type": "string"
+      },
+      "ScenarioSplit": {
+        "enum": [
+          "development",
+          "held_out"
+        ],
+        "title": "ScenarioSplit",
+        "type": "string"
       },
       "ServiceGraph": {
         "additionalProperties": false,
@@ -2101,6 +3233,15 @@
         "title": "SuggestedAction",
         "type": "object"
       },
+      "SystemVariant": {
+        "enum": [
+          "deterministic",
+          "single_agent",
+          "multi_agent"
+        ],
+        "title": "SystemVariant",
+        "type": "string"
+      },
       "TimeWindow": {
         "additionalProperties": false,
         "description": "Half-open interval: `since` inclusive, `until` exclusive.",
@@ -2275,6 +3416,280 @@
         "summary": "Ready",
         "tags": [
           "health"
+        ]
+      }
+    },
+    "/v1/evaluation-runs": {
+      "get": {
+        "operationId": "list_runs_v1_evaluation_runs_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EvaluationRunList"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "OperatorBearer": []
+          }
+        ],
+        "summary": "List Runs",
+        "tags": [
+          "evaluation"
+        ]
+      },
+      "post": {
+        "description": "Queue a run of a scenario split with each variant; a worker executes it.",
+        "operationId": "start_run_v1_evaluation_runs_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RunRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EvaluationRunSummary"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "OperatorBearer": []
+          }
+        ],
+        "summary": "Start Run",
+        "tags": [
+          "evaluation"
+        ]
+      }
+    },
+    "/v1/evaluation-runs/{run_id}": {
+      "get": {
+        "description": "A run's configuration, aggregate metrics, and every case's outcome.",
+        "operationId": "get_run_v1_evaluation_runs__run_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Run Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EvaluationRunDetail"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "description": "No such run or case"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "OperatorBearer": []
+          }
+        ],
+        "summary": "Get Run",
+        "tags": [
+          "evaluation"
+        ]
+      }
+    },
+    "/v1/evaluation-runs/{run_id}/cases/{case_id}": {
+      "get": {
+        "description": "One case: expected and observed outcomes, scores, the replay, and each citation.",
+        "operationId": "get_case_v1_evaluation_runs__run_id__cases__case_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Run Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "case_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Case Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EvaluationCaseDetail"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "description": "No such run or case"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "OperatorBearer": []
+          }
+        ],
+        "summary": "Get Case",
+        "tags": [
+          "evaluation"
+        ]
+      }
+    },
+    "/v1/evaluation-runs/{run_id}/cases/{case_id}/audits": {
+      "post": {
+        "description": "Record a person's judgement of one citation; reported apart from automatic scores.",
+        "operationId": "record_audit_v1_evaluation_runs__run_id__cases__case_id__audits_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Run Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "case_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Case Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AuditRecord"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuditView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "description": "No such run or case"
+          },
+          "422": {
+            "description": "The signal is not cited by this case"
+          }
+        },
+        "security": [
+          {
+            "OperatorBearer": []
+          }
+        ],
+        "summary": "Record Audit",
+        "tags": [
+          "evaluation"
         ]
       }
     },

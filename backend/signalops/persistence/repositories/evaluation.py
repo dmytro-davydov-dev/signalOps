@@ -320,7 +320,7 @@ class EvaluationRepository:
             .where(EvaluationCase.run_id == run_id)
             .group_by(EvaluationCase.status)
         )
-        return {str(status): int(count) for status, count in rows.tuples()}
+        return {str(status): int(count) for status, count in rows}
 
     async def record_detection(self, replay_id: uuid.UUID, detection: dict[str, Any]) -> None:
         """Add a replay's detection score to its report."""

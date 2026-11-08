@@ -221,3 +221,17 @@ Last-Event-ID: 1042
 - Ingestion uses separate source-specific credentials.
 - Request-size and query limits, plus workspace and replay scope checks, apply to every route.
 - CORS is configured explicitly (`SIGNALOPS_CORS_ORIGINS`); `Authorization` is an allowed request header.
+
+## Evaluation runs (P10-T06)
+
+Operator token required; a run belongs to the token's workspace (another workspace's run is 404). The routes use the evaluator's connection (`SIGNALOPS_EVALUATION_DATABASE_URL`, ADR-034) and answer 503 without it. Starting a run only queues it; `signalops evaluation-worker` executes it.
+
+| Route | Result |
+| --- | --- |
+| `POST /v1/evaluation-runs` | `202` with the queued run. Body: `label`, `split` (`held_out` default), `variants` (all three default), `trials` (1–20), optional `budget_microusd`, `max_steps`, `deadline_seconds`, `scenarios`. An unknown scenario is 422 |
+| `GET /v1/evaluation-runs?limit=` | Newest runs with case counts by status |
+| `GET /v1/evaluation-runs/{id}` | Configuration (split hash, workflow and prompt versions, `model_settings`, pricing, equal `limits`), `metrics` (see `docs/evaluation.md`), and every case: scenario, family, split, `synthetic`, variant, trial, expected outcome (without evidence labels), observed outcome, scores |
+| `GET /v1/evaluation-runs/{id}/cases/{case_id}` | One case with its replay report (including detection) and each cited signal, with `fault_evidence` from the labels, plus its audits |
+| `POST /v1/evaluation-runs/{id}/cases/{case_id}/audits` | `201`. Body: `signal_id`, `supported`, `auditor`, optional `note`. The signal must be cited by the case (422 otherwise). An auditor's later judgement of the same citation replaces the earlier one |
+
+The UI's Evaluation page lists runs and can queue one. A run page compares the variants (samples, accuracy and its spread across trials, root-cause accuracy, evidence precision, unsupported diagnoses, abstentions, latency, cost, harness failures), shows detection results, and filters cases to incorrect and failed ones. A case page shows expected against observed, each citation's label, links to the investigation in its replay scope, and records audits. Runs on the fake provider carry a notice that they show the harness, not diagnostic quality.

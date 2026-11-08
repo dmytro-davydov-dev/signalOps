@@ -1,5 +1,8 @@
 import type { RouteObject } from "react-router";
 import { Layout } from "./components/Layout";
+import { EvaluationCasePage } from "./pages/EvaluationCasePage";
+import { EvaluationRunPage } from "./pages/EvaluationRunPage";
+import { EvaluationsPage } from "./pages/EvaluationsPage";
 import { HealthPage } from "./pages/HealthPage";
 import { HomePage } from "./pages/HomePage";
 import { IncidentDetailPage } from "./pages/IncidentDetailPage";
@@ -18,6 +21,9 @@ export const routes: RouteObject[] = [
       { path: "incidents", element: <IncidentsPage /> },
       { path: "incidents/:incidentId", element: <IncidentDetailPage /> },
       { path: "investigations/:investigationId", element: <InvestigationPage /> },
+      { path: "evaluations", element: <EvaluationsPage /> },
+      { path: "evaluations/:runId", element: <EvaluationRunPage /> },
+      { path: "evaluations/:runId/cases/:caseId", element: <EvaluationCasePage /> },
       { path: "status", element: <HealthPage /> },
       { path: "*", element: <NotFoundPage /> },
     ],

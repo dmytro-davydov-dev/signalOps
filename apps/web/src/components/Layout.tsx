@@ -10,6 +10,7 @@ export function Layout() {
             Overview
           </NavLink>
           <NavLink to="/incidents">Incidents</NavLink>
+          <NavLink to="/evaluations">Evaluation</NavLink>
           <NavLink to="/status">System health</NavLink>
         </nav>
       </header>

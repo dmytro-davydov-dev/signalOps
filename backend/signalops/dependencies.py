@@ -79,6 +79,8 @@ class Resources:
     ingest_publisher: Publisher | None = field(default=None, repr=False)
     # Evidence queries; their routes answer 503 while it is missing.
     database: Database | None = None
+    # The evaluator's connection; evaluation routes answer 503 without it.
+    evaluation: Database | None = None
 
 
 @asynccontextmanager
@@ -104,6 +106,11 @@ async def open_resources(settings: Settings) -> AsyncIterator[Resources]:
     )
     # Cancellations write progress, so open streams hear of them at once.
     database = Database.from_engine(engine, on_progress=RedisProgressNotifier(redis))
+    evaluation_engine = (
+        None
+        if settings.evaluation_database_url is None
+        else create_engine(settings.evaluator_settings())
+    )
     try:
         yield Resources(
             checks=[
@@ -117,6 +124,9 @@ async def open_resources(settings: Settings) -> AsyncIterator[Resources]:
             sources=DatabaseSourceLookup(database),
             ingest_publisher=publisher,
             database=database,
+            evaluation=(
+                None if evaluation_engine is None else Database.from_engine(evaluation_engine)
+            ),
         )
     finally:
         # Requests have finished; nothing still queued was reported accepted to a client.
@@ -125,6 +135,8 @@ async def open_resources(settings: Settings) -> AsyncIterator[Resources]:
             logger.warning("ingest producer closed undelivered", extra={"count": undelivered})
         await redis.aclose()
         await engine.dispose()
+        if evaluation_engine is not None:
+            await evaluation_engine.dispose()
 
 
 async def _run_check(check: DependencyCheck, limit_seconds: float) -> DependencyStatus:

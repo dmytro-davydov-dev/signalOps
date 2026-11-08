@@ -122,3 +122,10 @@ label.filters { flex-direction: column; align-items: flex-start; gap: 0.25rem; c
 .step-completed span:nth-child(2) { color: var(--ok); }
 .step-failed span:nth-child(2) { color: var(--error); }
 .step-running span:nth-child(2) { color: var(--warn); }
+
+/* Evaluation runs and cases */
+.badge-completed { color: var(--ok); }
+.badge-failed { color: var(--error); }
+.badge-queued,
+.badge-running { color: var(--warn); }
+.checkbox { display: flex; gap: 0.4rem; align-items: center; margin: 0.5rem 0; }

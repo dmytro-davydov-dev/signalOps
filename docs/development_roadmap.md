@@ -26,8 +26,8 @@ PostgreSQL owns evidence, workflow progress, budgets, and the initial knowledge 
 | Field | Current value |
 | --- | --- |
 | Active phase | Phase 10 Evaluation infrastructure (in progress); Phase 9 gate passed on the fake provider |
-| Active task | P10-T06 (in progress) |
-| Last completed task | P10-T05 |
+| Active task | Phase 10 gate (in progress) |
+| Last completed task | P10-T06 |
 | Latest verified commit | `53db2c6` (gate fix); the `docs(P09)` gate commit follows |
 | Validation evidence | Phase 9 gate: `SIGNALOPS_INTEGRATION=1 uv run pytest` 1260 passed; on Compose, a `v3` investigation survived `docker compose kill investigation-worker` mid-branch, reusing completed branches and keeping the interrupted call `unknown` with its reservation; `pnpm e2e` passed on `v3`. A live-only bug (runbook references) was found and fixed at the gate. No model was called. Earlier evidence is in the work log |
 | Blockers | none |
@@ -973,11 +973,17 @@ Start the React shell in Phase 1 and add API-backed incident views in Phase 5; P
 
 ### P10-T06 Build the evaluation results view
 
-- [ ] Complete this task.
+- [x] Complete this task.
 
 **Implementation:** Add API endpoints to start/list/read runs and a UI comparison showing case outcomes, quality, latency, cost, and failure examples.
 
 **Acceptance:** A reviewer can inspect aggregate results and drill into the evidence for a failed case.
+
+**Notes (2026-11-08):**
+- **API (`api/evaluations.py`, views in `contracts/evaluation_api.py`):** `POST/GET /v1/evaluation-runs`, `GET /v1/evaluation-runs/{id}`, `GET …/cases/{case_id}`, `POST …/cases/{case_id}/audits`. These routes use the evaluator's connection (`Resources.evaluation`, opened only when `SIGNALOPS_EVALUATION_DATABASE_URL` is set; 503 otherwise). `POST` only queues a run. Runs are scoped to the token's workspace. A case shows the expected outcome without evidence labels; each cited signal says whether the labels count it as fault evidence. OpenAPI regenerated. Compose gives `api` the evaluator URL.
+- **UI:** Evaluation nav entry; `EvaluationsPage` (list, queue form, empty, loading, error, stale states), `EvaluationRunPage` (facts, fake-provider notice, comparison table, detection, case table with an incorrect-only filter), `EvaluationCasePage` (expected against observed, scores, citations with labels, link to the investigation in its replay scope, human audit buttons).
+- **Verified:** `tests/integration/test_evaluation_api.py` passed: 401 without a token; 422 for an unknown scenario; `POST` returns 202 queued; after the runner executed it, the list, the detail (2 scored cases, metrics, synthetic flags, no labels in `expected`), the failed deterministic case's drill-in (citations, labels matching `cited_supported`, replay report with detection), audit record and replacement, 422 for an uncited signal, 404 for another workspace and an unknown case, and 503 without an evaluator connection. `src/pages/EvaluationPages.test.tsx` 3 passed (empty list; comparison, notice, equal budget, and failed-only filter; case evidence, investigation link, and audit). `pnpm lint`, `pnpm typecheck`, `pnpm test` (72), `pnpm build` pass.
+- **Left:** not yet exercised in a browser on Compose (the gate does that); the page parses metrics loosely because their fields may grow.
 
 **Phase gate:** All tasks above are checked, acceptance evidence is recorded in the ledger, and the phase outcome is demonstrated against real infrastructure where relevant.
 
@@ -1643,6 +1649,16 @@ Keep these outside the release critical path unless measurements justify promoti
 - Deviations and reasons: latency is investigation wall-clock time, because replay detection is in event time.
 - Remaining issues: see task notes.
 - Next task: P10-T06.
+
+### 2026-11-08 — P10-T06
+- Status: completed
+- Commit: see git log for `feat(P10-T06)`
+- Implemented: evaluation API routes and views; optional evaluator connection in API resources; OpenAPI; three UI pages, routes, nav, styles; Compose `api` evaluator URL; `docs/api.md` section.
+- Validation commands and results: ruff check and format, mypy pass; `uv run signalops export-schemas --check` exit 0; `SIGNALOPS_INTEGRATION=1 uv run pytest tests/integration/test_evaluation_api.py` 1 passed; `pnpm lint`, `pnpm typecheck`, `pnpm test` (72 passed), `pnpm build` pass; compose config ok.
+- Evidence or artifact references: see task notes.
+- Deviations and reasons: none.
+- Remaining issues: see task notes.
+- Next task: Phase 10 gate.
 
 ## Work log template
 
