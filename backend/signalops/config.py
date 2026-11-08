@@ -109,6 +109,10 @@ class Settings(BaseSettings):
     sse_max_stream_seconds: int = Field(default=300, ge=10, le=3600)
     # Open progress streams per API process; one more answers 503.
     sse_max_streams: int = Field(default=200, ge=1, le=10_000)
+    # Jobs one worker process runs at once.
+    worker_job_concurrency: int = Field(default=2, ge=1, le=32)
+    # Specialist branches running at once across all of a worker process's jobs.
+    agent_global_branches: int = Field(default=4, ge=1, le=64)
     # A worker that stops heartbeating loses its job this long after the last beat.
     job_lease_seconds: int = Field(default=30, ge=3, le=600)
     # Worker wait after finding no claimable job.

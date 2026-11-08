@@ -13,9 +13,10 @@ from signalops.agents.tools import TextRedactor, ToolExecutor
 from signalops.agents.workflow import WorkflowEngine
 from signalops.contracts.roles import SpecialistFindings
 from signalops.demo.generator import Scenario
-from signalops.gateway.fake import FAKE_MODEL, FakeProvider, FakeStep
+from signalops.gateway.fake import FAKE_MODEL, FakeStep
 from signalops.gateway.fake_roles import role_step
 from signalops.gateway.gateway import ModelGateway
+from signalops.gateway.provider import ModelProvider
 from signalops.gateway.types import ModelRequest, TextBlock
 from signalops.persistence import database as db
 from signalops.persistence.models import AgentStep
@@ -54,7 +55,7 @@ def roles_with(overrides: Mapping[str, Responder] | None = None) -> Responder:
 
 
 def v3_engine(
-    database: db.Database, provider: FakeProvider, limits: AgentLimits = V3_LIMITS
+    database: db.Database, provider: ModelProvider, limits: AgentLimits = V3_LIMITS
 ) -> WorkflowEngine:
     runtime = AgentRuntime(
         gateway=ModelGateway(database, provider, policy=RETRIES),

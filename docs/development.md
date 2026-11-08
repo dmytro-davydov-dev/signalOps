@@ -228,6 +228,7 @@ Backend processes read `SIGNALOPS_`-prefixed variables (`backend/signalops/confi
 | `SIGNALOPS_MODEL_REQUEST_TIMEOUT_SECONDS` | `60` | One provider call; the provider client never retries on its own |
 | `SIGNALOPS_MODEL_MAX_OUTPUT_TOKENS` / `SIGNALOPS_MODEL_EFFORT` | `8000` / `high` | Tokens per reply including thinking (256–64000), and effort (`low`, `medium`, `high`) |
 | `SIGNALOPS_AGENT_MAX_REPAIRS` / `SIGNALOPS_AGENT_MAX_TOOL_CALLS` | `2` / `10` | Rejected replies before the agent abstains, and evidence tool calls per step |
+| `SIGNALOPS_WORKER_JOB_CONCURRENCY` / `SIGNALOPS_AGENT_GLOBAL_BRANCHES` | `2` / `4` | Jobs one worker process runs at once (1–32), and specialist branches running at once across them (1–64); a branch waits for a slot before its step opens (ADR-032) |
 | `SIGNALOPS_MODEL_MAX_ATTEMPTS` | `3` | Calls per request, including the first (1–10). Each one is reserved separately and may be billed |
 | `SIGNALOPS_MODEL_REQUESTS_PER_MINUTE` / `SIGNALOPS_MODEL_TOKENS_PER_MINUTE` | `50` / `200000` | Provider limits enforced in Redis across all workers |
 | `SIGNALOPS_MODEL_LIMIT_WAIT_SECONDS` | `120` | The longest a call pauses for a full window or an unreachable Redis before the job retries |

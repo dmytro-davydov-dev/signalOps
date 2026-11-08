@@ -337,6 +337,16 @@ Revision `0015_investigation_outcomes` adds a partial unique index allowing one 
 
 **Revisit when:** P10 compares `v2` and `v3` under equal budgets, or a real model shows a role needs other tools or context.
 
+## ADR-032: Specialists run as one parallel stage under process-wide slots and durable budget shares
+
+**Decision:** A workflow stage may be `Parallel`: one to three nodes that run at once, each its own step, none reading another's output (`MAX_PARALLEL_BRANCHES` = 3 is the per-investigation limit, checked when the workflow is built). `v3` runs its three specialists this way. Each branch waits on the engine's `branch_slots` semaphore before its step opens. One engine serves every `JobRunner` in a worker process, and the worker runs `SIGNALOPS_WORKER_JOB_CONCURRENCY` runners, so `SIGNALOPS_AGENT_GLOBAL_BRANCHES` bounds the process's branches; a branch over the limit waits, and a job over the runner count stays queued in PostgreSQL. The engine lets every branch of a stage finish, so a failure loses no sibling's work, then raises the most decisive failure: a cancellation, a stop, a lost lease, an exhausted budget, a permanent error, then a retryable one. Money stays one durable budget in PostgreSQL. `ModelGateway.complete` takes an optional `BudgetLimit`: `held_back` must stay free (the conditional `hold_budget` update subtracts it from the budget), and `step_cap` bounds what the step's calls hold and spend together across attempts, read under the job row lock. The plan holds back one synthesis and one verification call at the most a 48 KiB request with the configured output tokens can cost, and splits the rest into equal branch shares. A call that does not fit raises `BudgetShareExhaustedError`, which ends that branch with `ended_by: budget_share`; synthesis and verification draw on the whole budget, and only their failure to fit ends the investigation `budget_exceeded`.
+
+**Reason:** A fixed stage keeps branching inside the explicit state machine, with no spawned tasks beyond its nodes. A semaphore is enough to bound one process. The fleet-wide bound on model use already exists in Redis (ADR-026), and a lease-based PostgreSQL semaphore would add renewals for little gain at this scale. Holding money back for later roles means a greedy specialist cannot leave nothing to verify with, and a share keeps one branch from starving the others. Letting siblings finish turns a transient failure into a retry of one branch.
+
+**Trade-off:** The global limit is per process, so the fleet runs up to processes × `SIGNALOPS_AGENT_GLOBAL_BRANCHES` branches, bounded in total only by the provider rate limit. A branch waiting for a slot holds its job lease and its turn in the deadline. The reserve is an estimate from bounded contracts: a larger downstream request still reserves its real maximum and may not fit. A share counts every attempt of its step, so a branch retried after an ambiguous timeout has less left, which is the conservative side. Letting siblings finish delays the retry by the slowest branch.
+
+**Revisit when:** several worker processes share a provider quota tightly enough to need a fleet-wide branch limit, or measured reservations show the reserve or shares are badly sized.
+
 ## Open questions
 
 | # | Question | Decide by |

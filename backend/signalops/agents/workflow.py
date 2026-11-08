@@ -33,9 +33,11 @@ output `conclude` turns into the diagnosis. `v3` is the multi-agent workflow of
 gateway, which makes the stop check before each one.
 """
 
+import asyncio
+import contextlib
 import logging
 from collections.abc import Mapping
-from typing import Final
+from typing import Any, Final
 
 from pydantic import ValidationError
 
@@ -46,6 +48,7 @@ from signalops.agents.jobs import JobStoppedError, PermanentJobError, error_reco
 from signalops.agents.multi_agent import CONCLUDE_VERIFIED, V3_NODES, WORKFLOW_V3
 from signalops.agents.nodes import Node as Node
 from signalops.agents.nodes import NodeContext as NodeContext
+from signalops.agents.nodes import Parallel as Parallel
 from signalops.agents.nodes import Workflow as Workflow
 from signalops.agents.nodes import WorkflowRun as WorkflowRun
 from signalops.agents.read_cache import ToolScope
@@ -58,11 +61,12 @@ from signalops.contracts.steps import (
     ProposedDiagnosis,
 )
 from signalops.contracts.workflow import AgentRole, StepStatus
+from signalops.gateway.errors import BudgetExceededError
 from signalops.persistence.database import Database
 from signalops.persistence.models import AgentStep, Investigation
 from signalops.persistence.repositories.catalog import CatalogRepository
 from signalops.persistence.repositories.incidents import IncidentRepository
-from signalops.persistence.repositories.jobs import JobLease, JobRepository
+from signalops.persistence.repositories.jobs import JobLease, JobRepository, LeaseLostError
 
 logger = logging.getLogger(__name__)
 
@@ -185,6 +189,19 @@ def reused_output[T: ContractModel](node: Node[T], step: AgentStep, workflow_ver
         raise PermanentJobError(f"step {node.key} cannot be reused") from error
 
 
+_SEVERITY_ORDER: Final = (JobStoppedError, LeaseLostError, BudgetExceededError, PermanentJobError)
+
+
+def _severity(failure: BaseException) -> int:
+    if not isinstance(failure, Exception):
+        # A cancellation or interpreter exit outranks any job error.
+        return -1
+    for rank, kind in enumerate(_SEVERITY_ORDER):
+        if isinstance(failure, kind):
+            return rank
+    return len(_SEVERITY_ORDER)
+
+
 class WorkflowEngine:
     """`JobHandler` that runs an investigation's unfinished nodes."""
 
@@ -193,10 +210,16 @@ class WorkflowEngine:
         database: Database,
         workflows: Mapping[str, Workflow] = WORKFLOWS,
         runtime: AgentRuntime | None = None,
+        *,
+        branch_slots: asyncio.Semaphore | None = None,
     ) -> None:
         self._database = database
         self._workflows = workflows
         self._runtime = runtime
+        # Shared by every job this engine runs, so it bounds the whole process.
+        self._slots: asyncio.Semaphore | contextlib.nullcontext[None] = (
+            branch_slots or contextlib.nullcontext()
+        )
 
     async def __call__(self, lease: JobLease) -> Diagnosis:
         async with self._database.transaction() as session:
@@ -207,16 +230,54 @@ class WorkflowEngine:
             raise PermanentJobError(f"unknown workflow version {run.workflow_version}")
         steps = {step.step_key: step for step in stored}
         context = NodeContext(self._database, run, self._runtime)
-        for index, node in enumerate(workflow.steps):
-            step = steps.get(node.key)
-            if step is not None and step.status == StepStatus.COMPLETED:
-                context.keep(node, reused_output(node, step, run.workflow_version))
-                logger.info("step reused", extra={"step_key": node.key, "attempt": lease.attempt})
-            elif index >= run.max_steps:
-                raise PermanentJobError(f"max_steps {run.max_steps} reached before {node.key}")
+        count = len(workflow.steps)
+        index = 0
+        for stage in workflow.stages:
+            group = stage.nodes if isinstance(stage, Parallel) else (stage,)
+            pending: list[Node[Any]] = []
+            for node in group:
+                step = steps.get(node.key)
+                if step is not None and step.status == StepStatus.COMPLETED:
+                    context.keep(node, reused_output(node, step, run.workflow_version))
+                    logger.info(
+                        "step reused", extra={"step_key": node.key, "attempt": lease.attempt}
+                    )
+                elif index >= run.max_steps:
+                    raise PermanentJobError(f"max_steps {run.max_steps} reached before {node.key}")
+                else:
+                    pending.append(node)
+                index += 1
+            if isinstance(stage, Parallel):
+                await self._branches(lease, pending, context, count)
             else:
-                await self._execute(lease, node, context.at(lease, node.key, len(workflow.steps)))
+                for node in pending:
+                    await self._execute(lease, node, context.at(lease, node.key, count))
         return context.output(workflow.conclusion)
+
+    async def _branches(
+        self, lease: JobLease, nodes: list[Node[Any]], context: NodeContext, count: int
+    ) -> None:
+        """Run a parallel stage's unfinished nodes, each once a global slot is free.
+
+        Every branch runs to its end, so a sibling's failure loses no finished work.
+        Then the most decisive failure is raised: a stop or lost lease first, then
+        an exhausted budget, a permanent error, and a retryable one last.
+        """
+
+        async def branch(node: Node[Any]) -> None:
+            async with self._slots:
+                await self._execute(lease, node, context.at(lease, node.key, count))
+
+        outcomes = await asyncio.gather(*(branch(node) for node in nodes), return_exceptions=True)
+        failures = [outcome for outcome in outcomes if isinstance(outcome, BaseException)]
+        if not failures:
+            return
+        if len(failures) > 1:
+            logger.warning(
+                "parallel branches failed",
+                extra={"errors": sorted(type(failure).__name__ for failure in failures)},
+            )
+        raise min(failures, key=_severity)
 
     async def _execute[T: ContractModel](
         self, lease: JobLease, node: Node[T], context: NodeContext

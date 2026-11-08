@@ -62,3 +62,10 @@ class ProviderError(Exception):
 
 class BudgetExceededError(Exception):
     """The next call's maximum cost does not fit the budget; the investigation ends on it."""
+
+
+class BudgetShareExhaustedError(Exception):
+    """The call does not fit its step's share or the money not held back for later roles.
+
+    Not a `BudgetExceededError`: the branch ends and reports it, the investigation goes on.
+    """

@@ -1,6 +1,6 @@
 # Agents and workflow
 
-> Status: the single-agent slice is built (Phases 6–7). The multi-agent workflow `v3` is being built in Phase 9: roles and handoffs exist (P09-T01); parallel branches, budget shares, contradictions, and the follow-up round are in progress. The source is [SignalOps_Implementation_Plan.md](SignalOps_Implementation_Plan.md) §7–8. Delivery order: durable runtime (Phase 6), gateway and one agent (Phase 7), multi-agent (Phase 9).
+> Status: the single-agent slice is built (Phases 6–7). The multi-agent workflow `v3` is being built in Phase 9: roles and handoffs (P09-T01) and parallel branches with budget shares (P09-T02) exist; contradictions and the follow-up round are in progress. The source is [SignalOps_Implementation_Plan.md](SignalOps_Implementation_Plan.md) §7–8. Delivery order: durable runtime (Phase 6), gateway and one agent (Phase 7), multi-agent (Phase 9).
 
 ## Principles
 
@@ -26,9 +26,9 @@ flowchart TD
     G --> H["Persist diagnosis or insufficient evidence"]
 ```
 
-- An investigation runs **at most 3 concurrent specialist branches**. Specialists never spawn agents recursively.
+- An investigation runs **at most 3 concurrent specialist branches**, as one `Parallel` stage. Specialists never spawn agents recursively. A worker process runs `SIGNALOPS_WORKER_JOB_CONCURRENCY` jobs and at most `SIGNALOPS_AGENT_GLOBAL_BRANCHES` branches across them; a branch waits for a slot ([ADR-032](decisions.md#adr-032-specialists-run-as-one-parallel-stage-under-process-wide-slots-and-durable-budget-shares)).
 - The verifier may request **one** bounded follow-up round, and only within the remaining budget and deadline.
-- Downstream capacity for synthesis and verification is reserved up front, so specialists cannot exhaust the budget first.
+- Downstream capacity for synthesis and verification is reserved up front, so specialists cannot exhaust the budget first: the plan holds back one call of each, and each specialist's calls must fit an equal share of the rest. A specialist out of its share reports it and the investigation goes on.
 
 The engine exists (P06-T03, ADR-022). Workflow `v3` ([ADR-031](decisions.md#adr-031-workflow-v3-splits-the-agent-into-roles-with-code-built-briefs-and-code-checked-handoffs)) is the default for new investigations: `load_context`, `plan`, `telemetry`, `deployment`, `dependency`, `synthesize`, `verify`, `conclude`. Workflow `v2` runs three nodes ([ADR-028](decisions.md#adr-028-workflow-v2-is-one-bounded-agent-whose-answer-is-a-tool-call)): `load_context` builds the incident brief, `investigate` runs one tool-using agent, and `conclude` turns its findings into the `Diagnosis`. `v1`, which always abstains, stays for rows that use it. Phase 9 adds the branches above.
 

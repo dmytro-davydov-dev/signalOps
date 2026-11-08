@@ -355,12 +355,18 @@ def run_worker() -> int:
         # Each committed step or ending wakes the progress streams watching it.
         database = Database.from_engine(engine, on_progress=RedisProgressNotifier(redis))
         gateway = build_gateway(database, redis, settings)
+        # One engine for every runner, so its branch slots bound the whole process.
         workflow = WorkflowEngine(
-            database, runtime=AgentRuntime.from_settings(database, gateway, redis, settings)
+            database,
+            runtime=AgentRuntime.from_settings(database, gateway, redis, settings),
+            branch_slots=asyncio.Semaphore(settings.agent_global_branches),
         )
-        runner = JobRunner(database, workflow, JobPolicy.from_settings(settings))
+        policy = JobPolicy.from_settings(settings)
+        runners = [
+            JobRunner(database, workflow, policy) for _ in range(settings.worker_job_concurrency)
+        ]
         try:
-            await runner.run(stop)
+            await asyncio.gather(*(runner.run(stop) for runner in runners))
         finally:
             await redis.aclose()
             await engine.dispose()

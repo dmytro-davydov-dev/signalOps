@@ -13,7 +13,7 @@ import uuid
 from dataclasses import dataclass
 from typing import Any
 
-from sqlalchemy import ColumnElement, func, select, update
+from sqlalchemy import ColumnElement, case, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from signalops.contracts.workflow import CostBasis, LlmCallStatus
@@ -96,19 +96,38 @@ class LlmCallRepository:
         ).one()
         return UsageTotals(*(int(value) for value in row))
 
-    async def hold_budget(self, investigation_id: uuid.UUID, amount: int) -> bool:
-        """Reserve `amount`, or change nothing and return False if it does not fit."""
+    async def hold_budget(
+        self, investigation_id: uuid.UUID, amount: int, *, held_back: int = 0
+    ) -> bool:
+        """Reserve `amount`, or change nothing and return False if it does not fit.
+
+        `held_back` is kept free for later calls, so this one must fit what is left.
+        """
         held = await self._session.scalar(
             update(Investigation)
             .where(
                 Investigation.id == investigation_id,
                 Investigation.reserved_microusd + Investigation.spent_microusd + amount
-                <= Investigation.budget_microusd,
+                <= Investigation.budget_microusd - held_back,
             )
             .values(reserved_microusd=Investigation.reserved_microusd + amount)
             .returning(Investigation.id)
         )
         return held is not None
+
+    async def step_usage(self, agent_step_id: uuid.UUID) -> int:
+        """What a step's calls hold and have spent, across every attempt of the step."""
+        held = case(
+            (
+                LlmCall.status.in_((LlmCallStatus.PENDING, LlmCallStatus.UNKNOWN)),
+                LlmCall.reserved_microusd,
+            ),
+            else_=func.coalesce(LlmCall.cost_microusd, 0),
+        )
+        total = await self._session.scalar(
+            select(func.coalesce(func.sum(held), 0)).where(LlmCall.agent_step_id == agent_step_id)
+        )
+        return int(total or 0)
 
     async def add(self, call: NewLlmCall) -> tuple[uuid.UUID, int]:
         """Record a pending call; its attempt counts every call of the step.

@@ -26,12 +26,12 @@ PostgreSQL owns evidence, workflow progress, budgets, and the initial knowledge 
 | Field | Current value |
 | --- | --- |
 | Active phase | Phase 9 Multi-agent investigations (in progress); Phase 8 gate passed on the fake provider |
-| Active task | P09-T02 (in progress) |
-| Last completed task | P09-T01 |
-| Latest verified commit | the `feat(P09-T01)` commit (its hash is recorded in the next task's commit) |
-| Validation evidence | P09-T01: `SIGNALOPS_INTEGRATION=1 uv run pytest tests/integration` 612 passed, including 9 new `v3` tests; unit 606 passed. Phase 8 gate: `SIGNALOPS_INTEGRATION=1 uv run pytest` 1190 passed. The Playwright browser journey passed on Compose with the fake provider: fault ingestion, an automatic and one manual investigation (a double click started only one), a stream resumed with `Last-Event-ID` after a reload, a diagnosis naming `bank-gateway` with 10 verified citations and estimated cost, and a cancelled run. No model was called. Earlier evidence is in the work log |
+| Active task | P09-T03 (in progress) |
+| Last completed task | P09-T02 |
+| Latest verified commit | `e91588f` (P09-T01); the `feat(P09-T02)` commit follows |
+| Validation evidence | P09-T02: `SIGNALOPS_INTEGRATION=1 uv run pytest tests/integration` 620 passed, including 8 new parallel-branch tests; unit 614 passed. Phase 8 gate: `SIGNALOPS_INTEGRATION=1 uv run pytest` 1190 passed. The Playwright browser journey passed on Compose with the fake provider: fault ingestion, an automatic and one manual investigation (a double click started only one), a stream resumed with `Last-Event-ID` after a reload, a diagnosis naming `bank-gateway` with 10 verified citations and estimated cost, and a cancelled run. No model was called. Earlier evidence is in the work log |
 | Blockers | none |
-| Next task | P09-T02 |
+| Next task | P09-T03 |
 
 ### Scope and release boundaries
 
@@ -820,11 +820,18 @@ Start the React shell in Phase 1 and add API-backed incident views in Phase 5; P
 
 ### P09-T02 Implement bounded parallel scheduling
 
-- [ ] Complete this task.
+- [x] Complete this task.
 
 **Implementation:** Run at most three specialist branches per investigation, enforce a global worker limit, and share a durable total budget. Reserve downstream capacity rather than exhausting the budget before verification.
 
 **Acceptance:** Parallel execution respects per-investigation/global limits; saturated capacity queues work without unrestricted task spawning.
+
+**Notes (2026-11-08):**
+- **Decision (ADR-032):** `nodes.Parallel` is a workflow stage of 1–3 nodes (`MAX_PARALLEL_BRANCHES`), each its own fenced step; `v3` runs its specialists as one. Each branch waits on the engine's `branch_slots` before its step opens. The worker runs `SIGNALOPS_WORKER_JOB_CONCURRENCY` (2) runners on one engine with `SIGNALOPS_AGENT_GLOBAL_BRANCHES` (4) slots, so the limit covers the process; extra jobs stay queued in PostgreSQL.
+- **Budget:** `ModelGateway.complete` takes a `BudgetLimit`. `held_back` is subtracted inside the conditional `hold_budget` update, so parallel calls still cannot oversubscribe. `step_cap` bounds a step's held and spent money across attempts (`LlmCallRepository.step_usage`, read under the job lock). Specialists hold back the plan's reserve (one synthesis and one verification call) and stay within an equal share; a call that does not fit raises `BudgetShareExhaustedError`, which ends only that branch (`ended_by: budget_share`).
+- **Failures:** every branch of a stage runs to its end, then the most decisive failure is raised (cancellation, stop, lost lease, budget, permanent, retryable). A throttled branch is retried alone on the next attempt; completed siblings are reused.
+- **Verified:** three branches in flight at once and every branch opened before any finished; two jobs sharing 2 slots peaked at 2 calls in flight and finished all 6 branches; every branch's usage stayed within its share and shares plus reserve within the budget; shares too small for any call stopped all branches with no call made and ended `insufficient_evidence`, not `budget_exceeded`; a step cap counts earlier spend and held unknown reservations; a throttled branch was retried alone.
+- **Left:** the global limit is per process (fleet total = processes × slots, plus the provider rate limit); the reserve is an estimate from bounded contracts, not a guarantee.
 
 ### P09-T03 Implement synthesis and verification
 
@@ -1465,13 +1472,23 @@ Keep these outside the release critical path unless measurements justify promoti
 
 ### 2026-11-08 — P09-T01
 - Status: completed
-- Commit: the `feat(P09-T01)` commit (hash recorded in the P09-T02 entry)
+- Commit: `e91588f`
 - Implemented: `contracts/roles.py`; `agents/agent_loop.py`, `agents/multi_agent.py`, `agents/nodes.py`, `agents/briefs.py`; `gateway/fake_roles.py`; `SIGNALOPS_INVESTIGATION_WORKFLOW_VERSION`; new budget and step defaults; four workflow schemas; `tests/integration/test_multi_agent.py`, `tests/integration/multi_agent_support.py`, `tests/unit/test_roles.py`; ADR-031; `docs/agents-and-workflow.md`, `docs/development.md`.
 - Validation commands and results: `uv run ruff check .`, `uv run ruff format --check .`, `uv run mypy` (176 files), `uv run signalops export-schemas` (4 new schemas) pass; `uv run pytest` 606 passed; `SIGNALOPS_INTEGRATION=1 uv run pytest tests/integration` 612 passed on Compose.
 - Evidence or artifact references: the tests check each role's offered tools and brief fields from the requests the fake received, typed findings with provenance and uncertainty, and refusals of an unread citation, another role's tool, an uncited hypothesis, and an incomplete verification.
 - Deviations and reasons: none.
 - Remaining issues: see task notes.
 - Next task: P09-T02.
+
+### 2026-11-08 — P09-T02
+- Status: completed
+- Commit: the `feat(P09-T02)` commit (hash recorded in the P09-T03 entry)
+- Implemented: `nodes.Parallel` and the engine's parallel stage with `branch_slots`; `BudgetLimit`, `BudgetShareExhaustedError`, `LlmCallRepository.step_usage`, `hold_budget(held_back=)`; enforced branch shares and reserve in `v3`; worker runners and slots; two settings; `tests/integration/test_parallel_branches.py`, unit tests for stages, failure precedence, and settings; ADR-032; docs.
+- Validation commands and results: `uv run ruff check .`, `uv run ruff format --check .`, `uv run mypy` (177 files) pass; `uv run pytest` 614 passed; `SIGNALOPS_INTEGRATION=1 uv run pytest tests/integration` 620 passed on Compose.
+- Evidence or artifact references: see task notes, "Verified".
+- Deviations and reasons: the global limit is per worker process, not fleet-wide (ADR-032).
+- Remaining issues: see task notes.
+- Next task: P09-T03.
 
 ## Work log template
 

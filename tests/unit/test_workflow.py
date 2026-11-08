@@ -1,27 +1,32 @@
 """Pure parts of the workflow: its shape, typed output, and reuse rules (P06-T03)."""
 
+import asyncio
 import uuid
 from datetime import UTC, datetime
 from typing import Any, cast
 
 import pytest
 
-from signalops.agents.jobs import PermanentJobError
+from signalops.agents.jobs import JobStoppedError, PermanentJobError, TransientJobError
 from signalops.agents.workflow import (
     CONCLUDE,
     INVESTIGATE,
     LOAD_CONTEXT,
     WORKFLOWS,
     NodeContext,
+    Parallel,
     WorkflowRun,
+    _severity,
     conclude,
     reused_output,
 )
 from signalops.contracts.checkpoints import StepCheckpoint
 from signalops.contracts.diagnosis import Diagnosis, DiagnosisStatus
 from signalops.contracts.steps import IncidentBrief, InvestigatorFindings
+from signalops.gateway.errors import BudgetExceededError
 from signalops.persistence.database import Database
 from signalops.persistence.models import AgentStep
+from signalops.persistence.repositories.jobs import LeaseLostError
 from signalops.persistence.repositories.scope import EvidenceScope
 
 NOW = datetime(2026, 11, 7, 12, 0, tzinfo=UTC)
@@ -113,3 +118,37 @@ def test_the_refusal_quotes_no_stored_value() -> None:
         reused_output(LOAD_CONTEXT, step, "v1")
 
     assert "secret" not in str(caught.value)
+
+
+def test_v3_step_keys_are_stable_with_specialists_in_one_parallel_stage() -> None:
+    workflow = WORKFLOWS["v3"]
+    assert [node.key for node in workflow.steps] == [
+        "load_context",
+        "plan",
+        "telemetry",
+        "deployment",
+        "dependency",
+        "synthesize",
+        "verify",
+        "conclude",
+    ]
+    [stage] = [stage for stage in workflow.stages if isinstance(stage, Parallel)]
+    assert [node.key for node in stage.nodes] == ["telemetry", "deployment", "dependency"]
+
+
+@pytest.mark.parametrize(
+    ("failures", "raised"),
+    [
+        ((TransientJobError("t"), PermanentJobError("p")), PermanentJobError),
+        ((PermanentJobError("p"), BudgetExceededError("b")), BudgetExceededError),
+        ((BudgetExceededError("b"), LeaseLostError("l")), LeaseLostError),
+        ((LeaseLostError("l"), JobStoppedError("s")), JobStoppedError),
+        ((JobStoppedError("s"), asyncio.CancelledError()), asyncio.CancelledError),
+        ((ValueError("v"), PermanentJobError("p")), PermanentJobError),
+    ],
+)
+def test_the_most_decisive_branch_failure_is_raised(
+    failures: tuple[BaseException, ...], raised: type[BaseException]
+) -> None:
+    assert type(min(failures, key=_severity)) is raised
+    assert type(min(reversed(failures), key=_severity)) is raised

@@ -28,3 +28,19 @@ def test_non_postgres_database_url_is_rejected() -> None:
     settings = Settings(database_url=SecretStr("mysql://u@db/x"))
     with pytest.raises(ValidationError):
         settings.validated_database_url()
+
+
+def test_workflow_and_concurrency_defaults_and_bounds() -> None:
+    settings = Settings(database_url="postgresql+psycopg://u:p@h/d")  # type: ignore[arg-type]
+    assert settings.investigation_workflow_version == "v3"
+    assert (settings.worker_job_concurrency, settings.agent_global_branches) == (2, 4)
+    with pytest.raises(ValidationError):
+        Settings(
+            database_url="postgresql+psycopg://u:p@h/d",  # type: ignore[arg-type]
+            investigation_workflow_version="v1",  # type: ignore[arg-type]
+        )
+    with pytest.raises(ValidationError):
+        Settings(
+            database_url="postgresql+psycopg://u:p@h/d",  # type: ignore[arg-type]
+            agent_global_branches=0,
+        )

@@ -20,6 +20,9 @@ from signalops.persistence.repositories.scope import EvidenceScope
 if TYPE_CHECKING:
     from signalops.agents.investigator import AgentRuntime
 
+# Specialist branches one investigation may run at once.
+MAX_PARALLEL_BRANCHES = 3
+
 
 @dataclass(frozen=True)
 class WorkflowRun:
@@ -103,12 +106,35 @@ class Node[T: ContractModel]:
 
 
 @dataclass(frozen=True)
+class Parallel:
+    """Nodes that run at once, each its own step. None may read another's output."""
+
+    nodes: tuple[Node[Any], ...]
+
+    def __post_init__(self) -> None:
+        if not 1 <= len(self.nodes) <= MAX_PARALLEL_BRANCHES:
+            raise ValueError(f"a parallel stage has 1 to {MAX_PARALLEL_BRANCHES} nodes")
+
+
+Stage = Node[Any] | Parallel
+
+
+@dataclass(frozen=True)
 class Workflow:
     version: str
-    # The nodes before the conclusion.
-    nodes: tuple[Node[Any], ...]
+    # The stages before the conclusion, in order.
+    nodes: tuple[Stage, ...]
     conclusion: Node[Diagnosis]
 
     @property
-    def steps(self) -> tuple[Node[Any], ...]:
+    def stages(self) -> tuple[Stage, ...]:
         return (*self.nodes, self.conclusion)
+
+    @property
+    def steps(self) -> tuple[Node[Any], ...]:
+        """Every node, a parallel stage's in its listed order."""
+        return tuple(
+            node
+            for stage in self.stages
+            for node in (stage.nodes if isinstance(stage, Parallel) else (stage,))
+        )

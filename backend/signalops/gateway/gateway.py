@@ -5,6 +5,10 @@ leases, and reserves the call's maximum cost. So a stale worker cannot start a c
 no call starts after a cancellation or deadline commits, and in-flight calls count
 against the budget. No transaction stays open during the call.
 
+**Shares.** A `BudgetLimit` narrows the check for a call that must leave money for
+later roles: it must also fit its step's cap and leave `held_back` free. Such a call
+raises `BudgetShareExhaustedError` instead of `BudgetExceededError`.
+
 **Settling.** A success replaces the reservation with its cost. A definite failure
 releases it. An ambiguous failure keeps it and records no cost, since an external
 call may have run and been billed before the timeout.
@@ -28,7 +32,12 @@ from redis.asyncio import Redis
 from signalops.agents.jobs import JobStoppedError, PermanentJobError, TransientJobError
 from signalops.config import Settings
 from signalops.contracts.workflow import CostBasis
-from signalops.gateway.errors import BudgetExceededError, ProviderError, ProviderErrorCategory
+from signalops.gateway.errors import (
+    BudgetExceededError,
+    BudgetShareExhaustedError,
+    ProviderError,
+    ProviderErrorCategory,
+)
 from signalops.gateway.limits import NoRateLimit, RateLimiter, RateLimits, RedisRateLimiter
 from signalops.gateway.pricing import (
     PRICES,
@@ -72,6 +81,19 @@ class GatewayPolicy:
 
 
 @dataclass(frozen=True)
+class BudgetLimit:
+    """A tighter bound than the budget, for a call that must leave money for others.
+
+    `held_back` stays free for later roles. `step_cap` bounds what the step's calls
+    hold and spend together, across attempts. A call that does not fit raises
+    `BudgetShareExhaustedError`, which ends the branch, not the investigation.
+    """
+
+    held_back: int = 0
+    step_cap: int | None = None
+
+
+@dataclass(frozen=True)
 class Reservation:
     call_id: uuid.UUID
     attempt: int
@@ -97,7 +119,12 @@ class ModelGateway:
         return self._provider.name
 
     async def complete(
-        self, lease: JobLease, step_key: str, request: ModelRequest
+        self,
+        lease: JobLease,
+        step_key: str,
+        request: ModelRequest,
+        *,
+        budget: BudgetLimit | None = None,
     ) -> ModelResponse:
         """The model's answer, reserving for each try. See the module docstring for errors."""
         retry = self._policy.retry
@@ -105,7 +132,7 @@ class ModelGateway:
         failures = 0
         while True:
             await self._limiter.acquire(self._provider.name, tokens)
-            reservation = await self._reserve(lease, step_key, request)
+            reservation = await self._reserve(lease, step_key, request, budget)
             started = asyncio.get_running_loop().time()
             try:
                 async with asyncio.timeout(self._policy.request_timeout_seconds):
@@ -134,9 +161,12 @@ class ModelGateway:
     def _elapsed_ms(started: float) -> int:
         return round((asyncio.get_running_loop().time() - started) * 1000)
 
-    async def _reserve(self, lease: JobLease, step_key: str, request: ModelRequest) -> Reservation:
+    async def _reserve(
+        self, lease: JobLease, step_key: str, request: ModelRequest, budget: BudgetLimit | None
+    ) -> Reservation:
         provider = self._provider.name
         amount = maximum_cost(request, price_of(provider, request.model))
+        limit = budget or BudgetLimit()
         reservation = None
         async with self._database.transaction() as session:
             jobs = JobRepository(session)
@@ -145,10 +175,17 @@ class ModelGateway:
                 raise JobStoppedError(step_key)
             calls = LlmCallRepository(session)
             await calls.close_abandoned(lease.investigation_id, before_generation=lease.generation)
-            if await calls.hold_budget(lease.investigation_id, amount):
+            step_id = await calls.step_id(lease.investigation_id, step_key)
+            # The job row is locked, so the step's usage cannot change before the hold.
+            fits_step = (
+                limit.step_cap is None or await calls.step_usage(step_id) + amount <= limit.step_cap
+            )
+            if fits_step and await calls.hold_budget(
+                lease.investigation_id, amount, held_back=limit.held_back
+            ):
                 call_id, attempt = await calls.add(
                     NewLlmCall(
-                        agent_step_id=await calls.step_id(lease.investigation_id, step_key),
+                        agent_step_id=step_id,
                         provider=provider,
                         model=request.model,
                         prompt_version=request.prompt_version,
@@ -159,6 +196,12 @@ class ModelGateway:
                     )
                 )
                 reservation = Reservation(call_id, attempt, amount)
+        if reservation is None and budget is not None:
+            logger.info(
+                "model call over its share",
+                extra={"step_key": step_key, "reserved_microusd": amount},
+            )
+            raise BudgetShareExhaustedError(f"a call of up to {amount} microusd exceeds its share")
         if reservation is None:
             raise BudgetExceededError(f"a call of up to {amount} microusd does not fit the budget")
         logger.info(

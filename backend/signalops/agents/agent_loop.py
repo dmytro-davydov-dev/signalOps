@@ -15,6 +15,10 @@ results returned, so a role's check can refuse a citation it never read.
 only, a bounded number of times. The loop then ends without output, and the caller
 abstains: an unsupported answer is never stored.
 
+**Shares.** A role given a `BudgetLimit` stops when its next call does not fit, and
+the caller reports that; only a call drawing on the whole budget can end the
+investigation `budget_exceeded`.
+
 **Restart.** The conversation lives in memory, because a provider's thinking blocks
 are not stored. A node that restarts begins it again, and each call is a new billable
 reservation. Tools are read-only, so re-reading changes nothing.
@@ -34,6 +38,8 @@ from signalops.agents.tools import tool_definitions
 from signalops.contracts.common import describe_validation_error
 from signalops.contracts.roles import AgentEnding, ToolCallRef
 from signalops.contracts.workflow import ToolName
+from signalops.gateway.errors import BudgetShareExhaustedError
+from signalops.gateway.gateway import BudgetLimit
 from signalops.gateway.types import (
     ModelMessage,
     ModelRequest,
@@ -98,6 +104,8 @@ class RoleTask[T: BaseModel]:
     check: Callable[[T, Reads], Awaitable[str | None]]
     # Shown to the model before a repair, then the field locations.
     invalid_prefix: str = "Invalid output"
+    # A share and money held back for later roles; None draws on the whole budget.
+    budget: BudgetLimit | None = None
 
 
 @dataclass(frozen=True)
@@ -139,7 +147,10 @@ class AgentLoop[T: BaseModel]:
         if max_turns <= 0:
             return self._ended(AgentEnding.NO_TURNS)
         for _turn in range(max_turns):
-            response = await self._ask()
+            try:
+                response = await self._ask()
+            except BudgetShareExhaustedError:
+                return self._ended(AgentEnding.BUDGET_SHARE)
             self._turns += 1
             if response.stop_reason is StopReason.REFUSAL:
                 return self._ended(AgentEnding.REFUSED)
@@ -164,7 +175,9 @@ class AgentLoop[T: BaseModel]:
             max_output_tokens=limits.max_output_tokens,
             effort=limits.effort,
         )
-        return await self._runtime.gateway.complete(self._lease, self._step_key, request)
+        return await self._runtime.gateway.complete(
+            self._lease, self._step_key, request, budget=self._task.budget
+        )
 
     async def _take(self, response: ModelResponse) -> T | None:
         if response.stop_reason is StopReason.MAX_TOKENS:

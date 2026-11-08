@@ -20,7 +20,15 @@ role that found nothing. The verifier must judge exactly the leading citations. 
 refusal goes back to the model as a repair; a role out of repairs or turns reports
 what is missing instead.
 
+**Parallel branches.** The three specialists are one parallel stage: at most three
+branches per investigation, each a step of its own, each waiting for one of the
+worker's global branch slots (`SIGNALOPS_AGENT_GLOBAL_BRANCHES`) before it opens.
+
 **Bounds.** Turns come from `max_steps` minus the node count, divided by the plan.
+Money is shared through the investigation's durable budget. The plan holds back
+enough for one synthesis and one verification call, and splits the rest into equal
+branch shares; a specialist whose next call does not fit its share, or would dip into
+the reserve, stops and reports it. Synthesis and verification draw on the whole budget.
 """
 
 import logging
@@ -34,7 +42,7 @@ from signalops.agents.briefs import LOAD_INCIDENT
 from signalops.agents.findings import verify_findings
 from signalops.agents.investigator import AgentRuntime
 from signalops.agents.jobs import PermanentJobError
-from signalops.agents.nodes import Node, NodeContext
+from signalops.agents.nodes import Node, NodeContext, Parallel
 from signalops.agents.read_cache import ToolScope
 from signalops.agents.tools import TextRedactor
 from signalops.contracts.common import ContractModel
@@ -70,6 +78,7 @@ from signalops.contracts.roles import (
 )
 from signalops.contracts.steps import SUBMIT_TOOL, IncidentBrief, ProposedCause, ProposedDiagnosis
 from signalops.contracts.workflow import AgentRole, IncidentServiceRole, ToolName
+from signalops.gateway.gateway import BudgetLimit
 from signalops.gateway.pricing import maximum_cost_of, price_of
 from signalops.gateway.types import ToolDefinition
 from signalops.persistence.database import Database
@@ -379,7 +388,11 @@ async def check_report(
 
 
 async def run_specialist(
-    context: NodeContext, spec: RoleSpec, brief: SpecialistBrief, max_turns: int
+    context: NodeContext,
+    spec: RoleSpec,
+    brief: SpecialistBrief,
+    max_turns: int,
+    budget: BudgetLimit,
 ) -> SpecialistFindings:
     runtime = _runtime(context)
     scope = _scope(context)
@@ -396,6 +409,7 @@ async def run_specialist(
         output=SpecialistReport,
         check=check,
         invalid_prefix="Invalid findings",
+        budget=budget,
     )
     result = await AgentLoop(runtime, context.lease, context.step_key, scope, task).run(max_turns)
     report = result.output or SpecialistReport(missing_evidence=(ROLE_ENDINGS[result.ended_by],))
@@ -410,8 +424,12 @@ async def run_specialist(
 
 def _specialist_node(spec: RoleSpec) -> Node[SpecialistFindings]:
     async def run(context: NodeContext) -> SpecialistFindings:
-        branch = context.output(PLAN).branch(spec.role)
-        return await run_specialist(context, spec, branch.brief, branch.max_turns)
+        plan = context.output(PLAN)
+        branch = plan.branch(spec.role)
+        budget = BudgetLimit(
+            held_back=plan.downstream_reserve_microusd, step_cap=branch.budget_share_microusd
+        )
+        return await run_specialist(context, spec, branch.brief, branch.max_turns, budget)
 
     return Node(spec.step_key, spec.role, SpecialistFindings, run)
 
@@ -711,5 +729,5 @@ async def conclude_verified(context: NodeContext) -> Diagnosis:
 
 CONCLUDE_VERIFIED: Final = Node("conclude", AgentRole.SYNTHESIZER, Diagnosis, conclude_verified)
 
-V3_NODES: Final = (LOAD_INCIDENT, PLAN, *SPECIALIST_NODES, SYNTHESIZE, VERIFY)
+V3_NODES: Final = (LOAD_INCIDENT, PLAN, Parallel(SPECIALIST_NODES), SYNTHESIZE, VERIFY)
 assert {spec.role for spec in SPECIALISTS} == set(SPECIALIST_ROLES)  # noqa: S101
