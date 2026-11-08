@@ -42,6 +42,7 @@ from typing import Any, Final
 from pydantic import ValidationError
 
 from signalops.agents.briefs import LOAD_INCIDENT
+from signalops.agents.deterministic import DETERMINISTIC, WORKFLOW_D1
 from signalops.agents.findings import verify_findings
 from signalops.agents.investigator import AgentRuntime, investigate_incident
 from signalops.agents.jobs import JobStoppedError, PermanentJobError, error_record
@@ -173,6 +174,8 @@ WORKFLOWS: Final[Mapping[str, Workflow]] = {
     "v1": Workflow("v1", (LOAD_CONTEXT, INVESTIGATE), CONCLUDE),
     "v2": Workflow("v2", (LOAD_INCIDENT, INVESTIGATE_AGENT), CONCLUDE_FINDINGS),
     WORKFLOW_V3: Workflow(WORKFLOW_V3, V3_NODES, CONCLUDE_VERIFIED),
+    # The no-model baseline evaluation compares the agents with (P10-T04).
+    WORKFLOW_D1: DETERMINISTIC,
 }
 
 

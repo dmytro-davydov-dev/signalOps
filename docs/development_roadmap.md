@@ -26,12 +26,12 @@ PostgreSQL owns evidence, workflow progress, budgets, and the initial knowledge 
 | Field | Current value |
 | --- | --- |
 | Active phase | Phase 10 Evaluation infrastructure (in progress); Phase 9 gate passed on the fake provider |
-| Active task | none (P10-T04 next) |
-| Last completed task | P10-T03 |
+| Active task | P10-T05 (in progress) |
+| Last completed task | P10-T04 |
 | Latest verified commit | `53db2c6` (gate fix); the `docs(P09)` gate commit follows |
 | Validation evidence | Phase 9 gate: `SIGNALOPS_INTEGRATION=1 uv run pytest` 1260 passed; on Compose, a `v3` investigation survived `docker compose kill investigation-worker` mid-branch, reusing completed branches and keeping the interrupted call `unknown` with its reservation; `pnpm e2e` passed on `v3`. A live-only bug (runbook references) was found and fixed at the gate. No model was called. Earlier evidence is in the work log |
 | Blockers | none |
-| Next task | P10-T04 (baselines); then T05 scoring, T06 results view, Phase 10 gate |
+| Next task | P10-T06, then the Phase 10 gate |
 
 ### Scope and release boundaries
 
@@ -944,11 +944,17 @@ Start the React shell in Phase 1 and add API-backed incident views in Phase 5; P
 
 ### P10-T04 Implement three comparable baselines
 
-- [ ] Complete this task.
+- [x] Complete this task.
 
 **Implementation:** Create a deterministic diagnosis baseline plus single-agent and multi-agent variants. Freeze evidence/tool access and total token budget per case; run repeated model trials.
 
 **Acceptance:** Comparison results include variant, sample count, variance, and abstentions; a larger agent budget is never hidden as an architectural gain.
+
+**Notes (2026-11-08):**
+- **Decision (ADR-036):** deterministic workflow `d1` (`agents/deterministic.py`): no model; blames the service with the most detector-cited errors, labels the failure by keyword, abstains with no cited errors. `evaluation/runner.py`: `queue_run` registers the split's scenarios and records dataset hash, workflow and prompt versions, model settings, pricing, seed, and equal limits; `RunExecutor` claims a run under a lease, replays each scenario once (seeding the demo runbooks into its scope), requests one investigation per variant and trial on the first incident with cutoff = event-time detection, waits, observes, and scores. `evaluation/metrics.py` summarizes per variant. `NewInvestigation.evidence_cutoff_at` is optional (default `created_at`). CLI `evaluation-run` and `evaluation-worker`; Compose `evaluation-worker` (profile `evaluation`, evaluator login).
+- **Verified (`tests/integration/test_evaluation_runs.py`, in-process replay and worker, fake provider):** a development run over `downstream-timeout/dev`, `unexplained-errors/dev`, and `healthy/dev` with all variants and 2 trials produced 15 scored cases. Within a scenario every investigation had the same incident, scope, cutoff, budget (2,000,000 microUSD), steps (40), and deadline (300 s); healthy cases were scored without an investigation. `v3` named `bank-gateway`; `d1` made no model call, cost 0, and named a different service. Metrics carry samples, trials, per-trial accuracy, standard deviation (0.0 for the deterministic fake), abstentions, false diagnoses, and the equal budget. Executing the run again requested no new investigation and changed no case. `tests/unit/test_evaluation_baselines.py`: keyword rule, variant workflows registered, request bounds.
+- **Choices the task did not state:** the deterministic variant runs one trial; only a scope's first incident is investigated; equal budget is in microUSD, which equals an equal token budget under one model's prices.
+- **Left:** no paid model trial was run (none requested); fake-provider results show the harness, not diagnostic quality, and runs record `measures_model_quality: false`.
 
 ### P10-T05 Implement scoring and evidence auditing
 
@@ -1610,6 +1616,16 @@ Keep these outside the release critical path unless measurements justify promoti
 - Deviations and reasons: OpenTelemetry Demo replaced by a small real app (Q10).
 - Remaining issues: see task notes.
 - Next task: P10-T04.
+
+### 2026-11-08 — P10-T04
+- Status: completed
+- Commit: see git log for `feat(P10-T04)`
+- Implemented: workflow `d1`; `evaluation/runner.py`, `evaluation/metrics.py`; optional evidence cutoff on new investigations; `evaluation-run` and `evaluation-worker` commands; Compose `evaluation-worker`; ADR-036; `docs/evaluation.md` baselines. Also fixed mypy errors in `tests/unit/test_demo_shop.py` that slipped into the P10-T03 commit.
+- Validation commands and results: ruff check and format, mypy (198 files) pass; `uv run pytest tests/unit` passed; `SIGNALOPS_INTEGRATION=1 uv run pytest tests/integration/test_evaluation_runs.py` 1 passed (65 s); workflow, investigator, request, ingestion, and contract suites 288 passed.
+- Evidence or artifact references: see task notes.
+- Deviations and reasons: none.
+- Remaining issues: see task notes.
+- Next task: P10-T05.
 
 ## Work log template
 

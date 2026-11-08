@@ -48,10 +48,10 @@ async def test_a_real_slowdown_produces_real_timeouts_and_nothing_else() -> None
     failed = [p for p in payment if p["status"] == "error"]
     assert failed
     # The client really waited for its 2-second timeout.
-    assert all(p["duration_ms"] >= 1_900 for p in failed)
+    assert all(int(str(p["duration_ms"])) >= 1_900 for p in failed)
     logs = by_kind[SourceKind.STRUCTURED_LOG]
     assert any(
-        p["service"] == "payment" and "timed out after 2000 ms" in p["message"] for p in logs
+        p["service"] == "payment" and "timed out after 2000 ms" in str(p["message"]) for p in logs
     )
     assert any(p["service"] == "checkout" and p["level"] == "error" for p in logs)
     # Logs carry the trace they belong to, and bank-gateway's own spans look healthy:

@@ -20,6 +20,9 @@ x-backend-env: &backend-env
   # empty means every operator request is 401.
   SIGNALOPS_OPERATOR_TOKENS: ${SIGNALOPS_OPERATOR_TOKENS:-{}}
 
+# The evaluator's connection: the only one that can read ground truth (ADR-034).
+x-evaluation-db: &evaluation-db postgresql+psycopg://signalops_eval:${SIGNALOPS_DB_EVALUATOR_PASSWORD:-${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env (see .env.example)}}@postgres:5432/${POSTGRES_DB:-signalops}
+
 x-backend: &backend
   image: signalops-backend:local
   build:
@@ -268,6 +271,21 @@ services:
     depends_on:
       demo-seed: { condition: service_completed_successfully }
       api: { condition: service_healthy }
+
+  # Evaluation profile: claims queued evaluation runs, replays their scenarios
+  # through Kafka, and waits for the investigation workers. Start it with
+  # `docker compose --profile evaluation up -d evaluation-worker`.
+  evaluation-worker:
+    <<: *backend
+    profiles: [evaluation]
+    environment:
+      <<: *backend-env
+      SIGNALOPS_EVALUATION_DATABASE_URL: *evaluation-db
+    command: ["evaluation-worker"]
+    restart: unless-stopped
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+      init-topics: { condition: service_completed_successfully }
 
   backend:
     <<: *backend

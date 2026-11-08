@@ -147,7 +147,7 @@ class EvaluationRun(Base):
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     error: Mapped[str | None] = mapped_column(Text)
-    metrics: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
+    metrics: Mapped[dict[str, Any] | None] = mapped_column(JSONB(none_as_null=True))
 
 
 class EvaluationReplay(Base):
@@ -172,7 +172,7 @@ class EvaluationReplay(Base):
         Text, default=ReplayStatus.PENDING, server_default=ReplayStatus.PENDING
     )
     # Reconciliation: accepted, normalized, detected, and flushed counts.
-    report: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
+    report: Mapped[dict[str, Any] | None] = mapped_column(JSONB(none_as_null=True))
     created_at: Mapped[datetime] = created_at()
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
@@ -214,8 +214,8 @@ class EvaluationCase(Base):
     investigation_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("investigations.id"))
     # The scenario's expected outcome without its evidence labels.
     expected_outcome: Mapped[dict[str, Any]] = mapped_column(JSONB)
-    observed_outcome: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
-    scores: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
+    observed_outcome: Mapped[dict[str, Any] | None] = mapped_column(JSONB(none_as_null=True))
+    scores: Mapped[dict[str, Any] | None] = mapped_column(JSONB(none_as_null=True))
     error: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = created_at()
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

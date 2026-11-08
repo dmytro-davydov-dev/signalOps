@@ -377,6 +377,16 @@ Revision `0015_investigation_outcomes` adds a partial unique index allowing one 
 
 **Revisit when:** P11-T04 replays a million signals, or quarantined records need to count as reconciled.
 
+## ADR-036: Baselines run as workflows on the same incident, with limits fixed by the run
+
+**Decision:** The deterministic baseline is workflow `d1`, run by the ordinary worker. It has no model call: it blames the service with the most detector-cited errors and labels the failure by keyword. The single-agent and multi-agent variants are `v2` and `v3`. An evaluation run replays each scenario once and requests one investigation per variant and trial on the scope's first incident. Each request carries the evidence cutoff set to the incident's event-time detection, and the run's single budget, step limit, and deadline. Request keys derive from the run and case, so a runner that resumes an expired run waits for investigations already requested rather than requesting new ones. The deterministic variant runs once, and agent variants run `trials` times.
+
+**Reason:** Running baselines through the same engine, tools, scope, and cutoff makes the comparison about the method, not the plumbing. Fixing limits on the run, not per variant, means a larger agent budget can never pass as an architectural gain. A naive "blame the alerting service" rule is the honest first thing to beat; it reads the same evidence but does not follow calls.
+
+**Trade-off:** Investigating only the first incident ignores later ones; detection metrics cover them (P10-T05). Cases of one scenario run concurrently, so they compete for worker slots. On the fake provider, every variant follows fixed rules and trials agree exactly, so results show the harness, not model quality, and the run says so in `model_config.measures_model_quality`.
+
+**Revisit when:** A paid model run is requested with a stated budget, or scenarios with several independent incidents are added.
+
 ## Open questions
 
 | # | Question | Decide by |

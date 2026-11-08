@@ -28,6 +28,9 @@ class NewInvestigation:
     max_steps: int
     created_at: datetime
     deadline_at: datetime
+    # Defaults to `created_at`. An evaluation replay sets the incident's detection
+    # time, in event time, so tools see what was known when it was detected.
+    evidence_cutoff_at: datetime | None = None
 
 
 class InvestigationRepository:
@@ -37,7 +40,7 @@ class InvestigationRepository:
     async def create(self, new: NewInvestigation) -> Investigation | None:
         """Insert a queued investigation; None when `request_key` already has one.
 
-        Tools read nothing after `created_at`, which is the evidence cutoff.
+        Tools read nothing after the evidence cutoff, `created_at` unless given.
         """
         investigation_id = await self._session.scalar(
             insert(Investigation)
@@ -47,7 +50,7 @@ class InvestigationRepository:
                 incident_id=new.incident_id,
                 request_key=new.request_key,
                 workflow_version=new.workflow_version,
-                evidence_cutoff_at=new.created_at,
+                evidence_cutoff_at=new.evidence_cutoff_at or new.created_at,
                 budget_microusd=new.budget_microusd,
                 max_steps=new.max_steps,
                 created_at=new.created_at,

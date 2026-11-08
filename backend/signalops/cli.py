@@ -11,6 +11,8 @@ from signalops import __version__
 if TYPE_CHECKING:
     from signalops.config import Settings
     from signalops.contracts.events import EventType
+    from signalops.evaluation.runner import RunnerContext
+    from signalops.persistence.database import Database
     from signalops.streaming.consumer import EventHandler
 
 
@@ -144,6 +146,33 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="run the normalizer, detector, and projector here instead of through Kafka",
     )
+    evaluate = commands.add_parser(
+        "evaluation-run",
+        help="queue an evaluation run of a scenario split with each variant (evaluator role)",
+    )
+    evaluate.add_argument("--label", required=True, help="a name for the run")
+    evaluate.add_argument(
+        "--split", choices=["development", "held_out"], default="held_out", help="scenario split"
+    )
+    evaluate.add_argument(
+        "--variant",
+        action="append",
+        choices=["deterministic", "single_agent", "multi_agent"],
+        help="variant to compare (repeatable; default all three)",
+    )
+    evaluate.add_argument("--trials", type=int, default=3, help="trials per agent variant")
+    evaluate.add_argument("--scenario", action="append", help="limit to these scenario names")
+    evaluate.add_argument("--budget-microusd", type=int, help="equal budget per case")
+    evaluate.add_argument(
+        "--execute", action="store_true", help="execute the run here instead of queueing it"
+    )
+    evaluate.add_argument(
+        "--in-process", action="store_true", help="with --execute: replay without Kafka"
+    )
+    worker = commands.add_parser(
+        "evaluation-worker", help="claim and execute queued evaluation runs until stopped"
+    )
+    worker.add_argument("--in-process", action="store_true", help="replay without Kafka")
     redrive = commands.add_parser(
         "redrive-record",
         help="republish one quarantined record to its topic with a new redrive attempt ID",
@@ -606,6 +635,136 @@ def run_evaluation_replay(args: argparse.Namespace) -> int:
     return 0 if report.status is ReplayStatus.COMPLETED else 1
 
 
+def _runner_context(
+    settings: "Settings", database: "Database", in_process: bool
+) -> "RunnerContext":
+    from signalops.adapters.ingestion import IngestPolicy, IngestSource
+    from signalops.adapters.quality import TimingPolicy
+    from signalops.detection.detector import DetectionPolicy
+    from signalops.detection.graph import GraphPolicy
+    from signalops.evaluation.replay import KafkaTransport, LocalTransport, ReplayTransport
+    from signalops.evaluation.runner import RunnerContext
+    from signalops.persistence.repositories.scope import EvidenceScope
+    from signalops.persistence.seed import DEMO_SOURCES, DEMO_WORKSPACE_ID
+    from signalops.streaming.producer import EventProducer
+
+    detection = DetectionPolicy.from_settings(settings)
+
+    def transport_for(scope: EvidenceScope) -> ReplayTransport:
+        if in_process:
+            return LocalTransport(
+                database,
+                scope,
+                timing_policy=TimingPolicy.from_settings(settings),
+                detection_policy=detection,
+                graph_policy=GraphPolicy.from_settings(settings),
+            )
+        return KafkaTransport(EventProducer(settings, client_id="signalops-evaluation"))
+
+    return RunnerContext(
+        database=database,
+        sources={
+            source.id: IngestSource(source.id, DEMO_WORKSPACE_ID, source.kind, enabled=True)
+            for source in DEMO_SOURCES
+        },
+        ingest_policy=IngestPolicy.from_settings(settings),
+        detection_policy=detection,
+        transport_for=transport_for,
+    )
+
+
+def run_evaluation_run(args: argparse.Namespace) -> int:
+    import asyncio
+    import socket
+
+    from signalops.config import get_settings
+    from signalops.contracts.evaluation import RunStatus, ScenarioSplit, SystemVariant
+    from signalops.evaluation.runner import RunExecutor, RunRequest, queue_run
+    from signalops.logs import configure_logging
+    from signalops.persistence.database import Database, create_engine
+    from signalops.persistence.seed import DEMO_WORKSPACE_ID
+
+    settings = get_settings()
+    configure_logging(settings.log_level)
+    request = RunRequest(
+        label=args.label,
+        split=ScenarioSplit(args.split),
+        variants=tuple(SystemVariant(value) for value in args.variant or SystemVariant),
+        trials=args.trials,
+        scenarios=tuple(args.scenario or ()),
+        budget_microusd=args.budget_microusd,
+    )
+    evaluator = settings.evaluator_settings()
+
+    async def run() -> int:
+        engine = create_engine(evaluator)
+        database = Database.from_engine(engine)
+        try:
+            queued = await queue_run(
+                database, request, workspace_id=DEMO_WORKSPACE_ID, settings=settings
+            )
+            print(f"queued evaluation run {queued.id}")
+            if not args.execute:
+                return 0
+            executor = RunExecutor(
+                _runner_context(evaluator, database, args.in_process),
+                owner=f"cli-{socket.gethostname()}",
+            )
+            while (claimed := await executor.claim_and_execute()) is not None:
+                if claimed == queued.id:
+                    break
+            async with database.transaction() as session:
+                from signalops.persistence.repositories.evaluation import EvaluationRepository
+
+                stored = await EvaluationRepository(session).run(queued.id)
+            assert stored is not None  # noqa: S101 - just created
+            detail = stored.error or f"see GET /v1/evaluation-runs/{stored.id}"
+            print(f"{stored.status}: {detail}")
+            return 0 if stored.status == RunStatus.COMPLETED else 1
+        finally:
+            await engine.dispose()
+
+    return asyncio.run(run())
+
+
+def run_evaluation_worker(args: argparse.Namespace) -> int:
+    import asyncio
+    import contextlib
+    import signal
+    import socket
+
+    from signalops.config import get_settings
+    from signalops.evaluation.runner import RunExecutor
+    from signalops.logs import configure_logging
+    from signalops.persistence.database import Database, create_engine
+
+    settings = get_settings()
+    configure_logging(settings.log_level)
+    evaluator = settings.evaluator_settings()
+
+    async def work() -> None:
+        stop = asyncio.Event()
+        loop = asyncio.get_running_loop()
+        for signum in (signal.SIGINT, signal.SIGTERM):
+            loop.add_signal_handler(signum, stop.set)
+        engine = create_engine(evaluator)
+        database = Database.from_engine(engine)
+        executor = RunExecutor(
+            _runner_context(evaluator, database, args.in_process),
+            owner=f"evaluation-{socket.gethostname()}",
+        )
+        try:
+            while not stop.is_set():
+                if await executor.claim_and_execute() is None:
+                    with contextlib.suppress(TimeoutError):
+                        await asyncio.wait_for(stop.wait(), 5)
+        finally:
+            await engine.dispose()
+
+    asyncio.run(work())
+    return 0
+
+
 def run_redrive_record(args: argparse.Namespace) -> int:
     from signalops.config import get_settings
     from signalops.logs import configure_logging
@@ -809,6 +968,10 @@ def main(argv: list[str] | None = None) -> int:
         return run_demo_post(args)
     if args.command == "detector-flush":
         return run_detector_flush(args)
+    if args.command == "evaluation-run":
+        return run_evaluation_run(args)
+    if args.command == "evaluation-worker":
+        return run_evaluation_worker(args)
     if args.command == "demo-shop":
         return run_demo_shop(args)
     if args.command == "evaluation-replay":

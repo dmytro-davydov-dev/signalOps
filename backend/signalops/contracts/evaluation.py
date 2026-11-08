@@ -138,7 +138,10 @@ class ObservedOutcome(ContractModel):
     cited_signal_ids: tuple[uuid.UUID, ...] = ()
     # Source event IDs of the cited signals in the case's replay scope.
     cited_event_ids: tuple[SourceEventId, ...] = ()
+    # Event time in a replay, so not comparable with the wall-clock times below.
     detected_at: UtcDatetime | None = None
+    # When the investigation was requested and ended, by wall clock.
+    started_at: UtcDatetime | None = None
     completed_at: UtcDatetime | None = None
     spent_microusd: int = 0
     unknown_reserved_microusd: int = 0

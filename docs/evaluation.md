@@ -21,15 +21,15 @@ Find out whether agent investigations actually beat simpler approaches. Correctn
 - **Development** variants and **held-out** variants are kept separate. Prompts are never tuned on the reporting set.
 - Synthetic replay is labelled synthetic. Real fault demonstrations run through the optional `demo` profile.
 
-## Baselines
+## Baselines (P10-T04, ADR-036)
 
-| Variant | Description |
-| --- | --- |
-| Deterministic | Rule-based diagnosis, no model |
-| Single agent | One tool-using agent (the Phase 7 workflow) |
-| Multi-agent | Specialists, synthesis, and verification (the Phase 9 workflow) |
+| Variant | Workflow | Description |
+| --- | --- | --- |
+| Deterministic | `d1` | No model. Blames the service with the most detector-cited errors and labels the failure by keyword (deployment in the window, pool exhausted, heap, timeout, else `elevated_errors`). Runs once per scenario |
+| Single agent | `v2` | One tool-using agent (Phase 7) |
+| Multi-agent | `v3` | Specialists, synthesis, and verification (Phase 9) |
 
-Every variant gets the same evidence cutoff, tools, dataset, and **total token budget**. Model runs are repeated, and the report includes sample size and variance. The multi-agent variant stays only if it improves quality, robustness, or useful parallelism enough to justify its cost.
+`signalops evaluation-run --label L --split held_out [--variant …] [--trials N] [--execute]` queues a run, and `evaluation-worker` (Compose profile `evaluation`) executes queued runs. Both use `SIGNALOPS_EVALUATION_DATABASE_URL`. A run replays each scenario once into its own scope. Every variant and trial then investigates that scope's first incident with the same evidence cutoff (the incident's event-time detection), the same tools, and the same `budget_microusd`, `max_steps`, and deadline, all recorded in `runs.limits`. A scenario with no incident is scored without an investigation. The run records the split's dataset hash, workflow and prompt versions, model settings (including whether the provider measures model quality: the fake provider does not), pricing version and prices, and seed. Its metrics give, per variant, cases, samples, trials, per-trial accuracy and its standard deviation, abstentions, false diagnoses, harness failures (counted as incorrect), cost, unknown reservations, and model calls, next to the equal per-case budget.
 
 ## Metrics
 
