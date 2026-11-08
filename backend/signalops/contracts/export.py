@@ -30,7 +30,9 @@ from signalops.contracts.incidents import (
 from signalops.contracts.ingestion import IngestRequest, IngestResponse
 from signalops.contracts.investigations import (
     DIAGNOSIS_STATUS_BY_INVESTIGATION_STATUS,
+    IncidentInvestigations,
     InvestigationAccepted,
+    InvestigationEvidence,
     InvestigationRequest,
     InvestigationView,
 )
@@ -167,6 +169,14 @@ def artifacts() -> list[Artifact]:
             SCHEMA_DIR / "investigations" / "investigation.v1.json", _schema(InvestigationView)
         ),
         Artifact(SCHEMA_DIR / "investigations" / "progress-page.v1.json", _schema(ProgressPage)),
+        Artifact(
+            SCHEMA_DIR / "investigations" / "incident-investigations.v1.json",
+            _schema(IncidentInvestigations),
+        ),
+        Artifact(
+            SCHEMA_DIR / "investigations" / "investigation-evidence.v1.json",
+            _schema(InvestigationEvidence),
+        ),
         Artifact(
             SCHEMA_DIR / "investigations" / "investigation-request.v1.json",
             _schema(InvestigationRequest),

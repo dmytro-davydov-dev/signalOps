@@ -571,6 +571,44 @@
         "title": "IncidentEvidencePage",
         "type": "object"
       },
+      "IncidentInvestigations": {
+        "additionalProperties": false,
+        "description": "Body of GET /v1/incidents/{id}/investigations, newest first.",
+        "properties": {
+          "incident_id": {
+            "format": "uuid",
+            "title": "Incident Id",
+            "type": "string"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/InvestigationSummary"
+            },
+            "maxItems": 20,
+            "title": "Items",
+            "type": "array"
+          },
+          "replay_scope": {
+            "maxLength": 128,
+            "minLength": 1,
+            "pattern": "^[a-z0-9][a-z0-9._:-]*$",
+            "title": "Replay Scope",
+            "type": "string"
+          },
+          "truncated": {
+            "default": false,
+            "title": "Truncated",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "incident_id",
+          "replay_scope",
+          "items"
+        ],
+        "title": "IncidentInvestigations",
+        "type": "object"
+      },
       "IncidentListItem": {
         "additionalProperties": false,
         "description": "A list row: the summary plus the incident's services, primary first, then by name.",
@@ -1034,6 +1072,55 @@
         "title": "InvestigationEnded",
         "type": "object"
       },
+      "InvestigationEvidence": {
+        "additionalProperties": false,
+        "description": "Body of GET /v1/investigations/{id}/evidence.\n\n`items` are the diagnosis's cited signals that exist in the investigation's scope\nand were known by its cutoff, in citation order and redacted as `/v1/signals` is.\n`unverified_signal_ids` are citations that fail that check; a stored diagnosis\nshould have none, because the workflow checked them before saving it.",
+        "properties": {
+          "evidence_cutoff_at": {
+            "format": "date-time",
+            "title": "Evidence Cutoff At",
+            "type": "string"
+          },
+          "investigation_id": {
+            "format": "uuid",
+            "title": "Investigation Id",
+            "type": "string"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/NormalizedSignal"
+            },
+            "maxItems": 50,
+            "title": "Items",
+            "type": "array"
+          },
+          "replay_scope": {
+            "maxLength": 128,
+            "minLength": 1,
+            "pattern": "^[a-z0-9][a-z0-9._:-]*$",
+            "title": "Replay Scope",
+            "type": "string"
+          },
+          "unverified_signal_ids": {
+            "default": [],
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "maxItems": 50,
+            "title": "Unverified Signal Ids",
+            "type": "array"
+          }
+        },
+        "required": [
+          "investigation_id",
+          "replay_scope",
+          "evidence_cutoff_at",
+          "items"
+        ],
+        "title": "InvestigationEvidence",
+        "type": "object"
+      },
       "InvestigationRequest": {
         "additionalProperties": false,
         "description": "Body of POST /v1/incidents/{id}/investigations; limits only lower the configured ones.",
@@ -1090,6 +1177,66 @@
         ],
         "title": "InvestigationStatus",
         "type": "string"
+      },
+      "InvestigationSummary": {
+        "additionalProperties": false,
+        "description": "One investigation of an incident, without its usage or diagnosis body.",
+        "properties": {
+          "cancel_requested_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cancel Requested At"
+          },
+          "completed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completed At"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "diagnosis_status": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DiagnosisStatus"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/InvestigationStatus"
+          }
+        },
+        "required": [
+          "id",
+          "status",
+          "created_at"
+        ],
+        "title": "InvestigationSummary",
+        "type": "object"
       },
       "InvestigationUsage": {
         "additionalProperties": false,
@@ -2465,6 +2612,71 @@
       }
     },
     "/v1/incidents/{incident_id}/investigations": {
+      "get": {
+        "description": "The incident's newest investigations, operator and automatic alike.",
+        "operationId": "list_incident_investigations_v1_incidents__incident_id__investigations_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "incident_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Incident Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Replay dataset; `live` by default",
+            "in": "query",
+            "name": "replay_scope",
+            "required": false,
+            "schema": {
+              "default": "live",
+              "description": "Replay dataset; `live` by default",
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^[a-z0-9][a-z0-9._:-]*$",
+              "title": "Replay Scope",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IncidentInvestigations"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "description": "No such incident in this workspace and replay scope"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "OperatorBearer": []
+          }
+        ],
+        "summary": "List Incident Investigations",
+        "tags": [
+          "investigations"
+        ]
+      },
       "post": {
         "description": "Request an investigation of a live incident.\n\nThe same key and body return the same investigation; the same key with\nanother body or incident is 409.",
         "operationId": "request_investigation_v1_incidents__incident_id__investigations_post",
@@ -2780,6 +2992,73 @@
           }
         ],
         "summary": "Cancel",
+        "tags": [
+          "investigations"
+        ]
+      }
+    },
+    "/v1/investigations/{investigation_id}/evidence": {
+      "get": {
+        "description": "The diagnosis's cited signals, checked again against scope and cutoff.\n\nEmpty without a root cause. A citation outside the scope or after the cutoff\nis listed as unverified, never returned.",
+        "operationId": "get_investigation_evidence_v1_investigations__investigation_id__evidence_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "investigation_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Investigation Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Replay dataset; `live` by default",
+            "in": "query",
+            "name": "replay_scope",
+            "required": false,
+            "schema": {
+              "default": "live",
+              "description": "Replay dataset; `live` by default",
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^[a-z0-9][a-z0-9._:-]*$",
+              "title": "Replay Scope",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvestigationEvidence"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "description": "No such investigation"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "OperatorBearer": []
+          }
+        ],
+        "summary": "Get Investigation Evidence",
         "tags": [
           "investigations"
         ]

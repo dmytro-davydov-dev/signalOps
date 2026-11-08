@@ -25,6 +25,8 @@ export interface RequestOptions {
   signal?: AbortSignal;
   /** Send the operator token; a 401 then discards it, so the UI asks again. */
   operator?: boolean;
+  /** Extra request headers, for example `Idempotency-Key`. */
+  headers?: Readonly<Record<string, string>>;
 }
 
 interface RequestBody {
@@ -62,9 +64,9 @@ async function request<T>(
   path: string,
   parse: (value: unknown) => T | undefined,
   body: RequestBody | undefined,
-  { acceptStatuses = [], signal, operator = false }: RequestOptions,
+  { acceptStatuses = [], signal, operator = false, headers: extra = {} }: RequestOptions,
 ): Promise<T> {
-  const headers: Record<string, string> = { Accept: "application/json" };
+  const headers: Record<string, string> = { ...extra, Accept: "application/json" };
   const token = operator ? getOperatorToken() : null;
   if (token !== null) {
     headers.Authorization = `Bearer ${token}`;

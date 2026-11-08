@@ -17,7 +17,9 @@ All endpoints are versioned under `/v1`. Request and response bodies are Pydanti
 | `PATCH /v1/incidents/{id}` | Resolve or reopen a live incident at a version | P05-T05 |
 | `GET /v1/incidents/{id}/evidence` | Evidence timeline: cited signals oldest first, cursor pagination | P05-T05 |
 | `POST /v1/incidents/{id}/investigations` | Requires `Idempotency-Key`. Returns **202** with the investigation ID | P06-T01 |
+| `GET /v1/incidents/{id}/investigations` | The incident's newest investigations (at most 20) | P08-T02 |
 | `GET /v1/investigations/{id}` | State, finding, evidence, usage, limitations | P06-T04, P07 |
+| `GET /v1/investigations/{id}/evidence` | The diagnosis's cited signals, checked again against scope and cutoff | P08-T02 |
 | `POST /v1/investigations/{id}/cancel` | Persists a cancellation request | P06-T04 |
 | `GET /v1/investigations/{id}/progress` | Durable progress history after an integer cursor | P06-T05 |
 | `GET /v1/investigations/{id}/events` | SSE progress stream with a durable reconnect cursor | P08-T03 |
@@ -144,6 +146,17 @@ The body is `InvestigationView` (`contracts/investigations.py`). Its `diagnosis`
 | `queued`, `running`, `failed`, `cancelled`, `budget_exceeded` | `null` | Queued, Running, Failed, Cancelled, Budget exceeded |
 
 `replay_scope` selects a replay run, as on the incident routes. Until P07, the body has no evidence or cost basis.
+
+## Incident investigations and cited evidence
+
+Added in P08-T02 for the investigation workspace. Credential, `replay_scope`, and `503` are those of the incident routes; outside the workspace or scope → `404`.
+
+| Route | Returns |
+| --- | --- |
+| `GET /v1/incidents/{id}/investigations` | `IncidentInvestigations`: up to 20 `InvestigationSummary` rows (status, times, `diagnosis_status`), newest `created_at` first, operator and detector requests alike. `truncated` when more exist |
+| `GET /v1/investigations/{id}/evidence` | `InvestigationEvidence`: the root cause's cited signals that exist in the investigation's scope and were known by its `evidence_cutoff_at` (both `occurred_at` and `ingested_at`), in citation order and redacted as `/v1/signals` is. Citations failing that check are listed in `unverified_signal_ids` and never returned. Empty without a root cause |
+
+A stored diagnosis passed the same check before it was saved (ADR-029), so `unverified_signal_ids` should be empty; the UI warns when it is not.
 
 ## Cancellation
 

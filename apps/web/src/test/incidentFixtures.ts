@@ -111,6 +111,8 @@ export function fetchByPath(routes: Record<string, Route>) {
 export const incidentRoutes = (overrides: Record<string, Route> = {}): Record<string, Route> => ({
   [`/v1/incidents/${INCIDENT_ID}`]: () => jsonResponse(detail),
   [`/v1/incidents/${INCIDENT_ID}/evidence`]: () => jsonResponse(evidencePage),
+  [`/v1/incidents/${INCIDENT_ID}/investigations`]: () =>
+    jsonResponse({ incident_id: INCIDENT_ID, replay_scope: "live", items: [], truncated: false }),
   [`/v1/services/${CHECKOUT}/graph`]: () => jsonResponse(graph),
   [`/v1/services/${PAYMENT}/graph`]: () =>
     jsonResponse({ ...graph, service_id: PAYMENT, downstream: [], upstream: [] }),

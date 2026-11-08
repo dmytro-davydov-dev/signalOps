@@ -39,7 +39,7 @@ from signalops.api.app import create_app
 from signalops.api.investigations import REQUEST_ROUTE
 from signalops.config import Settings
 from signalops.contracts.common import ContractError, replay_scope_for
-from signalops.contracts.diagnosis import Diagnosis
+from signalops.contracts.diagnosis import Diagnosis, DiagnosisStatus, RootCause
 from signalops.contracts.events import (
     EventEnvelope,
     EventPayload,
@@ -48,7 +48,12 @@ from signalops.contracts.events import (
     InvestigationTrigger,
     decode_event,
 )
-from signalops.contracts.investigations import InvestigationRequest
+from signalops.contracts.evidence import NormalizedSignal, QualityStatus, Severity, SignalKind
+from signalops.contracts.investigations import (
+    IncidentInvestigations,
+    InvestigationEvidence,
+    InvestigationRequest,
+)
 from signalops.contracts.progress import ProgressEventType, ProgressPage, StepProgress
 from signalops.contracts.workflow import (
     AgentRole,
@@ -69,6 +74,7 @@ from signalops.persistence.models import (
 )
 from signalops.persistence.repositories.catalog import CatalogRepository
 from signalops.persistence.repositories.detection import SeriesKey
+from signalops.persistence.repositories.evidence import EvidenceRepository
 from signalops.persistence.repositories.incidents import IncidentRepository, NewIncident
 from signalops.persistence.repositories.investigations import (
     InvestigationRepository,
@@ -77,7 +83,7 @@ from signalops.persistence.repositories.investigations import (
 from signalops.persistence.repositories.jobs import JobRepository
 from signalops.persistence.repositories.progress import ProgressRepository
 from signalops.persistence.repositories.scope import EvidenceScope
-from signalops.persistence.seed import DEMO_WORKSPACE_ID
+from signalops.persistence.seed import DEMO_SERVICES, DEMO_SOURCES, DEMO_WORKSPACE_ID
 from signalops.streaming.consumer import (
     ConsumerRunner,
     ProcessOutcome,
@@ -863,3 +869,117 @@ async def test_dispatcher_rejects_a_missing_investigation(database: db.Database)
             await Dispatcher()(
                 session, requested(investigation).model_copy(update={"payload": payload})
             )
+
+
+def test_an_incident_lists_its_investigations_newest_first_in_scope(api: Api) -> None:
+    incident_id = api.incident()
+    first = api.post(incident_id, "list-first").json()
+    second = api.post(incident_id, "list-second").json()
+    repeat = api.post(incident_id, "list-second").json()
+    assert repeat["id"] == second["id"]
+    url = f"/v1/incidents/{incident_id}/investigations"
+
+    body = api.client.get(url, headers=bearer()).json()
+    listing = IncidentInvestigations.model_validate(body)
+    assert [str(item.id) for item in listing.items] == [second["id"], first["id"]]
+    assert listing.truncated is False
+    assert {item.status for item in listing.items} == {InvestigationStatus.QUEUED}
+
+    async def abstain(database: db.Database) -> None:
+        async with database.transaction() as session:
+            await JobRepository(session).start_investigation(uuid.UUID(first["id"]))
+            await end_investigation(
+                session,
+                uuid.UUID(first["id"]),
+                InvestigationStatus.INSUFFICIENT_EVIDENCE,
+                ABSTENTION,
+            )
+
+    api.run(abstain)
+    ended = api.client.get(url, headers=bearer()).json()["items"][1]
+    assert ended["status"] == "insufficient_evidence"
+    assert ended["diagnosis_status"] == "insufficient_evidence"
+    assert ended["completed_at"] is not None
+
+    assert api.client.get(url).status_code == 401
+    assert api.client.get(url, headers=bearer(OTHER_TOKEN)).status_code == 404
+    assert api.client.get(url, params={"replay_scope": REPLAY}, headers=bearer()).status_code == 404
+    missing = f"/v1/incidents/{uuid.uuid4()}/investigations"
+    assert api.client.get(missing, headers=bearer()).status_code == 404
+
+
+def test_an_incident_lists_at_most_twenty_investigations(api: Api) -> None:
+    incident_id = api.incident()
+    created = [api.post(incident_id, f"many-{n}").json()["id"] for n in range(21)]
+
+    body = api.client.get(f"/v1/incidents/{incident_id}/investigations", headers=bearer()).json()
+    assert body["truncated"] is True
+    assert len(body["items"]) == 20
+    assert created[0] not in {item["id"] for item in body["items"]}
+
+
+def test_evidence_returns_cited_signals_known_by_the_cutoff_redacted(api: Api) -> None:
+    created = api.post(api.incident(), "evidence").json()
+    investigation_id = uuid.UUID(created["id"])
+    known, late, absent = uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
+    service = DEMO_SERVICES[0]
+
+    def signal(signal_id: uuid.UUID, ingested_at: datetime) -> NormalizedSignal:
+        return NormalizedSignal(
+            id=signal_id,
+            workspace_id=DEMO_WORKSPACE_ID,
+            source_id=DEMO_SOURCES[0].id,
+            service_id=service.id,
+            source_event_id=f"cited-{signal_id}",
+            replay_scope=LIVE.replay_scope,
+            kind=SignalKind.LOG,
+            occurred_at=T0,
+            ingested_at=ingested_at,
+            severity=Severity.ERROR,
+            message="upstream timed out",
+            attributes={"api_key": "secret-value", "route": "/charge"},
+            quality_status=QualityStatus.ACCEPTED,
+        )
+
+    async def conclude(database: db.Database) -> None:
+        async with database.transaction() as session:
+            evidence = EvidenceRepository(session)
+            assert await evidence.insert_signal(signal(known, T0))
+            # Ingested after the investigation's cutoff, so the tools could not have read it.
+            assert await evidence.insert_signal(signal(late, datetime.now(UTC) + timedelta(days=1)))
+            await JobRepository(session).start_investigation(investigation_id)
+            await end_investigation(
+                session,
+                investigation_id,
+                InvestigationStatus.COMPLETED,
+                Diagnosis(
+                    status=DiagnosisStatus.DIAGNOSED,
+                    summary="Timeouts at the gateway",
+                    root_cause=RootCause(
+                        service_id=service.id,
+                        service_name=service.name,
+                        failure_type="downstream_timeout",
+                        confidence=0.7,
+                        evidence_signal_ids=(late, known, absent),
+                    ),
+                    workflow_version="v1",
+                ),
+            )
+
+    url = view_path(investigation_id, "/evidence")
+    before = api.client.get(url, headers=bearer()).json()
+    assert before["items"] == []
+    assert before["unverified_signal_ids"] == []
+    api.run(conclude)
+
+    response = api.client.get(url, headers=bearer())
+    assert response.status_code == 200
+    body = InvestigationEvidence.model_validate(response.json())
+    assert [item.id for item in body.items] == [known]
+    assert body.items[0].attributes["api_key"] != "secret-value"
+    assert "secret-value" not in response.text
+    assert body.unverified_signal_ids == (late, absent)
+
+    assert api.client.get(url).status_code == 401
+    assert api.client.get(url, headers=bearer(OTHER_TOKEN)).status_code == 404
+    assert api.client.get(url, params={"replay_scope": REPLAY}, headers=bearer()).status_code == 404

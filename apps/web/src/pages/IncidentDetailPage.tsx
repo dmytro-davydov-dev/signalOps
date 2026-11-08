@@ -1,6 +1,6 @@
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
-import { Link, useParams, useSearchParams } from "react-router";
+import { useRef, useState } from "react";
+import { Link, useNavigate, useParams, useSearchParams } from "react-router";
 import { ApiError } from "../api/client";
 import { formatTime } from "../api/format";
 import {
@@ -13,7 +13,11 @@ import {
   type IncidentEvidence,
   type IncidentStatus,
 } from "../api/incidents";
+import { fetchIncidentInvestigations, requestInvestigation } from "../api/investigations";
+import { describeInvestigationStatus } from "../api/investigationStatus";
+import { clearRequestKey, pendingRequestKey } from "../api/requestKey";
 import { DependencyGraph } from "../components/DependencyGraph";
+import { InvestigationStatusBadge } from "../components/InvestigationStatusBadge";
 import { ErrorState } from "../components/ErrorState";
 import { SeverityBadge, StatusBadge } from "../components/IncidentBadges";
 import { LoadingState } from "../components/LoadingState";
@@ -97,6 +101,7 @@ function IncidentView() {
         )}
       </dl>
       <StatusControl incident={incident} />
+      <Investigations incident={incident} />
       <DataQuality incident={incident} />
       <Services incident={incident} />
       <Neighborhood incident={incident} />
@@ -148,6 +153,139 @@ function StatusControl({ incident }: { incident: IncidentDetail }) {
       )}
       {mutation.isError && !conflict && (
         <ErrorState title="Status not changed" error={mutation.error} />
+      )}
+    </>
+  );
+}
+
+const INVESTIGATIONS_REFRESH_MS = 5_000;
+
+function Investigations({ incident }: { incident: IncidentDetail }) {
+  const query = useQuery({
+    queryKey: ["incident-investigations", incident.id, incident.replay_scope],
+    queryFn: ({ signal }) => fetchIncidentInvestigations(incident.id, incident.replay_scope, signal),
+    // Refresh while any listed investigation can still change.
+    refetchInterval: ({ state }) =>
+      state.data?.items.some((item) => !describeInvestigationStatus(item.status).terminal)
+        ? INVESTIGATIONS_REFRESH_MS
+        : REFRESH_MS,
+  });
+  const search = incident.replay_scope === LIVE_SCOPE ? "" : `?replay_scope=${incident.replay_scope}`;
+  const items = query.data?.items;
+
+  return (
+    <>
+      <h2>Investigations</h2>
+      {incident.replay_scope === LIVE_SCOPE && <StartInvestigation incidentId={incident.id} />}
+      {query.isPending && <LoadingState label="Loading investigations…" />}
+      {items === undefined && query.isError && (
+        <ErrorState
+          title="Cannot load investigations"
+          error={query.error}
+          onRetry={() => void query.refetch()}
+        />
+      )}
+      {items !== undefined && query.isRefetchError && (
+        <StaleNotice error={query.error} updatedAt={query.dataUpdatedAt} />
+      )}
+      {items?.length === 0 && (
+        <p className="state" role="status">
+          No investigations yet.
+        </p>
+      )}
+      {items !== undefined && items.length > 0 && (
+        <div className="scroll-x">
+          <table>
+            <thead>
+              <tr>
+                <th scope="col">Requested</th>
+                <th scope="col">Status</th>
+                <th scope="col">Ended</th>
+              </tr>
+            </thead>
+            <tbody>
+              {items.map((item) => (
+                <tr key={item.id}>
+                  <th scope="row">
+                    <Link to={`/investigations/${item.id}${search}`}>
+                      {formatTime(item.created_at)}
+                    </Link>
+                  </th>
+                  <td>
+                    <InvestigationStatusBadge status={item.status} />
+                  </td>
+                  <td>{item.completed_at ? formatTime(item.completed_at) : "—"}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+      {query.data?.truncated && (
+        <p className="hint">Showing the newest {query.data.items.length} investigations.</p>
+      )}
+    </>
+  );
+}
+
+/**
+ * Starts one investigation per deliberate request. The button is disabled while a
+ * request is in flight, and every attempt of one request sends the same
+ * Idempotency-Key, so repeated clicks and retries return the same investigation.
+ */
+function StartInvestigation({ incidentId }: { incidentId: string }) {
+  const queryClient = useQueryClient();
+  const navigate = useNavigate();
+  const key = useRef<string | null>(null);
+  const forget = () => {
+    key.current = null;
+    clearRequestKey(incidentId);
+  };
+  const mutation = useMutation({
+    mutationFn: () => {
+      key.current ??= pendingRequestKey(incidentId);
+      return requestInvestigation(incidentId, key.current);
+    },
+    onSuccess: (accepted) => {
+      forget();
+      void queryClient.invalidateQueries({ queryKey: ["incident-investigations", incidentId] });
+      void navigate(`/investigations/${accepted.id}`);
+    },
+    onError: (error) => {
+      // The server answered, so this request is settled; a network failure or 503
+      // may not be, and a retry must reuse its key.
+      if (error instanceof ApiError && error.status !== undefined && error.status !== 503) {
+        forget();
+      }
+    },
+  });
+
+  const unsettled =
+    mutation.error instanceof ApiError &&
+    (mutation.error.kind === "network" || mutation.error.status === 503);
+  return (
+    <>
+      <p>
+        <button
+          type="button"
+          disabled={mutation.isPending}
+          onClick={() => {
+            if (!mutation.isPending) {
+              mutation.mutate();
+            }
+          }}
+        >
+          {mutation.isPending ? "Starting…" : unsettled ? "Retry start" : "Start investigation"}
+        </button>
+      </p>
+      {mutation.isError && unsettled && (
+        <p className="state state-stale" role="alert">
+          The request may not have reached the server. Retrying sends the same request, so it
+          cannot start a second investigation.
+        </p>
+      )}
+      {mutation.isError && !unsettled && (
+        <ErrorState title="Investigation not started" error={mutation.error} />
       )}
     </>
   );

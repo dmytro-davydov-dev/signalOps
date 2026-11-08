@@ -26,12 +26,12 @@ PostgreSQL owns evidence, workflow progress, budgets, and the initial knowledge 
 | Field | Current value |
 | --- | --- |
 | Active phase | Phase 8 Incident workspace and live frontend; Phase 7 gate passed on the fake provider |
-| Active task | P08-T02 (in progress) |
-| Last completed task | P08-T01 |
+| Active task | P08-T03 (in progress) |
+| Last completed task | P08-T02 |
 | Latest verified commit | `7671838` (Phase 7 gate) |
 | Validation evidence | Phase 7 gate: `SIGNALOPS_INTEGRATION=1 uv run pytest` 1153 passed, and 28 deliberate mutations of the safety checks all fail the tests after two test gaps were closed. On Compose with the fake provider, a real-time fault run produced an automatic investigation naming `bank-gateway` with 10 verified citations and accounted cost, and a Redis outage paused calls until it recovered. No model was called. Earlier evidence is in the work log |
 | Blockers | Docker is not installed on the development machine (2026-11-08) and needs root, so integration tests and Compose runs cannot execute; Phase 8 tasks that need real infrastructure stay unchecked until it is available |
-| Next task | P08-T03 |
+| Next task | P08-T04 |
 
 ### Scope and release boundaries
 
@@ -747,11 +747,18 @@ Start the React shell in Phase 1 and add API-backed incident views in Phase 5; P
 
 ### P08-T02 Build investigation controls and results
 
-- [ ] Complete this task.
+- [x] Complete this task.
 
 **Implementation:** Add start/cancel controls, workflow progress, hypotheses, verified evidence links, uncertainty, limitations, and token/cost display. Distinguish actual cost from estimates/unknown usage.
 
 **Acceptance:** Repeated button clicks do not create duplicate investigations; insufficient evidence is presented as a valid outcome.
+
+**Notes (2026-11-08):**
+- **New read routes (additive):** `GET /v1/incidents/{id}/investigations` lists the newest 20 investigations of an incident, so a detector-started run can be found from the incident. `GET /v1/investigations/{id}/evidence` returns the root cause's cited signals, checked again against workspace, replay scope, and cutoff on both clocks, redacted as `/v1/signals` is; a citation failing the check is listed as unverified and never returned. Schemas `incident-investigations.v1.json` and `investigation-evidence.v1.json`.
+- **No duplicate starts:** the start button is disabled while its request is in flight, and one request keeps one `Idempotency-Key` in `sessionStorage` per incident across a lost response or a reload. The key is dropped once the server answers anything other than a `503`, so a later deliberate start is a new investigation. The server's same-key, same-investigation rule was verified in P06-T01.
+- **Results:** the investigation page shows workflow steps (each step's latest attempt), the outcome, the root cause hypothesis with confidence labelled as the model's uncalibrated estimate, cited evidence marked verified, other hypotheses, suggested actions (each needing a person), limitations, and a cost panel: budget, spent split into actual and estimated, current reservation, and calls of unknown cost with what they hold. Insufficient evidence is a distinct, non-error outcome that lists the missing evidence.
+- **Progress transport:** `useProgress` reads `/progress` after the last event held, every 3 seconds while the investigation is open. P08-T03 replaces the polling with SSE writing to the same query cache.
+- **Not run:** three new integration tests in `test_investigation_requests.py` (listing, the 20-row bound, and evidence scope, cutoff, and redaction) need Compose.
 
 ### P08-T03 Implement durable SSE and recovery
 
@@ -1384,13 +1391,23 @@ Keep these outside the release critical path unless measurements justify promoti
 
 ### 2026-11-08 — P08-T01
 - Status: completed (component level; one integration assertion not yet run)
-- Commit: see git log for `feat(P08-T01)`
+- Commit: `4e5eaef`
 - Implemented: `IncidentListItem` with `services`; `IncidentRepository.services_of_many`; primary-first service order; list Services column, service filter chip, detail Data quality section, inline quality flags; tests in `IncidentsPage.test.tsx` and `IncidentDetailPage.test.tsx`; `docs/api.md`.
 - Validation commands and results: `uv run ruff check .`, `uv run ruff format --check .`, `uv run mypy` (163 files), `uv run signalops export-schemas` (page and OpenAPI regenerated), `uv run pytest` 560 passed and 593 skipped (integration, no Docker); `pnpm lint`, `pnpm typecheck`, `pnpm build` pass; `pnpm test` 48 passed, including a list-to-evidence-and-graph navigation test against a stubbed API.
 - Evidence or artifact references: none beyond the tests.
 - Deviations and reasons: the integration test for list services was written but not run, because Docker is unavailable.
 - Remaining issues: run the incident API integration tests on Compose.
 - Next task: P08-T02.
+
+### 2026-11-08 — P08-T02
+- Status: completed (component level; three integration tests not yet run)
+- Commit: see git log for `feat(P08-T02)`
+- Implemented: `IncidentInvestigations`, `InvestigationSummary`, `InvestigationEvidence`; `InvestigationRepository.for_incident`, `EvidenceRepository.known_signals`; the two routes; `api/investigations.ts`, `api/progress.ts`, `api/requestKey.ts`, `api/checks.ts`, `hooks/useProgress.ts`, `InvestigationStatusBadge`; the incident Investigations section and start control; the rewritten investigation page; `docs/api.md`.
+- Validation commands and results: `uv run ruff check .`, `uv run ruff format --check .`, `uv run mypy` (163 files), `uv run signalops export-schemas --check` pass; `uv run pytest` 562 passed and 599 skipped (integration, no Docker); `pnpm lint`, `pnpm typecheck`, `pnpm build` pass; `pnpm test` 59 passed, including repeated and double clicks sending one request, a lost response retried with the same key, a later start with a new key, insufficient evidence as an outcome, unverified citations, and actual versus estimated versus unknown cost.
+- Evidence or artifact references: none beyond the tests.
+- Deviations and reasons: two read routes not in the plan's endpoint table, because the UI cannot otherwise find an incident's investigations or show cited evidence.
+- Remaining issues: run the new integration tests on Compose.
+- Next task: P08-T03.
 
 ## Work log template
 

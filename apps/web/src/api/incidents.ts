@@ -1,3 +1,14 @@
+import {
+  isBoolean,
+  isListOf,
+  isNullableString,
+  isNumber,
+  isOneOf,
+  isRecord,
+  isString,
+  matches,
+  type Checks,
+} from "./checks";
 import { getJson, patchJson } from "./client";
 
 export const INCIDENT_STATUSES = ["open", "resolved"] as const;
@@ -128,23 +139,6 @@ export interface IncidentFilters {
   serviceId?: string;
 }
 
-type Checks = Record<string, (value: unknown) => boolean>;
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-const isString = (value: unknown) => typeof value === "string";
-const isNumber = (value: unknown) => typeof value === "number";
-const isBoolean = (value: unknown) => typeof value === "boolean";
-const isNullableString = (value: unknown) => value === null || typeof value === "string";
-const isOneOf = (options: readonly string[]) => (value: unknown) =>
-  typeof value === "string" && options.includes(value);
-const isListOf = (check: (value: unknown) => boolean) => (value: unknown) =>
-  Array.isArray(value) && value.every(check);
-const matches = (checks: Checks) => (value: unknown) =>
-  isRecord(value) && Object.entries(checks).every(([key, check]) => check(value[key]));
-
 const summaryChecks: Checks = {
   id: isString,
   replay_scope: isString,
@@ -205,22 +199,24 @@ const isPage = matches({
   next_cursor: isNullableString,
 });
 
+export const isEvidenceSignal = matches({
+  id: isString,
+  service_id: isNullableString,
+  kind: isString,
+  occurred_at: isString,
+  severity: isString,
+  message: isNullableString,
+  trace_id: isNullableString,
+  attributes: isRecord,
+  quality_status: isString,
+  quality_flags: isListOf(isString),
+});
+
 const isEvidencePage = matches({
   items: isListOf(
     matches({
       relevance: isNumber,
-      signal: matches({
-        id: isString,
-        service_id: isNullableString,
-        kind: isString,
-        occurred_at: isString,
-        severity: isString,
-        message: isNullableString,
-        trace_id: isNullableString,
-        attributes: isRecord,
-        quality_status: isString,
-        quality_flags: isListOf(isString),
-      }),
+      signal: isEvidenceSignal,
     }),
   ),
   next_cursor: isNullableString,

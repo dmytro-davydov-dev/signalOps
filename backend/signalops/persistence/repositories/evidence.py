@@ -162,6 +162,22 @@ class EvidenceRepository:
         )
         return set(signal_ids) - set(known)
 
+    async def known_signals(
+        self, scope: EvidenceScope, signal_ids: Collection[uuid.UUID], *, known_by: datetime
+    ) -> dict[uuid.UUID, Signal]:
+        """Those of these signals in scope and known at a time, by ID."""
+        if not signal_ids:
+            return {}
+        rows = await self._session.scalars(
+            select(Signal).where(
+                scope.clause(Signal),
+                Signal.id.in_(signal_ids),
+                Signal.occurred_at <= known_by,
+                Signal.ingested_at <= known_by,
+            )
+        )
+        return {row.id: row for row in rows}
+
     async def data_version(self, scope: EvidenceScope, *, known_by: datetime) -> str:
         """Changes when recent evidence commits late, as under consumer lag.
 

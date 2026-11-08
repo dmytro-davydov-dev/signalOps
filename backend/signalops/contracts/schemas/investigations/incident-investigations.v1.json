@@ -1,0 +1,125 @@
+{
+  "$defs": {
+    "DiagnosisStatus": {
+      "enum": [
+        "diagnosed",
+        "insufficient_evidence"
+      ],
+      "title": "DiagnosisStatus",
+      "type": "string"
+    },
+    "InvestigationStatus": {
+      "enum": [
+        "queued",
+        "running",
+        "completed",
+        "insufficient_evidence",
+        "failed",
+        "cancelled",
+        "budget_exceeded"
+      ],
+      "title": "InvestigationStatus",
+      "type": "string"
+    },
+    "InvestigationSummary": {
+      "additionalProperties": false,
+      "description": "One investigation of an incident, without its usage or diagnosis body.",
+      "properties": {
+        "cancel_requested_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Cancel Requested At"
+        },
+        "completed_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Completed At"
+        },
+        "created_at": {
+          "format": "date-time",
+          "title": "Created At",
+          "type": "string"
+        },
+        "diagnosis_status": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/DiagnosisStatus"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "id": {
+          "format": "uuid",
+          "title": "Id",
+          "type": "string"
+        },
+        "status": {
+          "$ref": "#/$defs/InvestigationStatus"
+        }
+      },
+      "required": [
+        "id",
+        "status",
+        "created_at"
+      ],
+      "title": "InvestigationSummary",
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "Body of GET /v1/incidents/{id}/investigations, newest first.",
+  "properties": {
+    "incident_id": {
+      "format": "uuid",
+      "title": "Incident Id",
+      "type": "string"
+    },
+    "items": {
+      "items": {
+        "$ref": "#/$defs/InvestigationSummary"
+      },
+      "maxItems": 20,
+      "title": "Items",
+      "type": "array"
+    },
+    "replay_scope": {
+      "maxLength": 128,
+      "minLength": 1,
+      "pattern": "^[a-z0-9][a-z0-9._:-]*$",
+      "title": "Replay Scope",
+      "type": "string"
+    },
+    "truncated": {
+      "default": false,
+      "title": "Truncated",
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "incident_id",
+    "replay_scope",
+    "items"
+  ],
+  "title": "IncidentInvestigations",
+  "type": "object"
+}

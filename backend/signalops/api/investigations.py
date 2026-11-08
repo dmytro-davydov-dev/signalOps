@@ -14,6 +14,7 @@ from typing import Annotated, Any
 from fastapi import APIRouter, Header, HTTPException, Path, Query, Request, status
 from sqlalchemy.exc import SQLAlchemyError
 
+from signalops.adapters.ingestion import SourceConfigError
 from signalops.agents.investigations import (
     IdempotencyConflictError,
     IdempotentRequest,
@@ -32,20 +33,27 @@ from signalops.api.evidence import (
     ReplayScopeQuery,
     check_limit,
     invalid_query,
+    output_redaction,
     read_database,
 )
 from signalops.config import Settings
 from signalops.contracts.common import LIVE_REPLAY_SCOPE, MAX_KEY_LENGTH
-from signalops.contracts.diagnosis import Diagnosis
+from signalops.contracts.diagnosis import Diagnosis, DiagnosisStatus
 from signalops.contracts.investigations import (
+    MAX_INCIDENT_INVESTIGATIONS,
+    IncidentInvestigations,
     InvestigationAccepted,
+    InvestigationEvidence,
     InvestigationRequest,
+    InvestigationSummary,
     InvestigationUsage,
     InvestigationView,
 )
 from signalops.contracts.progress import ProgressEventView, ProgressPage
 from signalops.contracts.workflow import InvestigationStatus
 from signalops.persistence.models import Investigation
+from signalops.persistence.repositories.evidence import EvidenceRepository
+from signalops.persistence.repositories.incidents import IncidentRepository
 from signalops.persistence.repositories.investigations import InvestigationRepository
 from signalops.persistence.repositories.llm_calls import LlmCallRepository, UsageTotals
 from signalops.persistence.repositories.progress import ProgressRepository
@@ -140,6 +148,47 @@ async def request_investigation(
         raise ReadFailed("investigations/request", error) from None
 
 
+@router.get(
+    "/incidents/{incident_id}/investigations",
+    responses={404: {"description": "No such incident in this workspace and replay scope"}},
+)
+async def list_incident_investigations(
+    request: Request,
+    workspace_id: OperatorWorkspace,
+    incident_id: Annotated[uuid.UUID, Path()],
+    replay_scope: ReplayScopeQuery = LIVE_REPLAY_SCOPE,
+) -> IncidentInvestigations:
+    """The incident's newest investigations, operator and automatic alike."""
+    scope = EvidenceScope(workspace_id, replay_scope)
+    try:
+        async with read_database(request).transaction() as session:
+            if await IncidentRepository(session).get(scope, incident_id) is None:
+                raise HTTPException(status.HTTP_404_NOT_FOUND, "incident not found")
+            rows = await InvestigationRepository(session).for_incident(
+                scope, incident_id, limit=MAX_INCIDENT_INVESTIGATIONS + 1
+            )
+    except SQLAlchemyError as error:
+        raise ReadFailed("incidents/investigations", error) from None
+    return IncidentInvestigations(
+        incident_id=incident_id,
+        replay_scope=replay_scope,
+        items=tuple(
+            InvestigationSummary(
+                id=row.id,
+                status=InvestigationStatus(row.status),
+                created_at=row.created_at,
+                completed_at=row.completed_at,
+                cancel_requested_at=row.cancel_requested_at,
+                diagnosis_status=(
+                    None if row.diagnosis is None else DiagnosisStatus(row.diagnosis["status"])
+                ),
+            )
+            for row in rows[:MAX_INCIDENT_INVESTIGATIONS]
+        ),
+        truncated=len(rows) > MAX_INCIDENT_INVESTIGATIONS,
+    )
+
+
 @router.get("/investigations/{investigation_id}", responses=NOT_FOUND)
 async def get_investigation(
     request: Request,
@@ -157,6 +206,47 @@ async def get_investigation(
             return _view(row, await LlmCallRepository(session).usage_of(row.id))
     except SQLAlchemyError as error:
         raise ReadFailed("investigations/detail", error) from None
+
+
+@router.get("/investigations/{investigation_id}/evidence", responses=NOT_FOUND)
+async def get_investigation_evidence(
+    request: Request,
+    workspace_id: OperatorWorkspace,
+    investigation_id: Annotated[uuid.UUID, Path()],
+    replay_scope: ReplayScopeQuery = LIVE_REPLAY_SCOPE,
+) -> InvestigationEvidence:
+    """The diagnosis's cited signals, checked again against scope and cutoff.
+
+    Empty without a root cause. A citation outside the scope or after the cutoff
+    is listed as unverified, never returned.
+    """
+    settings: Settings = request.app.state.settings
+    scope = EvidenceScope(workspace_id, replay_scope)
+    try:
+        async with read_database(request).transaction() as session:
+            row = await InvestigationRepository(session).get(scope, investigation_id)
+            if row is None:
+                raise _not_found()
+            diagnosis = None if row.diagnosis is None else Diagnosis.model_validate(row.diagnosis)
+            cited = (
+                ()
+                if diagnosis is None or diagnosis.root_cause is None
+                else (diagnosis.root_cause.evidence_signal_ids)
+            )
+            known = await EvidenceRepository(session).known_signals(
+                scope, cited, known_by=row.evidence_cutoff_at
+            )
+            redaction = await output_redaction(session, settings, workspace_id)
+            items = tuple(redaction.signal(known[i]) for i in cited if i in known)
+    except (SQLAlchemyError, SourceConfigError) as error:
+        raise ReadFailed("investigations/evidence", error) from None
+    return InvestigationEvidence(
+        investigation_id=investigation_id,
+        replay_scope=replay_scope,
+        evidence_cutoff_at=row.evidence_cutoff_at,
+        items=items,
+        unverified_signal_ids=tuple(i for i in cited if i not in known),
+    )
 
 
 @router.get("/investigations/{investigation_id}/progress", responses=NOT_FOUND)

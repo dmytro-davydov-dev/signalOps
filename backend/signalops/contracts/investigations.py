@@ -16,8 +16,11 @@ from typing import Self
 from pydantic import Field, NonNegativeInt, PositiveInt, model_validator
 
 from signalops.contracts.common import ContractModel, ReplayScope, UtcDatetime, Version
-from signalops.contracts.diagnosis import Diagnosis, DiagnosisStatus
+from signalops.contracts.diagnosis import MAX_EVIDENCE_IDS, Diagnosis, DiagnosisStatus
+from signalops.contracts.evidence import NormalizedSignal
 from signalops.contracts.workflow import TERMINAL_INVESTIGATION_STATUSES, InvestigationStatus
+
+MAX_INCIDENT_INVESTIGATIONS = 20
 
 DIAGNOSIS_STATUS_BY_INVESTIGATION_STATUS: dict[InvestigationStatus, DiagnosisStatus | None] = {
     InvestigationStatus.QUEUED: None,
@@ -111,3 +114,47 @@ class InvestigationView(ContractModel):
             raise ValueError("completed_at is set exactly when the investigation is terminal")
         check_diagnosis_status(self.status, self.diagnosis.status if self.diagnosis else None)
         return self
+
+
+class InvestigationSummary(ContractModel):
+    """One investigation of an incident, without its usage or diagnosis body."""
+
+    id: uuid.UUID
+    status: InvestigationStatus
+    created_at: UtcDatetime
+    completed_at: UtcDatetime | None = None
+    cancel_requested_at: UtcDatetime | None = None
+    diagnosis_status: DiagnosisStatus | None = None
+
+    @model_validator(mode="after")
+    def _check_state(self) -> Self:
+        if (self.status in TERMINAL_INVESTIGATION_STATUSES) != (self.completed_at is not None):
+            raise ValueError("completed_at is set exactly when the investigation is terminal")
+        check_diagnosis_status(self.status, self.diagnosis_status)
+        return self
+
+
+class IncidentInvestigations(ContractModel):
+    """Body of GET /v1/incidents/{id}/investigations, newest first."""
+
+    incident_id: uuid.UUID
+    replay_scope: ReplayScope
+    items: tuple[InvestigationSummary, ...] = Field(max_length=MAX_INCIDENT_INVESTIGATIONS)
+    # True when the incident has more investigations than `items` holds.
+    truncated: bool = False
+
+
+class InvestigationEvidence(ContractModel):
+    """Body of GET /v1/investigations/{id}/evidence.
+
+    `items` are the diagnosis's cited signals that exist in the investigation's scope
+    and were known by its cutoff, in citation order and redacted as `/v1/signals` is.
+    `unverified_signal_ids` are citations that fail that check; a stored diagnosis
+    should have none, because the workflow checked them before saving it.
+    """
+
+    investigation_id: uuid.UUID
+    replay_scope: ReplayScope
+    evidence_cutoff_at: UtcDatetime
+    items: tuple[NormalizedSignal, ...] = Field(max_length=MAX_EVIDENCE_IDS)
+    unverified_signal_ids: tuple[uuid.UUID, ...] = Field(default=(), max_length=MAX_EVIDENCE_IDS)

@@ -6,6 +6,7 @@ two callers never both publish a request or queue a job.
 """
 
 import uuid
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import datetime
 
@@ -65,6 +66,18 @@ class InvestigationRepository:
                 scope.clause(Investigation), Investigation.id == investigation_id
             )
         )
+
+    async def for_incident(
+        self, scope: EvidenceScope, incident_id: uuid.UUID, *, limit: int
+    ) -> Sequence[Investigation]:
+        """The incident's investigations in scope, newest first, ties by ID descending."""
+        rows = await self._session.scalars(
+            select(Investigation)
+            .where(scope.clause(Investigation), Investigation.incident_id == incident_id)
+            .order_by(Investigation.created_at.desc(), Investigation.id.desc())
+            .limit(limit)
+        )
+        return rows.all()
 
     async def locked(
         self, scope: EvidenceScope, investigation_id: uuid.UUID

@@ -1,4 +1,4 @@
-import { screen, within } from "@testing-library/react";
+import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { clearOperatorToken, setOperatorToken } from "../api/operatorToken";
@@ -14,6 +14,7 @@ import {
   summary,
   type Route,
 } from "../test/incidentFixtures";
+import { INVESTIGATION_ID, progressPage, running } from "../test/investigationFixtures";
 import { jsonResponse, renderRoute } from "../test/renderRoute";
 
 const PATH = `/incidents/${INCIDENT_ID}`;
@@ -210,5 +211,148 @@ describe("IncidentDetailPage", () => {
     const alert = await screen.findByRole("alert");
     expect(alert).toHaveTextContent("Cannot load the dependency neighborhood");
     expect(screen.getByRole("heading", { name: summary.title })).toBeInTheDocument();
+  });
+
+  describe("investigations", () => {
+    const LIST_PATH = `${API_PATH}/investigations`;
+    const accepted = {
+      id: INVESTIGATION_ID,
+      incident_id: INCIDENT_ID,
+      status: "queued",
+      created_at: "2026-11-07T10:00:00Z",
+    };
+    const investigationRoutes: Record<string, Route> = {
+      [`/v1/investigations/${INVESTIGATION_ID}`]: () =>
+        jsonResponse({ ...running, status: "queued" }),
+      [`/v1/investigations/${INVESTIGATION_ID}/progress`]: () => progressPage([]),
+    };
+
+    beforeEach(() => {
+      sessionStorage.clear();
+    });
+
+    it("lists the incident's investigations with their status", async () => {
+      stub({
+        [LIST_PATH]: () =>
+          jsonResponse({
+            incident_id: INCIDENT_ID,
+            replay_scope: "live",
+            items: [
+              {
+                id: INVESTIGATION_ID,
+                status: "insufficient_evidence",
+                created_at: "2026-11-07T10:00:00Z",
+                completed_at: "2026-11-07T10:01:00Z",
+                cancel_requested_at: null,
+                diagnosis_status: "insufficient_evidence",
+              },
+            ],
+            truncated: false,
+          }),
+      });
+      renderRoute(PATH);
+
+      const heading = await screen.findByRole("heading", { name: "Investigations" });
+      expect(heading).toBeInTheDocument();
+      expect(await screen.findByText("Insufficient evidence")).toBeInTheDocument();
+      const link = screen.getAllByRole("link").find((a) => a.getAttribute("href")?.includes(INVESTIGATION_ID));
+      expect(link).toHaveAttribute("href", `/investigations/${INVESTIGATION_ID}`);
+    });
+
+    it("starts one investigation however often the button is clicked", async () => {
+      let release: () => void = () => undefined;
+      const gate = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      const posts: string[] = [];
+      const fetchMock = stub({
+        ...investigationRoutes,
+        [LIST_PATH]: async (url, init) => {
+          if (init?.method === "POST") {
+            posts.push((init.headers as Record<string, string>)["Idempotency-Key"] ?? "");
+            await gate;
+            return jsonResponse(accepted, 202);
+          }
+          return incidentRoutes()[LIST_PATH]?.(url, init) ?? jsonResponse({}, 500);
+        },
+      });
+      renderRoute(PATH);
+
+      const button = await screen.findByRole("button", { name: "Start investigation" });
+      await userEvent.click(button);
+      await userEvent.click(button);
+      await userEvent.dblClick(button);
+      expect(screen.getByRole("button", { name: "Starting…" })).toBeDisabled();
+      release();
+
+      expect(await screen.findByRole("heading", { name: "Investigation" })).toBeInTheDocument();
+      expect(posts).toHaveLength(1);
+      expect(posts[0]).not.toBe("");
+      expect(fetchMock.mock.calls.filter(([, init]) => init?.method === "POST")).toHaveLength(1);
+      expect(sessionStorage.length).toBe(0);
+    });
+
+    it("retries a start whose response was lost with the same key", async () => {
+      const posts: string[] = [];
+      stub({
+        ...investigationRoutes,
+        [LIST_PATH]: (url, init) => {
+          if (init?.method === "POST") {
+            posts.push((init.headers as Record<string, string>)["Idempotency-Key"] ?? "");
+            if (posts.length === 1) {
+              throw new TypeError("Failed to fetch");
+            }
+            return jsonResponse(accepted, 202);
+          }
+          return incidentRoutes()[LIST_PATH]?.(url, init) ?? jsonResponse({}, 500);
+        },
+      });
+      renderRoute(PATH);
+
+      await userEvent.click(await screen.findByRole("button", { name: "Start investigation" }));
+      expect(await screen.findByText(/cannot start a second investigation/)).toBeInTheDocument();
+      await userEvent.click(screen.getByRole("button", { name: "Retry start" }));
+
+      expect(await screen.findByRole("heading", { name: "Investigation" })).toBeInTheDocument();
+      expect(posts).toHaveLength(2);
+      expect(posts[1]).toBe(posts[0]);
+    });
+
+    it("uses a new key for a deliberate later start", async () => {
+      const posts: string[] = [];
+      stub({
+        [LIST_PATH]: (url, init) => {
+          if (init?.method === "POST") {
+            posts.push((init.headers as Record<string, string>)["Idempotency-Key"] ?? "");
+            return jsonResponse({ detail: "incident not found" }, 404);
+          }
+          return incidentRoutes()[LIST_PATH]?.(url, init) ?? jsonResponse({}, 500);
+        },
+      });
+      renderRoute(PATH);
+
+      const button = await screen.findByRole("button", { name: "Start investigation" });
+      await userEvent.click(button);
+      expect(await screen.findByText("Investigation not started")).toBeInTheDocument();
+      await userEvent.click(screen.getByRole("button", { name: "Start investigation" }));
+
+      await waitFor(() => {
+        expect(posts).toHaveLength(2);
+      });
+      expect(posts[1]).not.toBe(posts[0]);
+    });
+
+    it("offers no start control on a replay incident", async () => {
+      const scope = "replay:7d4c0e8a-1111-4a2b-9c3d-000000000002";
+      stub({
+        [API_PATH]: () => jsonResponse({ ...detail, replay_scope: scope }),
+        [LIST_PATH]: () =>
+          jsonResponse({ incident_id: INCIDENT_ID, replay_scope: scope, items: [], truncated: false }),
+      });
+      renderRoute(`${PATH}?replay_scope=${scope}`);
+
+      expect(await screen.findByText("No investigations yet.")).toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: "Start investigation" })).not.toBeInTheDocument();
+    });
   });
 });
