@@ -25,13 +25,13 @@ PostgreSQL owns evidence, workflow progress, budgets, and the initial knowledge 
 
 | Field | Current value |
 | --- | --- |
-| Active phase | Phase 10 Evaluation infrastructure (in progress); Phase 9 gate passed on the fake provider |
-| Active task | Phase 10 gate (blocked: Compose demonstration) |
-| Last completed task | P10-T06 |
-| Latest verified commit | `53db2c6` (gate fix); the `docs(P09)` gate commit follows |
-| Validation evidence | Phase 10 tasks P10-T01 to T06 checked. `SIGNALOPS_INTEGRATION=1 uv run pytest` 1316 passed at `4c849fa` (17 min); ruff, format, mypy, schema check, compose config, `pnpm lint`, `pnpm typecheck`, `pnpm test` (72), `pnpm build` pass. Kafka replay demonstrated on the running Compose services (P10-T02). No model was called |
-| Blockers | The Phase 10 gate needs the Compose stack rebuilt (`docker compose up -d --build`, then `--profile evaluation up -d evaluation-worker`): the running images predate Phase 10, so the old worker cannot run `d1` and services still connect as the owner. This shell has no Docker access |
-| Next task | Phase 10 gate |
+| Active phase | Phase 11 Operational hardening and scale (not started); Phase 10 gate passed on the fake provider |
+| Active task | None; next is P11-T01 |
+| Last completed task | Phase 10 gate |
+| Latest verified commit | `73e931d`; the gate commit `test(P10)` follows |
+| Validation evidence | Phase 10 gate: Compose rebuilt, services on `signalops_app`, held-out run `7ac381af` over Kafka completed with 35 scored cases on the fake provider, `evaluation.e2e.ts` passed in headless Chrome. Earlier: `SIGNALOPS_INTEGRATION=1 uv run pytest` 1316 passed at `4c849fa`; `pnpm lint`, `pnpm typecheck`, `docker compose config --quiet` pass on the working tree. No paid model was called |
+| Blockers | None |
+| Next task | P11-T01 |
 
 ### Scope and release boundaries
 
@@ -987,7 +987,12 @@ Start the React shell in Phase 1 and add API-backed incident views in Phase 5; P
 
 **Phase gate:** All tasks above are checked, acceptance evidence is recorded in the ledger, and the phase outcome is demonstrated against real infrastructure where relevant.
 
-**Phase 10 gate (2026-11-08): open.** All six tasks are checked and the full integration suite passed (1316). Remaining: rebuild Compose so every service runs as `signalops_app` with the new code, start `evaluation-worker`, queue a held-out run through the API or UI on the fake provider, check that it completes over Kafka, and drill into a failed case in the browser.
+**Phase 10 gate (2026-11-08): passed on the fake provider.** All six tasks are checked and the full integration suite passed (1316 at `4c849fa`). Compose demonstration, against the tree committed as `test(P10)` (after `73e931d`):
+- `docker compose up -d --build` rebuilt every image; `migrate` applied `0017_evaluation` and `0018_evaluation_audits` and provisioned `signalops_app` and `signalops_eval`. `pg_stat_activity` showed application processes connected only as `signalops_app` and the evaluator as `signalops_eval`. `docker compose --profile evaluation up -d evaluation-worker` started the worker.
+- `POST /v1/evaluation-runs` (202) queued run `7ac381af-9299-4d48-9714-5d72eac03209`: held-out split, 7 scenarios, deterministic, single-agent, and multi-agent, 2 trials, fake provider (`SIGNALOPS_MODEL_PROVIDER=fake`). The evaluation worker replayed each scenario over Kafka through the running services (7/7 replays completed on drain markers) and completed in 6 min 43 s with 35 scored cases, no harness failure.
+- Results (fake provider, `measures_model_quality: false`): detection 6 matched, 0 extra, 0 missed (event-time delay p50 78 s, p95 90 s). Equal limits per case: 3,000,000 microUSD, 40 steps, 600 s. Outcome accuracy: `d1` 1/7 (no model calls, cost 0), `v2` and `v3` 6/14 each with standard deviation 0.0; `v3` used 102 model calls against `v2`'s 30 under the same budget. Evidence precision by labels: `d1` 59/60, agents 120/120. These numbers come from the fake provider's fixed rules and say nothing about diagnostic quality.
+- Browser: the Claude in Chrome extension was not connected, so `apps/web/e2e/evaluation.e2e.ts` (new) drove headless Google Chrome (`E2E_BROWSER_CHANNEL=chrome`) through the Compose frontend: run page with the fake-provider notice, three-variant comparison, and detection; incorrect-only filter; drill-in to the failed `deployment-regression/held-out` deterministic case (expected `payment · deployment_regression`, observed `checkout · elevated_errors`, false diagnosis, 10 of 10 citations labelled fault evidence); and the investigation link in its replay scope. 1 passed. Screenshots in `apps/web/e2e-results/` (ignored by git).
+- **Left:** `demo-shop` (P10-T03) has still not been run against the Compose API; the gate did not need it. Paid-model trials remain unrun (none requested).
 
 **Suggested phase commit:** `feat: add isolated replay and evaluation harness`. Split this into task-sized commits as needed.
 
@@ -1661,6 +1666,16 @@ Keep these outside the release critical path unless measurements justify promoti
 - Deviations and reasons: none.
 - Remaining issues: see task notes.
 - Next task: Phase 10 gate.
+
+### 2026-11-08 — Phase 10 gate
+- Status: passed on the fake provider
+- Commit: see git log for `test(P10)`
+- Implemented: `apps/web/e2e/evaluation.e2e.ts` (browser review of a completed evaluation run); `docs/development.md` describes it and `E2E_EVALUATION_RUN_ID`.
+- Validation commands and results: `docker compose up -d --build` and `--profile evaluation up -d evaluation-worker` (all services up, migrations 0017 and 0018 applied); `pg_stat_activity` logins checked; `POST /v1/evaluation-runs` 202, run `7ac381af` completed (35 scored, 7/7 replays); `pnpm exec playwright test evaluation` with `E2E_BROWSER_CHANNEL=chrome` 1 passed; `pnpm lint`, `pnpm typecheck`, `docker compose config --quiet` pass.
+- Evidence or artifact references: Phase 10 gate notes; screenshots in `apps/web/e2e-results/` (not committed).
+- Deviations and reasons: the drill-in ran in headless Chrome through Playwright because the Claude in Chrome extension was not connected.
+- Remaining issues: `demo-shop` not yet run on Compose; no paid-model trial.
+- Next task: P11-T01.
 
 ## Work log template
 

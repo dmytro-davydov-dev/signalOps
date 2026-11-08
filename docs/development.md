@@ -143,6 +143,9 @@ E2E_OPERATOR_TOKEN='<operator-token>' pnpm e2e
 | `E2E_BASE_URL` | `http://127.0.0.1:8090` | The frontend; it proxies `/v1` to the API |
 | `E2E_INGEST_COMMAND` | `docker compose --profile demo run --rm demo demo-post downstream-timeout --realtime --duration-s 150 --api-url http://api:8000` | Shell command, run from the repository root, that ingests the fault |
 | `E2E_BROWSER_CHANNEL` | unset (Playwright's Chromium) | `chrome` for an installed Google Chrome |
+| `E2E_EVALUATION_RUN_ID` | unset (the newest completed run) | Evaluation run that `evaluation.e2e.ts` reviews |
+
+A second test (`apps/web/e2e/evaluation.e2e.ts`, P10 gate) reviews an evaluation run that already completed: it opens the run, checks the fake-provider notice, the three-variant comparison, and detection, filters to incorrect cases, opens a failed case with citations, checks the expected and observed outcomes and the labelled evidence, and follows the link to the investigation in its replay scope. It saves screenshots to `apps/web/e2e-results/`. Queue a run first (`POST /v1/evaluation-runs` or the Evaluation page, with `docker compose --profile evaluation up -d evaluation-worker` running), then `pnpm exec playwright test evaluation` runs only this test.
 
 The report is written to `apps/web/e2e-report/` and failure traces to `apps/web/e2e-results/`. CI does not run this check, because it needs the full stack; `pnpm test` does not include it.
 
