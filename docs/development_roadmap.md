@@ -26,7 +26,7 @@ PostgreSQL owns evidence, workflow progress, budgets, and the initial knowledge 
 | Field | Current value |
 | --- | --- |
 | Active phase | Phase 8 Incident workspace and live frontend; Phase 7 gate passed on the fake provider |
-| Active task | P08-T04 (in progress) |
+| Active task | P08-T04 (in progress; written, not run: needs Docker) |
 | Last completed task | P08-T03 |
 | Latest verified commit | `7671838` (Phase 7 gate) |
 | Validation evidence | Phase 7 gate: `SIGNALOPS_INTEGRATION=1 uv run pytest` 1153 passed, and 28 deliberate mutations of the safety checks all fail the tests after two test gaps were closed. On Compose with the fake provider, a real-time fault run produced an automatic investigation naming `bank-gateway` with 10 verified citations and accounted cost, and a Redis outage paused calls until it recovered. No model was called. Earlier evidence is in the work log |
@@ -783,6 +783,12 @@ Start the React shell in Phase 1 and add API-backed incident views in Phase 5; P
 
 **Acceptance:** The R1 journey runs from a clean checkout with documented commands and no paid API dependency.
 
+**Status (2026-11-08): written, not yet run; blocked on Docker.** Left unchecked.
+- `apps/web/e2e/journey.e2e.ts` (Playwright, `pnpm e2e`) ingests a real-time `downstream-timeout` fault through the demo poster, waits for the detector's incident, opens it from the list, checks the evidence timeline, data quality, and dependency graph, double-clicks Start investigation and checks through the API that exactly one investigation was added, reloads mid-run and checks that a stream request carried `Last-Event-ID`, checks that the page lists every step of the durable `/progress` history once, inspects the diagnosis (verified citations, uncalibrated confidence) or the abstention and the estimated cost, and cancels a second run. Commands and variables are in `docs/development.md`, "Browser journey check".
+- `SIGNALOPS_FAKE_MODEL_DELAY_SECONDS` (fake provider only, default 0, passed to `investigation-worker`) delays each fake reply, so with 3 a run stays open long enough to reconnect to and cancel. Unit-tested.
+- Verified so far: the spec lints and type-checks (`tsconfig.e2e.json`), `playwright test --list` finds it, and Playwright drove the installed Google Chrome (`E2E_BROWSER_CHANNEL=chrome`) against the Vite dev server, where the sign-in page and the API error state rendered. The journey itself has not run.
+- **To resume:** install Docker with Compose v2, follow "Browser journey check", run `E2E_OPERATOR_TOKEN=... pnpm e2e`, and fix what fails. Also run `SIGNALOPS_INTEGRATION=1 uv run pytest` for the integration tests added in P08-T01 to T03. Then check this task and run the Phase 8 gate.
+
 **Phase gate:** All tasks above are checked, acceptance evidence is recorded in the ledger, and the phase outcome is demonstrated against real infrastructure where relevant.
 
 **Suggested phase commit:** `feat: build incident investigation workspace`. Split this into task-sized commits as needed.
@@ -1418,13 +1424,23 @@ Keep these outside the release critical path unless measurements justify promoti
 
 ### 2026-11-08 — P08-T03
 - Status: completed (unit and component level; integration tests not yet run)
-- Commit: see git log for `feat(P08-T03)`
+- Commit: `e4318f1`
 - Implemented: `api/progress_stream.py`, the `/events` route, `wakeups.py`, `Database.on_progress` and `mark_progress`, `ProgressRepository.exists`, three `SIGNALOPS_SSE_*` settings; `api/progressStream.ts`, `useProgressHistory`, `useProgressStream`, stream state notices; ADR-030; `docs/api.md`, `docs/development.md`, `docs/reliability.md`.
 - Validation commands and results: `uv run ruff check .`, `uv run ruff format --check .`, `uv run mypy` (167 files), `uv run signalops export-schemas --check` pass; `uv run pytest` 586 passed and 603 skipped (integration, no Docker); `pnpm lint`, `pnpm typecheck`, `pnpm build` pass; `pnpm test` 67 passed.
 - Evidence or artifact references: none beyond the tests.
 - Deviations and reasons: the browser uses `fetch` instead of `EventSource`, which cannot send the operator token.
 - Remaining issues: run `tests/integration/test_progress_stream.py` on Compose; no real-browser check yet (P08-T04).
 - Next task: P08-T04.
+
+### 2026-11-08 — P08-T04 (in progress)
+- Status: in progress; blocked on Docker
+- Commit: see git log for `test(P08-T04)`
+- Implemented: `apps/web/e2e/journey.e2e.ts`, `playwright.config.ts`, `tsconfig.e2e.json`, `pnpm e2e`, `@playwright/test` dev dependency; `SIGNALOPS_FAKE_MODEL_DELAY_SECONDS` in settings, `build_provider`, Compose, and `.env.example`; "Browser journey check" in `docs/development.md`.
+- Validation commands and results: `uv run ruff check .`, `uv run ruff format --check .`, `uv run mypy` (167 files), `uv run signalops export-schemas --check` pass; `uv run pytest` 587 passed and 603 skipped; `pnpm lint`, `pnpm typecheck`, `pnpm build` pass; `pnpm test` 67 passed; `pnpm exec playwright test --list` finds the journey; a throwaway Playwright script drove the installed Chrome against `pnpm dev`. `docker compose config --quiet` could not run (no Docker); `compose.yaml` parses as YAML.
+- Evidence or artifact references: none; the journey has not run.
+- Deviations and reasons: none.
+- Remaining issues: run the journey and the integration tests on Compose (see the task's status note).
+- Next task: P08-T04, then the Phase 8 gate.
 
 ## Work log template
 

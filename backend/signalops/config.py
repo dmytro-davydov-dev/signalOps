@@ -157,6 +157,9 @@ class Settings(BaseSettings):
     model_api_key: SecretStr | None = None
     # Unset or empty selects the provider's default model.
     model_name: str | None = None
+    # Fake provider only: a pause before each reply, so a browser test can watch a
+    # running investigation. Ignored by real providers.
+    fake_model_delay_seconds: float = Field(default=0.0, ge=0, le=30)
     # One provider call, whatever it is doing; a later retry is a new call.
     model_request_timeout_seconds: float = Field(default=60.0, gt=0, le=600)
     # Most tokens one model reply may use, including thinking.

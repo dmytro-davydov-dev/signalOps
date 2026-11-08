@@ -84,6 +84,7 @@ pnpm typecheck     # tsc -b --noEmit
 pnpm test          # Vitest, single run (pnpm test:watch for watch mode)
 pnpm build         # type check + production build
 pnpm dev           # Vite dev server; proxies /health/ and /v1/ to SIGNALOPS_API_URL (default http://127.0.0.1:8010)
+pnpm e2e           # Playwright browser journey; needs the Compose stack (see "Browser journey check")
 ```
 
 CI (`.github/workflows/ci.yml`) runs exactly these commands on pushes to `main` and on pull requests.
@@ -116,6 +117,34 @@ Useful URLs once the stack is up:
 - OpenAPI: `http://127.0.0.1:8010/docs`
 
 Startup order: `postgres` and `kafka` become healthy → the one-shot `migrate` (`signalops migrate`, Alembic upgrade to head) and `init-topics` (`signalops init-topics`) jobs run to completion → `api`, `normalizer`, and `outbox-publisher` start → `frontend` starts. Both jobs are idempotent and run on every `up`. `init-topics` creates missing topics from `backend/signalops/streaming/topics.py` and fails if an existing topic has a different partition count, instead of altering it, because that would change key ordering.
+
+### Browser journey check (R1, P08-T04)
+
+One Playwright test (`apps/web/e2e/journey.e2e.ts`) drives a real browser through the first portfolio slice against the Compose stack and the fake provider. It ingests a real-time `downstream-timeout` fault with the demo poster, waits for the detector's incident, opens it from the list, checks its evidence timeline, data quality, and dependency graph, starts an investigation with a double click and checks that only one started, reloads mid-run so the progress stream resumes with `Last-Event-ID`, checks that the page shows every step of the durable history, inspects the diagnosis or abstention and its estimated cost, and cancels a second run. It makes no paid call and takes about five minutes, mostly waiting for detection windows to close.
+
+```bash
+# Repository root, from a clean checkout. Docker with Compose v2, uv, and Node 24 with pnpm.
+cp .env.example .env
+# In .env: replace the token placeholders in SIGNALOPS_INGEST_TOKENS and
+# SIGNALOPS_OPERATOR_TOKENS, and set SIGNALOPS_FAKE_MODEL_DELAY_SECONDS=3 so a run
+# stays open long enough to reconnect to and cancel.
+docker compose up -d --build --wait
+docker compose --profile demo run --rm demo-seed   # the demo catalog, once
+
+cd apps/web
+pnpm install --frozen-lockfile
+pnpm exec playwright install chromium   # or set E2E_BROWSER_CHANNEL=chrome to use an installed Chrome
+E2E_OPERATOR_TOKEN='<operator-token>' pnpm e2e
+```
+
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `E2E_OPERATOR_TOKEN` | required | The operator token from `SIGNALOPS_OPERATOR_TOKENS` |
+| `E2E_BASE_URL` | `http://127.0.0.1:8090` | The frontend; it proxies `/v1` to the API |
+| `E2E_INGEST_COMMAND` | `docker compose --profile demo run --rm demo demo-post downstream-timeout --realtime --duration-s 150 --api-url http://api:8000` | Shell command, run from the repository root, that ingests the fault |
+| `E2E_BROWSER_CHANNEL` | unset (Playwright's Chromium) | `chrome` for an installed Google Chrome |
+
+The report is written to `apps/web/e2e-report/` and failure traces to `apps/web/e2e-results/`. CI does not run this check, because it needs the full stack; `pnpm test` does not include it.
 
 ### Profiles
 
@@ -193,6 +222,7 @@ Backend processes read `SIGNALOPS_`-prefixed variables (`backend/signalops/confi
 | `SIGNALOPS_INGEST_REDACT_FIELDS` | password, token, authorization, cookie, … (`config.py`) | JSON list of payload keys whose values are replaced before publishing; a source's `config.redact_fields` adds more |
 | `SIGNALOPS_MODEL_PROVIDER` | `fake` | `fake` needs no key or network. `anthropic` makes paid calls and needs `SIGNALOPS_MODEL_API_KEY`; startup fails without one. Compose passes these to `investigation-worker` only |
 | `SIGNALOPS_MODEL_API_KEY` | unset | Credential, never logged |
+| `SIGNALOPS_FAKE_MODEL_DELAY_SECONDS` | `0` | Fake provider only: seconds before each reply (0–30); the browser journey check uses 3. Compose passes it to `investigation-worker` |
 | `SIGNALOPS_MODEL_NAME` | `fake-1` / `claude-opus-5-5` | The provider's default model when unset |
 | `SIGNALOPS_MODEL_REQUEST_TIMEOUT_SECONDS` | `60` | One provider call; the provider client never retries on its own |
 | `SIGNALOPS_MODEL_MAX_OUTPUT_TOKENS` / `SIGNALOPS_MODEL_EFFORT` | `8000` / `high` | Tokens per reply including thinking (256–64000), and effort (`low`, `medium`, `high`) |

@@ -1,5 +1,6 @@
 """Provider behavior with no network: the fake, and the real adapter over a stub transport."""
 
+import asyncio
 import json
 from collections.abc import Callable
 from pathlib import Path
@@ -92,6 +93,33 @@ def test_the_default_provider_is_fake_and_needs_no_key() -> None:
     settings = Settings(database_url="postgresql+psycopg://u:p@h/d")  # type: ignore[arg-type]
     assert isinstance(build_provider(settings), FakeProvider)
     assert settings.resolved_model() == FAKE_MODEL
+
+
+async def test_the_fake_delay_pauses_before_each_reply(monkeypatch: pytest.MonkeyPatch) -> None:
+    from signalops.gateway import fake_investigator
+
+    slept: list[float] = []
+
+    async def sleep(seconds: float) -> None:
+        slept.append(seconds)
+
+    monkeypatch.setattr(asyncio, "sleep", sleep)
+    monkeypatch.setattr(
+        fake_investigator,
+        "investigator_step",
+        lambda _request: FakeAnswer(content=(TextBlock(text="ok"),)),
+    )
+    settings = Settings(
+        database_url="postgresql+psycopg://u:p@h/d",  # type: ignore[arg-type]
+        fake_model_delay_seconds=2.5,
+    )
+    provider = build_provider(settings)
+    assert (await provider.complete(REQUEST)).text() == "ok"
+    assert slept == [2.5]
+
+    undelayed = build_provider(settings.model_copy(update={"fake_model_delay_seconds": 0.0}))
+    await undelayed.complete(REQUEST)
+    assert slept == [2.5]
 
 
 def test_the_real_provider_refuses_to_start_without_a_key() -> None:
