@@ -70,6 +70,23 @@ def build_parser() -> argparse.ArgumentParser:
     commands.add_parser(
         "operations-snapshot", help="print queues, leases, outbox age, and Kafka lag as JSON"
     )
+    bench = commands.add_parser(
+        "benchmark",
+        help="measure throughput against the running Compose stack and write a JSON report",
+    )
+    bench.add_argument("kind", choices=("replay", "sustained"))
+    bench.add_argument("--out", required=True, help="report path (JSON)")
+    bench.add_argument("--api-url", default="http://127.0.0.1:8010", help="API base URL")
+    bench.add_argument("--seed", type=int, default=1_100_000, help="first generator seed")
+    bench.add_argument("--records", type=int, default=1_000_000, help="replay: records to publish")
+    bench.add_argument(
+        "--density", type=int, default=10, help="replay: healthy datasets overlaid per window"
+    )
+    bench.add_argument("--rate", type=float, default=100.0, help="sustained: records per second")
+    bench.add_argument("--duration-s", type=int, default=1800, help="sustained: seconds of posting")
+    bench.add_argument(
+        "--drain-timeout-s", type=int, default=3600, help="give up waiting for the pipeline after"
+    )
     retention = commands.add_parser(
         "retention",
         help="report what retention would delete; --apply deletes it (cited evidence stays)",
@@ -1040,6 +1057,89 @@ def run_metrics_exporter() -> int:
     return 0
 
 
+def run_benchmark(args: argparse.Namespace) -> int:
+    """Run one benchmark on the host against the Compose stack; see evaluation/benchmark.py."""
+    import asyncio
+    import json
+    from datetime import timedelta
+    from pathlib import Path
+
+    from signalops.adapters.ingestion import DatabaseSourceLookup, IngestSource
+    from signalops.config import get_settings
+    from signalops.evaluation.benchmark import (
+        BenchmarkContext,
+        environment,
+        run_replay,
+        run_sustained,
+    )
+    from signalops.logs import configure_logging
+    from signalops.persistence.database import Database, create_engine
+    from signalops.persistence.seed import DEMO_SOURCES, DEMO_WORKSPACE_ID
+    from signalops.streaming.producer import EventProducer
+
+    settings = get_settings()
+    configure_logging(settings.log_level)
+    operator = settings.operator_tokens.get(DEMO_WORKSPACE_ID)
+    if operator is None:
+        print("benchmark needs an operator token for the demo workspace", file=sys.stderr)
+        return 2
+
+    async def run() -> dict[str, object]:
+        engine = create_engine(settings)
+        database = Database.from_engine(engine)
+        try:
+            lookup = DatabaseSourceLookup(database)
+            sources: dict[uuid.UUID, IngestSource] = {}
+            for demo in DEMO_SOURCES:
+                source = await lookup.get(demo.id)
+                if source is None or not source.enabled:
+                    raise SystemExit(f"source {demo.id} is missing or disabled; run seed first")
+                sources[source.id] = source
+            context = BenchmarkContext(
+                database=database,
+                settings=settings,
+                sources=sources,
+                workspace_id=DEMO_WORKSPACE_ID,
+                api_url=args.api_url,
+                operator_token=operator.get_secret_value(),
+                drain_timeout=timedelta(seconds=args.drain_timeout_s),
+            )
+            env = environment()
+            if args.kind == "replay":
+                producer = EventProducer(settings, client_id="signalops-benchmark")
+                try:
+                    result = await run_replay(
+                        context,
+                        producer,
+                        records=args.records,
+                        density=args.density,
+                        seed=args.seed,
+                    )
+                finally:
+                    producer.close()
+            else:
+                tokens = {k: v.get_secret_value() for k, v in settings.ingest_tokens.items()}
+                result = await run_sustained(
+                    context,
+                    tokens,
+                    rate=args.rate,
+                    duration=timedelta(seconds=args.duration_s),
+                    seed=args.seed,
+                )
+            return {"environment": env, **result}
+        finally:
+            await engine.dispose()
+
+    report = asyncio.run(run())
+    Path(args.out).parent.mkdir(parents=True, exist_ok=True)
+    Path(args.out).write_text(json.dumps(report, indent=2, default=str) + "\n")
+    summary = {k: v for k, v in report.items() if k not in {"samples", "environment"}}
+    print(json.dumps(summary, indent=2, default=str))
+    reconciliation = report.get("reconciliation")
+    complete = isinstance(reconciliation, dict) and reconciliation.get("complete")
+    return 0 if report.get("drained") and complete else 1
+
+
 def run_retention(args: argparse.Namespace) -> int:
     import asyncio
     import json
@@ -1160,6 +1260,8 @@ def main(argv: list[str] | None = None) -> int:
         return run_redrive_record(args)
     if args.command == "redrive-outbox":
         return run_redrive_outbox(args)
+    if args.command == "benchmark":
+        return run_benchmark(args)
     if args.command == "retention":
         return run_retention(args)
     command = COMMANDS.get(args.command)

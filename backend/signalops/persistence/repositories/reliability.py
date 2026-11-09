@@ -65,18 +65,22 @@ class OutboxRepository:
         caller allocates aggregate versions under the aggregate's row lock, a
         later version then sorts after an earlier one in the publisher's query.
         """
-        row = OutboxEvent(
-            id=envelope.event_id,
-            created_at=func.clock_timestamp(),
-            aggregate_id=aggregate_id,
-            aggregate_version=aggregate_version,
-            topic=topic_for(envelope),
-            message_key=message_key(envelope),
-            envelope=json.loads(envelope.encode()),
+        # One round trip: INSERT … RETURNING, not a flush followed by a refresh
+        # of `created_at` (P11-T04 profile: one of seven per normalized record).
+        row: OutboxEvent | None = await self._session.scalar(
+            insert(OutboxEvent)
+            .values(
+                id=envelope.event_id,
+                created_at=func.clock_timestamp(),
+                aggregate_id=aggregate_id,
+                aggregate_version=aggregate_version,
+                topic=topic_for(envelope),
+                message_key=message_key(envelope),
+                envelope=json.loads(envelope.encode()),
+            )
+            .returning(OutboxEvent)
         )
-        self._session.add(row)
-        await self._session.flush()
-        await self._session.refresh(row, ["created_at"])
+        assert row is not None  # noqa: S101 - a plain INSERT returns its row
         return row
 
     async def pending(self, limit: int) -> list[OutboxEvent]:

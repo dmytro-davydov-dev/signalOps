@@ -61,6 +61,7 @@ uv run signalops redrive-record --topic T --partition P --offset O  # republish 
 uv run signalops redrive-outbox EVENT_ID # make one quarantined outbox row due again
 printf '%s\n' "$TOKEN" | uv run signalops hash-token  # digest for a credentials file entry
 uv run signalops retention [--apply] [--scope S]  # report (or apply) retention cleanup; see docs/retention.md
+uv run signalops benchmark replay|sustained --out FILE  # throughput run against Compose; see docs/benchmarks.md
 uv run signalops operations-snapshot     # print job queues, leases, outbox age, unknown model calls, and Kafka lag as JSON
 SIGNALOPS_METRICS_PORT=9100 uv run signalops metrics-exporter  # serve that state as Prometheus gauges until SIGINT/SIGTERM
 

@@ -25,13 +25,13 @@ PostgreSQL owns evidence, workflow progress, budgets, and the initial knowledge 
 
 | Field | Current value |
 | --- | --- |
-| Active phase | Phase 11 Operational hardening and scale |
-| Active task | P11-T04 (in progress) |
-| Last completed task | P11-T05 |
-| Latest verified commit | `2741398` (P11-T03); P11-T05 commit `feat(P11-T05)` follows |
-| Validation evidence | P11-T05: `SIGNALOPS_INTEGRATION=1 uv run pytest` 1364 passed, 2 skipped (opt-in outage checks); retention and backup/restore suites in the task notes; ruff, format, mypy (221 files) pass; retention dry run on rebuilt Compose at 0019. P11-T03: outage checks passed on rebuilt Compose (task notes); unit and contract 708 passed; gateway, failure, lifecycle, and one-shot integration suites 44 passed; ruff, format, mypy pass. P11-T02: `SIGNALOPS_INTEGRATION=1 uv run pytest` 1356 passed, 2 skipped (opt-in outage checks), 1 unit failure from `.env` variables leaking into a settings test, fixed and rerun (`tests/unit` and `tests/contract` 707 passed with and without the sourced variables); ruff, format, mypy (218 files), `export-schemas --check` pass; Compose boundary and rotation checks in the task notes. No paid model was called |
+| Active phase | Phase 12 Portfolio packaging and release (Phase 11 gate passed 2026-11-09) |
+| Active task | None (P12-T01 not started) |
+| Last completed task | P11-T04 (Phase 11 gate) |
+| Latest verified commit | `1841513` (docs fix after P11-T05 `dff8287`); P11-T04 commit `perf(P11-T04)` follows |
+| Validation evidence | P11-T04: reports `docs/benchmarks/replay-1m.json` and `sustained-100.json` (both reconciled complete); `uv run pytest tests/unit tests/contract` 712 passed; outbox, consumer, normalizer, failure, incident, detection, and investigation integration suites 160 passed; ruff, format, mypy (222 files), `docker compose config --quiet` pass. P11-T05: `SIGNALOPS_INTEGRATION=1 uv run pytest` 1364 passed, 2 skipped (opt-in outage checks); retention and backup/restore suites in the task notes; ruff, format, mypy (221 files) pass; retention dry run on rebuilt Compose at 0019. P11-T03: outage checks passed on rebuilt Compose (task notes); unit and contract 708 passed; gateway, failure, lifecycle, and one-shot integration suites 44 passed; ruff, format, mypy pass. P11-T02: `SIGNALOPS_INTEGRATION=1 uv run pytest` 1356 passed, 2 skipped (opt-in outage checks), 1 unit failure from `.env` variables leaking into a settings test, fixed and rerun (`tests/unit` and `tests/contract` 707 passed with and without the sourced variables); ruff, format, mypy (218 files), `export-schemas --check` pass; Compose boundary and rotation checks in the task notes. No paid model was called |
 | Blockers | None |
-| Next task | P11-T04 |
+| Next task | P12-T01 |
 
 ### Scope and release boundaries
 
@@ -1051,11 +1051,20 @@ Start the React shell in Phase 1 and add API-backed incident views in Phase 5; P
 
 ### P11-T04 Benchmark and tune measured bottlenecks
 
-- [ ] Complete this task.
+- [x] Complete this task.
 
 **Implementation:** Replay one million synthetic signals and separately target 100 events/second for 30 minutes. Record hardware, payload size, versions, CPU/memory, storage growth, API p95, and lag. Profile indexes and pools before adding infrastructure.
 
 **Acceptance:** Publish achieved results including failures; do not describe a target as achieved without a retained report.
+
+**Notes (2026-11-09):**
+- **Harness:** `signalops benchmark replay|sustained` (`evaluation/benchmark.py`) runs on the host against Compose and writes a JSON report: environment (hardware, images, replicas, git revision and dirty flag), payload size, publish and request latency, lag and outbox samples every 5 s, CPU and memory per container, operator-read latency every 0.5 s (`GET /v1/incidents`), storage before and after, and reconciliation of every accepted record (`streaming/reconcile.py`). Replay publishes through `ingest_batch` straight to Kafka in its own replay scope; sustained posts through the HTTP API. Procedure and results: `docs/benchmarks.md`; reports retained in `docs/benchmarks/`.
+- **Results (fake provider, 12-CPU laptop, normalizer/detector/graph projector at 3 replicas):** replay of 1,000,000 records drained in 6,299 s, **158.7 records/s** end to end, all reconciled (0 missing, 0 quarantined), operator-read p95 5.7 ms during it, PostgreSQL +3.96 GB, Kafka +1.58 GB. Sustained: **99.2 records/s** for 1,800 s through the API (target 100 not reached: the generator produced 178,558 of 180,000 records), all requests 200, ingest p95 14.8 ms, peak lag 84, drain 0.6 s after posting, all reconciled, operator-read p95 7.4 ms.
+- **Profile:** normalizer transaction ~10 ms per record (≈4.5 ms waiting on PostgreSQL, the rest Python); offset commits 0.16 ms. Raw key `{source_id}:{service_hint}` puts 70% of demo records on raw partition 0 and normalized key leaves partition 2 empty, so one normalizer member at ~119 records/s capped the replay.
+- **Tuned:** `OutboxRepository.add` is a single `INSERT … RETURNING` (was flush plus refresh; −1 round trip per outbox row, mean transaction 10.29 → 9.84 ms). Detector and graph projector at 3 replicas: at 2, the range assignor gave one member both loaded partitions.
+- **Not changed (reasons in docs/benchmarks.md):** rekeying raw by source event ID (would spread one service across unevenly progressing partitions; replay detection closes windows on a per-service simulated clock, so records would turn late); batching records per transaction (largest remaining lever; touches the consumer's retry and quarantine paths); caching catalog lookups (needs an expiry rule for disabled sources); pools (one connection per consumer is not the limit).
+- **Found:** the 10× healthy overlay fired the inventory error-rate rule 15 times in the replay and once live; cause not investigated. The previous session's interrupted replay left ~400k raw records queued; it drained before the runs (about 70 minutes).
+- **Left:** 100 records/s for 30 minutes is not claimed (re-run with the fixed generator not done); no run above 100/s through the API; single host, single broker; batching and the raw key review above; the reports record a dirty tree because the outbox change was committed after the runs.
 
 ### P11-T05 Implement retention and recovery procedures
 
@@ -1074,6 +1083,8 @@ Start the React shell in Phase 1 and add API-backed incident views in Phase 5; P
 - **Left:** the consumer-group rewind after restore is documented but not exercised (it would rewind the shared development groups); incidents and cited evidence never expire; restore is to the last dump, not a point in time; no scheduler runs retention (manual or cron).
 
 **Phase gate:** All tasks above are checked, acceptance evidence is recorded in the ledger, and the phase outcome is demonstrated against real infrastructure where relevant.
+
+**Phase 11 gate (2026-11-09): passed on the fake provider.** All five tasks are checked with evidence in their notes and the work log. Demonstrated against the Compose stack: an investigation followed from ingestion batch to model calls through the trace route and metrics (P11-T01); unauthenticated and source-token requests refused on every operator route and credential rotation without restart (P11-T02); Kafka, PostgreSQL, and Redis outages, rebalances, an outbox crash, and a worker lease expiry with every accepted record reconciled (P11-T03); a one-million-record replay and a 30-minute API run reconciled with retained reports (P11-T04, 99.2 of 100 records/s achieved); a restored backup identical row for row and retention dry runs on the shared database (P11-T05). Open items carried forward: transaction batching and the raw key review (throughput), the restore-time consumer-group rewind, public-exposure prerequisites (OIDC, TLS, broker authentication), the inventory rule's false positives under heavy healthy load.
 
 **Suggested phase commit:** `test: validate reliability and measure platform throughput`. Split this into task-sized commits as needed.
 
@@ -1746,7 +1757,17 @@ Keep these outside the release critical path unless measurements justify promoti
 - Evidence or artifact references: task notes.
 - Deviations and reasons: cited signals are kept whole instead of being reduced to excerpts and hashes (ADR-039); signals are aged by a new wall-clock `stored_at` column because replay `ingested_at` is simulated. The Compose database had the earlier 0019 applied; its three indexes were dropped by hand, it was stamped at 0018 and upgraded.
 - Remaining issues: see task notes.
-- Next task: P11-T04 (in progress).
+- Next task: P11-T04.
+
+### 2026-11-09 — P11-T04
+- Status: completed
+- Commit: see git log for `perf(P11-T04)`
+- Implemented: `evaluation/benchmark.py` and `signalops benchmark replay|sustained`; `tests/unit/test_benchmark.py`; single-round-trip `OutboxRepository.add`; `docs/benchmarks.md` with retained reports in `docs/benchmarks/`; Phase 11 gate note.
+- Validation commands and results: `uv run signalops benchmark replay --records 1000000 --density 10` exit 0 (drained, reconciled complete); `uv run signalops benchmark sustained --rate 100 --duration-s 1800` exit 0 (drained, reconciled complete, 99.2 records/s); `uv run pytest tests/unit tests/contract` 712 passed; 160 integration tests across the outbox-writing paths passed; ruff, format, mypy, `docker compose config --quiet` pass. The full integration suite was last run for P11-T05 (1364 passed) before the outbox change.
+- Evidence or artifact references: `docs/benchmarks/replay-1m.json`, `docs/benchmarks/sustained-100.json`, task notes.
+- Deviations and reasons: the sustained target was missed by 0.8% because of a generator shortfall found afterwards by a new unit test; the generator was fixed and the run was not repeated. Throughput tuning stopped at measured, low-risk changes; the larger levers are recorded with reasons.
+- Remaining issues: see task notes.
+- Next task: P12-T01.
 
 ## Work log template
 
