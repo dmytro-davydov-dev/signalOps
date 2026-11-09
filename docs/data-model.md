@@ -1,6 +1,6 @@
 # Data model
 
-> Status: the source and evidence tables (`0002_source_evidence`, P02-T01), the incident and workflow tables (`0003_incident_workflow`, P02-T02), and the graph and reliability tables (`0004_graph_reliability`, P02-T03) are migrated; ORM models are in `backend/signalops/persistence/models/`. The evaluation tables are still logical design from [SignalOps_Implementation_Plan.md](SignalOps_Implementation_Plan.md) §5 and become migrations in Phase 10.
+> Status: every table below is migrated (`migrations/versions/`, head `0019_retention_indexes`); ORM models are in `backend/signalops/persistence/models/`. The integration test `test_migrations_match_models` fails if models and revisions drift. The list of revisions and what each adds is in [development.md](development.md#migrations).
 
 ## Conventions
 

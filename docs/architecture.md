@@ -1,6 +1,6 @@
 # Architecture
 
-> Status: planned design. The source is [SignalOps_Implementation_Plan.md](SignalOps_Implementation_Plan.md) §2–3 and §10. Nothing described here is implemented yet.
+> Status: implemented through Phase 11 and verified against the Compose stack on the fake model provider. The original design is [SignalOps_Implementation_Plan.md](SignalOps_Implementation_Plan.md) §2–3 and §10; deviations are recorded in [decisions.md](decisions.md).
 
 ## Overview
 
@@ -52,7 +52,8 @@ All processes come from one Python codebase and one backend image, started with 
 | `dispatcher` | Turn investigation-request events into durable jobs | Kafka partitions |
 | `investigation-worker` | Claim jobs, execute workflow steps, checkpoint | Worker concurrency and model budget |
 | `outbox-publisher` | Publish committed domain events to Kafka | One polling process (MVP) |
-| `evaluation-runner` | Fault injection, isolated replay, scoring | Isolated evaluation runs |
+| `evaluation-worker` | Claims queued evaluation runs, replays scenarios into an isolated replay scope, scores the results | One run at a time per process (profile `evaluation`) |
+| `metrics-exporter` | Publishes durable state (queues, leases, outbox, lag) as Prometheus gauges | One process (profile `observability`) |
 
 FastAPI request handlers and background tasks never run heavy work. The FastAPI lifespan only opens and closes connections.
 
@@ -60,7 +61,7 @@ FastAPI request handlers and background tasks never run heavy work. The FastAPI 
 
 1. **Ingest.** An adapter posts a batch with stable `source_event_id`s. The API validates size and credentials, redacts configured fields, and publishes to `signals.raw.v1`. Each record is accepted only after the broker acknowledges it, and partial outcomes are reported per record.
 2. **Normalize.** The normalizer validates the payload, resolves service and environment, and assigns quality flags. In one transaction it inserts the normalized signal, the consumer receipt, and an outbox row. It commits the Kafka offset only after that transaction commits.
-3. **Detect.** The detector loads evidence for each normalized reference, updates durable window aggregates, and upserts an incident by fingerprint and correlation window when a rule crosses its threshold, in one transaction with its outbox event. Investigations start manually at first; automatic requests come after Phase 6.
+3. **Detect.** The detector loads evidence for each normalized reference, updates durable window aggregates, and upserts an incident by fingerprint and correlation window when a rule crosses its threshold, in one transaction with its outbox event. A new live incident also requests one investigation in that transaction (`SIGNALOPS_INVESTIGATION_AUTO_REQUEST`, key `detector:{incident_id}`); operators can request more from the UI or API.
 4. **Dispatch.** The dispatcher persists one job per investigation before it acknowledges the request. Kafka consumption never waits on the LLM workflow.
 5. **Investigate.** A worker claims the job with a short lease and runs the checkpointed workflow. Specialists query bounded evidence windows and graph neighborhoods. A verifier checks claim support and output shape. The result is a structured diagnosis or `insufficient_evidence`.
 6. **Observe.** Progress events stream to the UI over SSE, with PostgreSQL providing durable replay. After a human applies a fix in the demo app, SignalOps observes recovery and records the outcome.
@@ -73,13 +74,61 @@ Every query, graph traversal, tool call, and cache key carries three values:
 - **Replay scope.** `live`, or an isolated evaluation run ID.
 - **Evidence cutoff.** The incident time. Agents cannot see future signals.
 
+## Event flow
+
+The path of one fault from ingestion to a diagnosis. Each arrow into PostgreSQL is one short transaction; each Kafka record is committed only after the transaction it caused.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant Src as Source or demo poster
+    participant API as api
+    participant K as Kafka
+    participant Norm as normalizer
+    participant PG as PostgreSQL
+    participant Pub as outbox-publisher
+    participant Det as detector / detector-closer
+    participant Disp as dispatcher
+    participant W as investigation-worker
+    participant UI as React UI
+
+    Src->>API: POST /v1/ingest/{source} (batch, stable source_event_id)
+    API->>K: signal.raw on signals.raw.v1 (acks=all)
+    API-->>Src: per-record accepted / rejected / failed
+    K->>Norm: signal.raw
+    Norm->>PG: signal + receipt + outbox row (one transaction)
+    Norm->>K: commit offset
+    Pub->>PG: read pending outbox
+    Pub->>K: signal.normalized on signals.normalized.v1
+    Pub->>PG: mark published after broker ack
+    K->>Det: signal.normalized
+    Det->>PG: window aggregate + receipt
+    Note over Det,PG: window closes (length + lateness), rule breaches
+    Det->>PG: incident + investigation + outbox request (one transaction)
+    Pub->>K: investigation.requested on investigations.requested.v1
+    K->>Disp: investigation.requested
+    Disp->>PG: durable job (unique per investigation)
+    W->>PG: claim job (lease, generation)
+    loop each workflow step
+        W->>PG: reserve budget
+        W->>W: model call through the gateway, read-only evidence tools
+        W->>PG: settle cost, checkpoint step, progress event (fenced by generation)
+    end
+    W->>PG: diagnosis + investigation ended (one transaction)
+    UI->>API: GET /v1/investigations/{id}/events (SSE, Last-Event-ID)
+    API->>PG: progress history after the cursor
+    API-->>UI: progress events, then the diagnosis with cited evidence
+```
+
+The graph projector consumes `signals.normalized.v1` in its own consumer group and maintains the temporal service graph that agents and the UI read. Topic names, keys, and envelopes are in [events.md](events.md); tables in [data-model.md](data-model.md).
+
 ## Deployment shape
 
 Docker Compose runs these core services: `frontend`, `api`, `normalizer`, `detector`, `graph-projector`, `detector-closer`, `dispatcher`, `investigation-worker`, `outbox-publisher`, `postgres`, `redis`, `kafka`.
 
 - One-shot `migrate` and `init-topics` services handle schema and topic setup.
-- The optional profiles are `demo` (an instrumented app, possibly the OpenTelemetry Demo), `evaluation`, and `observability`.
-- Stateful services use named volumes and private networks. PostgreSQL, Kafka, and Redis are never exposed publicly.
+- Optional profiles: `demo` (catalog seed, a synthetic fault poster, and `demo-shop`, a small instrumented checkout application), `evaluation` (`evaluation-worker`), `observability` (`metrics-exporter`, Prometheus, Grafana), and `tools` (the bare backend image for one-off commands).
+- Stateful services use named volumes and a private network. Host ports are bound to `127.0.0.1`; PostgreSQL, Kafka, and Redis are never exposed publicly.
 - Single-node Kafka (replication factor 1) and local volumes do **not** protect against host or disk loss.
 
 ## Related documents
@@ -88,3 +137,4 @@ Docker Compose runs these core services: `frontend`, `api`, `normalizer`, `detec
 - [data-model.md](data-model.md): tables and constraints
 - [agents-and-workflow.md](agents-and-workflow.md): the investigation runtime
 - [reliability.md](reliability.md): recovery guarantees and failure tests
+- [runbook.md](runbook.md): operating the local deployment

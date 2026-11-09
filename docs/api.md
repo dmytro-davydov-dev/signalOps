@@ -1,6 +1,6 @@
 # HTTP API
 
-> Status: planned design. The source is [SignalOps_Implementation_Plan.md](SignalOps_Implementation_Plan.md) §9. The generated OpenAPI document, [`openapi.v1.json`](../backend/signalops/contracts/schemas/openapi.v1.json), is authoritative for implemented routes (health, ingestion, evidence queries, incidents, service graphs, investigation requests, reads, cancellation, and progress history); body schemas for planned routes are exported alongside it (for example `investigations/investigation.v1.json`). Compatibility rules are in [events.md](events.md#versioning-rules).
+> Status: every route below is implemented. The generated OpenAPI document, [`openapi.v1.json`](../backend/signalops/contracts/schemas/openapi.v1.json), is authoritative; the running API serves it at `/docs`. Body schemas are exported alongside it (for example `investigations/investigation.v1.json`). Compatibility rules are in [events.md](events.md#versioning-rules). Runnable examples are in [Examples](#examples).
 
 All endpoints are versioned under `/v1`. Request and response bodies are Pydantic models. Timestamps are UTC (RFC 3339) and IDs are UUIDs.
 
@@ -28,7 +28,7 @@ All endpoints are versioned under `/v1`. Request and response bodies are Pydanti
 | `POST /v1/evaluation-runs` | Starts an isolated scenario run | P10-T06 |
 | `GET /v1/evaluation-runs/{id}` | Case results and aggregate metrics | P10-T06 |
 
-Liveness and readiness endpoints arrive in P01-T04. Readiness reports missing required dependencies.
+`GET /health/live` and `GET /health/ready` need no credential. Readiness is 503 with per-dependency error categories when PostgreSQL, Redis, or Kafka does not answer.
 
 ## Ingestion
 
@@ -67,7 +67,7 @@ Per-record outcomes (`results`, in request order, with counts):
 
 The response is `200` when every record is accepted or rejected, and `503` with `Retry-After` and the same body when any record failed. Resending the whole batch is safe: accepted records reproduce their event IDs and are deduplicated downstream. If the HTTP call itself times out, the outcome is unknown; retry the batch with the same IDs. Worst-case latency is about `SIGNALOPS_KAFKA_DELIVERY_TIMEOUT_MS` (30 s by default) when the broker is down, so client timeouts should exceed it.
 
-Not yet implemented: the per-source `429` rate limit (Redis). No roadmap task owns it yet. Token rotation is P11-T02.
+Not implemented: a per-source `429` rate limit. Token rotation: docs/security.md.
 
 ## Evidence queries
 
@@ -146,7 +146,7 @@ The body is `InvestigationView` (`contracts/investigations.py`). Its `diagnosis`
 | `insufficient_evidence` | required, `status: "insufficient_evidence"`, null `root_cause`, non-empty `missing_evidence` | Insufficient evidence (an abstention, not a failure) |
 | `queued`, `running`, `failed`, `cancelled`, `budget_exceeded` | `null` | Queued, Running, Failed, Cancelled, Budget exceeded |
 
-`replay_scope` selects a replay run, as on the incident routes. Until P07, the body has no evidence or cost basis.
+`replay_scope` selects a replay run, as on the incident routes.
 
 `diagnosis.contradictions` (added in P09-T03, additive, default empty) lists specialists whose findings point to different causes, with the roles and up to 20 signal IDs each, for diagnosed and abstained results alike. Workflow `v3` fills it; `v1` and `v2` leave it empty. A client that predates it can ignore it, and the UI reads a missing field as empty.
 
@@ -249,3 +249,150 @@ Operator token required; a run belongs to the token's workspace (another workspa
 | `POST /v1/evaluation-runs/{id}/cases/{case_id}/audits` | `201`. Body: `signal_id`, `supported`, `auditor`, optional `note`. The signal must be cited by the case (422 otherwise). An auditor's later judgement of the same citation replaces the earlier one |
 
 The UI's Evaluation page lists runs and can queue one. A run page compares the variants (samples, accuracy and its spread across trials, root-cause accuracy, evidence precision, unsupported diagnoses, abstentions, latency, cost, harness failures), shows detection results, and filters cases to incorrect and failed ones. A case page shows expected against observed, each citation's label, links to the investigation in its replay scope, and records audits. Runs on the fake provider carry a notice that they show the harness, not diagnostic quality.
+
+## Examples
+
+Recorded on 2026-11-09 against the Compose stack after the [quick start](quickstart.md) fault run, on the fake provider. IDs come from that run; responses are trimmed (`…`). The tokens are those in `.env`: `$OPERATOR_TOKEN` from `SIGNALOPS_OPERATOR_TOKENS`, `$LOGS_TOKEN` from `SIGNALOPS_INGEST_TOKENS` for the logs source.
+
+```bash
+API=http://127.0.0.1:8010
+auth=(-H "Authorization: Bearer $OPERATOR_TOKEN")
+```
+
+**Ingest one log record** (source token, per-record result):
+
+```bash
+curl -s -X POST -H "Authorization: Bearer $LOGS_TOKEN" -H 'Content-Type: application/json' \
+  $API/v1/ingest/b6c72d79-7ec9-4df7-88d0-1d4332c88808 -d '{
+  "records": [{
+    "source_event_id": "example-1",
+    "occurred_at": "2026-11-09T12:45:00Z",
+    "payload": {"service": "payment", "environment": "demo", "level": "error",
+                "message": "upstream bank-gateway call timed out after 2000 ms"}
+  }]}'
+```
+
+```json
+{"batch_id":"ba18f643-…","accepted":1,"rejected":0,"failed":0,
+ "results":[{"index":0,"source_event_id":"example-1","status":"accepted","event_id":"8dbabbc7-…","reason":null,"detail":null}]}
+```
+
+`accepted` means Kafka has the record. Whether its payload fits the adapter contract is decided by the normalizer: a payload with the wrong fields (for example `severity` instead of `level`) is stored as a `quarantined` signal with the flag `malformed_payload`, visible in `GET /v1/sources/quality`.
+
+**List incidents:**
+
+```bash
+curl -s "${auth[@]}" $API/v1/incidents
+```
+
+```json
+{"items":[{"id":"2d5348d8-7450-4d59-9026-1dc46876e492","replay_scope":"live",
+  "title":"High error rate on checkout (demo)","severity":"high","status":"open",
+  "detected_at":"2026-11-09T12:44:32.758552Z","first_seen_at":"2026-11-09T12:43:00Z","last_seen_at":"2026-11-09T12:44:00Z",
+  "resolved_at":null,"version":4,
+  "services":[{"name":"checkout","environment":"demo","role":"primary",…},{"name":"payment","environment":"demo","role":"primary",…}]}],
+ "next_cursor":null}
+```
+
+**The incident's investigations** (the detector requested the first one):
+
+```bash
+curl -s "${auth[@]}" $API/v1/incidents/2d5348d8-7450-4d59-9026-1dc46876e492/investigations
+```
+
+```json
+{"incident_id":"2d5348d8-…","replay_scope":"live",
+ "items":[{"id":"2f20afcb-b0a2-4358-909d-3400e4837e0f","status":"completed","created_at":"2026-11-09T12:44:32.771116Z",
+           "completed_at":"2026-11-09T12:44:34.253568Z","cancel_requested_at":null,"diagnosis_status":"diagnosed"}],
+ "truncated":false}
+```
+
+**Read the result:**
+
+```bash
+curl -s "${auth[@]}" $API/v1/investigations/2f20afcb-b0a2-4358-909d-3400e4837e0f
+```
+
+```json
+{"id":"2f20afcb-…","status":"completed","workflow_version":"v3","evidence_cutoff_at":"2026-11-09T12:44:32.771116Z",
+ "usage":{"budget_microusd":3000000,"reserved_microusd":0,"spent_microusd":134780,"model_calls":9,
+          "input_tokens":26130,"output_tokens":1513,"actual_microusd":0,"estimated_microusd":134780,
+          "unknown_calls":0,"unknown_reserved_microusd":0,…},
+ "diagnosis":{"status":"diagnosed",
+   "summary":"Failing calls end at this service, and its evidence shows the fault.",
+   "root_cause":{"service_name":"bank-gateway","failure_type":"downstream_timeout","confidence":0.7,
+                 "evidence_signal_ids":["b985656f-…","4203ca9f-…",…]},
+   "alternatives":[{"hypothesis":"inventory: deployment_regression",
+                    "assessment":"Revision inventory-2026.10.16-2 of this service was deployed shortly before the incident window."}],
+   "limitations":["Produced by a deterministic fake role."],
+   "missing_evidence":[],
+   "contradictions":[{"roles":["telemetry_investigator","deployment_investigator"],…}],
+   "workflow_version":"v3"}}
+```
+
+Spend is `estimated_microusd`: the fake provider has a price table but no bill. The fake roles answer by fixed rules over the evidence they are given, so a correct root cause here shows that the pipeline carries evidence through, not that a model reasoned. The unrelated deployment the demo includes appears as an alternative and a recorded contradiction.
+
+**Cited evidence**, checked again against scope and cutoff:
+
+```bash
+curl -s "${auth[@]}" $API/v1/investigations/2f20afcb-b0a2-4358-909d-3400e4837e0f/evidence
+```
+
+```json
+{"investigation_id":"2f20afcb-…","evidence_cutoff_at":"2026-11-09T12:44:32.771116Z",
+ "items":[{"id":"b985656f-…","kind":"trace","source_event_id":"bank-gateway-span-779790df0638a904edf9",
+           "occurred_at":"2026-11-09T12:44:25.228Z","message":"POST /authorize ok in 1353 ms",
+           "attributes":{"record":{"operation":"POST /authorize","duration_ms":1353,…},…},…},…],
+ "unverified_signal_ids":[]}
+```
+
+**Request another investigation.** The same key and body return the same investigation; the same key with another body is `409`:
+
+```bash
+curl -s -i -X POST "${auth[@]}" -H 'Idempotency-Key: docs-example-1' -H 'Content-Type: application/json' \
+  -d '{"max_steps": 20}' $API/v1/incidents/2d5348d8-7450-4d59-9026-1dc46876e492/investigations
+```
+
+```text
+HTTP/1.1 202 Accepted
+{"id":"1b65a28f-ec7d-4927-93f7-0326303a090c","incident_id":"2d5348d8-…","status":"queued","created_at":"2026-11-09T12:45:08.841984Z"}
+```
+
+**Progress history and live stream:**
+
+```bash
+curl -s "${auth[@]}" "$API/v1/investigations/2f20afcb-b0a2-4358-909d-3400e4837e0f/progress?limit=2"
+curl -sN "${auth[@]}" -H 'Last-Event-ID: 2' $API/v1/investigations/2f20afcb-b0a2-4358-909d-3400e4837e0f/events
+```
+
+```json
+{"investigation_id":"2f20afcb-…","replay_scope":"live",
+ "items":[{"id":1,"event_type":"step.started","payload":{"step_key":"load_context","agent_role":"coordinator","attempt":1},…},
+          {"id":2,"event_type":"step.completed","payload":{"step_key":"load_context","agent_role":"coordinator","attempt":1},…}],
+ "next_after":2}
+```
+
+**Trace after a worker crash.** An investigation whose worker was killed after two steps (quick start step 5) finished on the second attempt, reusing them:
+
+```bash
+curl -s "${auth[@]}" $API/v1/investigations/d174acbc-8085-4a3e-9281-4db2a7bc1b02/trace
+```
+
+```json
+{"status":"completed",
+ "job":{"status":"succeeded","attempts":2,"lease_generation":2,"last_error_category":"lease_expired"},
+ "steps":[{"step_key":"load_context","attempt":1,"lease_generation":1,…},
+          {"step_key":"plan","attempt":1,"lease_generation":1,…},
+          {"step_key":"telemetry","attempt":2,"lease_generation":2,…},
+          …,
+          {"step_key":"conclude","attempt":2,"lease_generation":2,…}],
+ …}
+```
+
+Its `usage` shows `"unknown_calls":3,"unknown_reserved_microusd":564645`: the calls in flight when the worker died keep their reservation, because a real provider may have billed them.
+
+**Without a credential**, every route except ingestion and the health probes is `401`:
+
+```bash
+curl -s -o /dev/null -w '%{http_code}\n' $API/v1/incidents   # 401
+```

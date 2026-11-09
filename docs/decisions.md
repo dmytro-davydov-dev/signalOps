@@ -1,6 +1,15 @@
 # Architecture Decision Records and Open Questions
 
-These are **proposed ADRs** drawn from [SignalOps_Implementation_Plan.md](SignalOps_Implementation_Plan.md) and the [development roadmap](development_roadmap.md). Implementation has not validated them yet. Revisit each one when its phase lands, and record any deviation here **before** implementing it.
+ADR-001 to ADR-010 come from [SignalOps_Implementation_Plan.md](SignalOps_Implementation_Plan.md) and were adopted as written; ADR-011 onward record decisions made while implementing the [development roadmap](development_roadmap.md). All are implemented and covered by tests unless an entry says otherwise. Record a deviation here **before** implementing it.
+
+| Topic | Decisions |
+| --- | --- |
+| Kafka versus Redis responsibilities | [ADR-002](#adr-002-kafka-for-transport-postgresql-for-durable-state), [ADR-003](#adr-003-redis-is-disposable), [ADR-030](#adr-030-progress-streams-replay-postgresql-and-an-unknown-cursor-resets) |
+| At-least-once handling | [ADR-005](#adr-005-at-least-once-delivery-with-receipts-and-a-transactional-outbox), [ADR-011](#adr-011-ingestion-acknowledges-per-record-after-kafka-with-derived-event-ids), [ADR-020](#adr-020-investigation-requests-are-keyed-durably-and-dispatched-once) |
+| PostgreSQL graph trade-offs | [ADR-004](#adr-004-temporal-knowledge-graph-in-postgresql), [ADR-018](#adr-018-observed-edges-are-merged-intervals-that-expire) |
+| Durable jobs | [ADR-006](#adr-006-durable-jobs-with-leases-and-generation-fencing), [ADR-021](#adr-021-job-leases-use-postgresqls-clock-and-a-row-lock-fence), [ADR-022](#adr-022-the-workflow-is-a-fixed-node-sequence-with-a-fenced-write-per-step), [ADR-023](#adr-023-cancellation-is-a-durable-request-workers-end-the-job), [ADR-024](#adr-024-one-transaction-ends-the-job-and-the-investigation) |
+| Gateway budgets | [ADR-008](#adr-008-in-process-llm-gateway-with-postgresql-budget-reservations), [ADR-025](#adr-025-provider-calls-go-through-one-neutral-interface-and-the-anthropic-sdk-never-retries), [ADR-026](#adr-026-the-gateway-reserves-each-calls-maximum-and-redis-only-meters-the-provider), [ADR-032](#adr-032-specialists-run-as-one-parallel-stage-under-process-wide-slots-and-durable-budget-shares) |
+| Multi-agent workflow | [ADR-007](#adr-007-explicit-persisted-python-workflow-not-an-agent-framework), [ADR-031](#adr-031-workflow-v3-splits-the-agent-into-roles-with-code-built-briefs-and-code-checked-handoffs), [ADR-033](#adr-033-code-records-contradictions-and-the-verifier-gets-at-most-one-follow-up-round), [ADR-036](#adr-036-baselines-run-as-workflows-on-the-same-incident-with-limits-fixed-by-the-run) |
 
 Format: **Decision**, **Reason**, **Trade-off**, **Revisit when**.
 

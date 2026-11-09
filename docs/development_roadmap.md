@@ -26,12 +26,12 @@ PostgreSQL owns evidence, workflow progress, budgets, and the initial knowledge 
 | Field | Current value |
 | --- | --- |
 | Active phase | Phase 12 Portfolio packaging and release (Phase 11 gate passed 2026-11-09) |
-| Active task | None (P12-T01 not started) |
-| Last completed task | P11-T04 (Phase 11 gate) |
+| Active task | None (P12-T02 not started) |
+| Last completed task | P12-T01 |
 | Latest verified commit | `1841513` (docs fix after P11-T05 `dff8287`); P11-T04 commit `perf(P11-T04)` follows |
-| Validation evidence | P11-T04: reports `docs/benchmarks/replay-1m.json` and `sustained-100.json` (both reconciled complete); `uv run pytest tests/unit tests/contract` 712 passed; outbox, consumer, normalizer, failure, incident, detection, and investigation integration suites 160 passed; ruff, format, mypy (222 files), `docker compose config --quiet` pass. P11-T05: `SIGNALOPS_INTEGRATION=1 uv run pytest` 1364 passed, 2 skipped (opt-in outage checks); retention and backup/restore suites in the task notes; ruff, format, mypy (221 files) pass; retention dry run on rebuilt Compose at 0019. P11-T03: outage checks passed on rebuilt Compose (task notes); unit and contract 708 passed; gateway, failure, lifecycle, and one-shot integration suites 44 passed; ruff, format, mypy pass. P11-T02: `SIGNALOPS_INTEGRATION=1 uv run pytest` 1356 passed, 2 skipped (opt-in outage checks), 1 unit failure from `.env` variables leaking into a settings test, fixed and rerun (`tests/unit` and `tests/contract` 707 passed with and without the sourced variables); ruff, format, mypy (218 files), `export-schemas --check` pass; Compose boundary and rotation checks in the task notes. No paid model was called |
+| Validation evidence | P12-T01: quick start followed from a clean copy on the default ports (task notes): stack healthy, fault detected, automatic investigation diagnosed with verified citations, worker crash resumed with step reuse, every API example run; `uv run pytest tests/unit tests/contract` 712 passed; ruff, format, mypy (222 files), `docker compose config --quiet`, relative-link and anchor check over README and docs pass. P11-T04: reports `docs/benchmarks/replay-1m.json` and `sustained-100.json` (both reconciled complete); `uv run pytest tests/unit tests/contract` 712 passed; outbox, consumer, normalizer, failure, incident, detection, and investigation integration suites 160 passed; ruff, format, mypy (222 files), `docker compose config --quiet` pass. P11-T05: `SIGNALOPS_INTEGRATION=1 uv run pytest` 1364 passed, 2 skipped (opt-in outage checks); retention and backup/restore suites in the task notes; ruff, format, mypy (221 files) pass; retention dry run on rebuilt Compose at 0019. P11-T03: outage checks passed on rebuilt Compose (task notes); unit and contract 708 passed; gateway, failure, lifecycle, and one-shot integration suites 44 passed; ruff, format, mypy pass. P11-T02: `SIGNALOPS_INTEGRATION=1 uv run pytest` 1356 passed, 2 skipped (opt-in outage checks), 1 unit failure from `.env` variables leaking into a settings test, fixed and rerun (`tests/unit` and `tests/contract` 707 passed with and without the sourced variables); ruff, format, mypy (218 files), `export-schemas --check` pass; Compose boundary and rotation checks in the task notes. No paid model was called |
 | Blockers | None |
-| Next task | P12-T01 |
+| Next task | P12-T02 |
 
 ### Scope and release boundaries
 
@@ -1096,11 +1096,18 @@ Start the React shell in Phase 1 and add API-backed incident views in Phase 5; P
 
 ### P12-T01 Write operational and architecture documentation
 
-- [ ] Complete this task.
+- [x] Complete this task.
 
 **Implementation:** Finish quick start, environment guide, architecture/event/ER diagrams, API examples, schema notes, runbook, and ADRs for Kafka, PostgreSQL graph, Redis, durable jobs, and gateway budgets.
 
 **Acceptance:** A new developer starts the fake-provider demonstration using the guide without undocumented local setup.
+
+**Notes (2026-11-09):**
+- **Added:** `docs/quickstart.md` (requirements, configure, start, inject a fault, watch the incident and investigation in the UI and API, optional worker crash, stop; environment guide and Compose override for other settings), `docs/runbook.md` (first look, start/stop/upgrade, symptoms with checks and actions, credentials, data lifecycle, model provider), `scripts/init-env.sh` (writes `.env` from `.env.example` with random passwords and tokens, mode 600, refuses to overwrite, prints only the operator token), an event-flow sequence diagram in `docs/architecture.md`, recorded request/response examples in `docs/api.md#examples`, and a topic index in `docs/decisions.md` mapping Kafka/Redis responsibilities, at-least-once handling, PostgreSQL graph, durable jobs, gateway budgets, and multi-agent decisions to their ADRs.
+- **Corrected stale text:** README status (was Phase 7) and documentation table; "planned design" headers in `architecture.md` and `api.md`; "proposed ADRs" in `decisions.md`; the `data-model.md` status (evaluation tables were described as future); missing revisions 0008–0012 in `development.md`; process table and profiles in `architecture.md` (`evaluation-worker`, `metrics-exporter`, `demo-shop`); detector auto-requests in the end-to-end flow.
+- **Found while verifying:** Compose passes only listed variables to containers, so a setting such as `SIGNALOPS_INVESTIGATION_AUTO_REQUEST` in `.env` has no effect. The guide documents a `compose.override.yaml` (already git-ignored) and names the processes that read investigation settings (`api`, `detector`, `detector-closer`, not the worker). Payload contract failures are stored as `quarantined` signals, not sent to `processing.failed.v1`; the runbook distinguishes the two.
+- **Verified (clean copy):** `git ls-files -co --exclude-standard` copied to a scratch directory without `.env`, run as Compose project `signalops-qs` on the default ports with the development stack stopped. `./scripts/init-env.sh` left no placeholder; `docker compose up -d --build --wait` healthy in 35 s; `demo-seed` ok; readiness 200; `demo-post downstream-timeout --realtime --duration-s 300` 472/472 accepted; the incident (checkout, payment) was detected 12:44:32, about two minutes into the run; the automatic `v3` investigation completed in 1.5 s, diagnosed `bank-gateway`/`downstream_timeout` with 10 citations and `unverified_signal_ids` empty. Every `api.md` example was run as written (ingest, list, investigations, result, evidence, idempotent request and 409, progress, SSE with `Last-Event-ID`, trace, 401). Crash exercise from step 5: worker killed after two completed steps, job finished on attempt 2 at generation 2 with `load_context` and `plan` reused and three in-flight calls `unknown` with 564,645 µUSD still reserved. UI `/incidents` 200 and proxied `/v1/incidents` 200. Runbook commands `operations-snapshot`, `retention` (dry run) and the `processing.failed.v1` console read ran; the override example merged as documented (`docker compose config`). The throwaway project and its volumes were removed and the development stack restarted.
+- **Not verified:** a browser session following the guide (the Playwright journey from P08-T04 covers the UI path but was not rerun); macOS; the first-time image build duration on a cold Docker cache (the images were cached).
 
 ### P12-T02 Prepare the demonstration narrative
 
@@ -1768,6 +1775,16 @@ Keep these outside the release critical path unless measurements justify promoti
 - Deviations and reasons: the sustained target was missed by 0.8% because of a generator shortfall found afterwards by a new unit test; the generator was fixed and the run was not repeated. Throughput tuning stopped at measured, low-risk changes; the larger levers are recorded with reasons.
 - Remaining issues: see task notes.
 - Next task: P12-T01.
+
+### 2026-11-09 — P12-T01
+- Status: completed
+- Commit: see git log for `docs(P12-T01)`
+- Implemented: `docs/quickstart.md`, `docs/runbook.md`, `scripts/init-env.sh`; event-flow diagram and current process table in `docs/architecture.md`; API examples; ADR topic index; stale status text corrected across README and docs.
+- Validation commands and results: clean-copy quick start as in the task notes; `uv run ruff check .`, `uv run ruff format --check .`, `uv run mypy` (222 files), `uv run pytest tests/unit tests/contract` (712 passed), `docker compose config --quiet`, `sh -n scripts/init-env.sh`, link and anchor check pass. Frontend unchanged, not re-run.
+- Evidence or artifact references: `docs/api.md#examples` (responses recorded from the clean-copy run).
+- Deviations and reasons: none.
+- Remaining issues: no browser rerun of the guide; macOS untested.
+- Next task: P12-T02.
 
 ## Work log template
 

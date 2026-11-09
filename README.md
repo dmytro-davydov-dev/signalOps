@@ -4,7 +4,7 @@ SignalOps turns noisy telemetry into evidence-backed software incident diagnoses
 
 It ingests logs, trace summaries, and deployment events, detects incidents with deterministic time-window rules, and runs bounded, budgeted agent investigations. Each investigation returns a validated diagnosis that cites evidence, or an explicit *insufficient evidence* result. A replay-based evaluation lab scores diagnoses against injected faults.
 
-> **Status: Phase 7 of 12 complete (LLM gateway and first investigator).** Ingestion, detection, incidents, the service graph, durable investigations, and one budgeted tool-using agent run today. By default a deterministic fake plays the model, which proves the plumbing and says nothing about diagnostic quality. A Claude adapter exists and has not run against the live API. The live UI, multi-agent workflow, and evaluation are not built yet; the sections below describe the intended system. See the [progress ledger](docs/development_roadmap.md#progress-ledger) for actual progress.
+> **Status: Phases 1–11 of 12 complete.** Ingestion, detection, the temporal service graph, durable single- and multi-agent investigations, the live incident workspace, the evaluation lab, observability, and recovery procedures run on Docker Compose. By default a deterministic fake plays the model: it proves the plumbing and says nothing about diagnostic quality. A Claude adapter exists; no paid model run is part of the recorded results. See the [progress ledger](docs/development_roadmap.md#progress-ledger).
 
 ## What it does
 
@@ -41,15 +41,21 @@ flowchart LR
 
 | Document | Contents |
 | --- | --- |
-| [Architecture](docs/architecture.md) | Components, process boundaries, ownership of state, end-to-end flow |
+| [Quick start](docs/quickstart.md) | Run the fake-provider demonstration end to end; environment and settings |
+| [Architecture](docs/architecture.md) | Components, process boundaries, ownership of state, event flow |
 | [Events](docs/events.md) | Kafka topics, keys, the common envelope, delivery and failure rules |
-| [Data model](docs/data-model.md) | PostgreSQL tables, constraints, temporal graph, indexes, retention |
+| [Data model](docs/data-model.md) | PostgreSQL tables, constraints, temporal graph, indexes, ER diagram |
 | [Agents and workflow](docs/agents-and-workflow.md) | Workflow nodes, agent roles, tools, gateway, budgets, diagnosis contract |
-| [API](docs/api.md) | HTTP endpoints, idempotency, SSE progress stream, error categories |
-| [Reliability](docs/reliability.md) | Outbox, receipts, offsets, leases, recovery guarantees, failure tests |
+| [API](docs/api.md) | HTTP endpoints, idempotency, SSE progress stream, error categories, examples |
+| [Reliability](docs/reliability.md) | Outbox, receipts, offsets, leases, recovery guarantees, outage checks |
+| [Runbook](docs/runbook.md) | Operating the local deployment: symptoms, checks, and actions |
+| [Observability](docs/observability.md) | Metrics, dashboards, correlation fields, following a fault |
+| [Security](docs/security.md) | Principals, credentials and rotation, limits, redaction |
+| [Retention](docs/retention.md) | Retention cleanup, backup and restore, single-node limits |
 | [Evaluation](docs/evaluation.md) | Fault scenarios, baselines, metrics, leakage prevention |
-| [Development](docs/development.md) | Repository layout, proposed commands, conventions, workflow |
-| [Decisions](docs/decisions.md) | Proposed architecture decision records and open questions |
+| [Benchmarks](docs/benchmarks.md) | One-million-record replay and 30-minute sustained run, with retained reports |
+| [Development](docs/development.md) | Repository layout, commands, configuration reference, conventions |
+| [Decisions](docs/decisions.md) | Architecture decision records |
 
 Planning sources:
 
@@ -59,22 +65,19 @@ Planning sources:
 
 ## Quick start
 
-Requires Docker with Compose v2. No model API key is needed: the deterministic fake provider is the default. `SIGNALOPS_MODEL_PROVIDER=anthropic` with a key makes paid calls, each bounded by an investigation's budget.
+Requires Docker with Compose v2. No model API key is needed: the deterministic fake provider is the default.
 
 ```bash
-cp .env.example .env              # placeholders; change POSTGRES_PASSWORD if you like
-docker compose up -d --build --wait
+./scripts/init-env.sh                                  # .env with random local tokens; prints the operator token
+docker compose up -d --build --wait                    # infrastructure, migrations, topics, API, UI, workers
+docker compose --profile demo run --rm demo-seed       # demo workspace, sources, services
+docker compose --profile demo run --rm demo \
+  demo-post downstream-timeout --realtime --duration-s 300 --api-url http://api:8000
 ```
 
-This starts PostgreSQL, Redis, and single-node Kafka, runs the one-shot `migrate` and `init-topics` jobs, then starts the API and UI:
+Open <http://127.0.0.1:8090/incidents>, paste the operator token, and open the incident that appears about two minutes into the fault. Its investigation runs automatically. The full walkthrough, API examples, a worker-crash exercise, and the environment guide are in [docs/quickstart.md](docs/quickstart.md).
 
-- UI: <http://127.0.0.1:8090/> (system health at `/status`)
-- API readiness: <http://127.0.0.1:8010/health/ready>
-- API docs: <http://127.0.0.1:8010/docs>
-
-Host ports are bound to `127.0.0.1` and can be changed in `.env`. Stop with `docker compose down`; add `-v` only if you want to delete the data volumes.
-
-For local development without containers (uv, pnpm, checks, integration tests), see [Development](docs/development.md).
+Stop with `docker compose down`; add `-v` only to delete the data volumes. For checks and running processes on the host (uv, pnpm), see [Development](docs/development.md).
 
 ## Scope
 
@@ -84,7 +87,7 @@ For local development without containers (uv, pnpm, checks, integration tests), 
 
 - Production high availability from single-node Compose.
 - Exactly-once model execution.
-- Throughput or accuracy numbers before a benchmark report is retained.
+- Diagnostic accuracy: recorded evaluation runs used the fake provider. Throughput figures are limited to the retained [benchmark reports](docs/benchmarks.md) on the documented hardware.
 
 **Deferred:** a metrics adapter (after R1), a dedicated graph database, Kubernetes, multi-broker Kafka, and autonomous remediation. See the [deferred backlog](docs/development_roadmap.md#deferred-backlog).
 
