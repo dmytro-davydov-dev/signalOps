@@ -60,6 +60,7 @@ uv run signalops outbox-publisher        # publish pending outbox rows until SIG
 uv run signalops redrive-record --topic T --partition P --offset O  # republish one quarantined record
 uv run signalops redrive-outbox EVENT_ID # make one quarantined outbox row due again
 printf '%s\n' "$TOKEN" | uv run signalops hash-token  # digest for a credentials file entry
+uv run signalops retention [--apply] [--scope S]  # report (or apply) retention cleanup; see docs/retention.md
 uv run signalops operations-snapshot     # print job queues, leases, outbox age, unknown model calls, and Kafka lag as JSON
 SIGNALOPS_METRICS_PORT=9100 uv run signalops metrics-exporter  # serve that state as Prometheus gauges until SIGINT/SIGTERM
 
@@ -173,7 +174,7 @@ uv run alembic revision --autogenerate -m "describe change"   # review the file 
 uv run alembic upgrade head
 ```
 
-Revisions live in `migrations/versions/` (`0001_baseline` is empty; `0002_source_evidence` adds the source and evidence tables; `0003_incident_workflow` adds incident and workflow tables and status-transition triggers; `0004_graph_reliability` adds graph, receipt, and outbox tables; `0005_diagnosis_status_mapping` ties the stored diagnosis to the investigation status; `0006_baseline_indexes` adds foreign-key and scoped-listing indexes; `0007_outbox_retry` adds outbox retry and quarantine state; `0013_idempotency_keys` adds investigation request keys; `0014_investigation_cancellation` adds `cancel_requested_at`; `0015_investigation_outcomes` allows one ending per investigation and settles investigations left running; `0016_llm_call_accounting` records prices, cache tokens, and the lease of each model call). ORM models live in `backend/signalops/persistence/models/`, must use `signalops.persistence.base.Base` (whose naming convention keeps constraint names stable), and must be imported from `signalops.persistence.models` so Alembic sees them. Generate revisions against a throwaway database at the previous head, review them, and keep names under 63 characters (pass an explicit `name=` when the convention would exceed it). The integration test `test_migrations_match_models` fails if models and revisions drift. Autogenerate ignores triggers and functions, so add them by hand and cover them with tests.
+Revisions live in `migrations/versions/` (`0001_baseline` is empty; `0002_source_evidence` adds the source and evidence tables; `0003_incident_workflow` adds incident and workflow tables and status-transition triggers; `0004_graph_reliability` adds graph, receipt, and outbox tables; `0005_diagnosis_status_mapping` ties the stored diagnosis to the investigation status; `0006_baseline_indexes` adds foreign-key and scoped-listing indexes; `0007_outbox_retry` adds outbox retry and quarantine state; `0013_idempotency_keys` adds investigation request keys; `0014_investigation_cancellation` adds `cancel_requested_at`; `0015_investigation_outcomes` allows one ending per investigation and settles investigations left running; `0016_llm_call_accounting` records prices, cache tokens, and the lease of each model call; `0017_evaluation` and `0018_evaluation_audits` add the evaluation schema; `0019_retention_indexes` adds the indexes retention cleanup uses). ORM models live in `backend/signalops/persistence/models/`, must use `signalops.persistence.base.Base` (whose naming convention keeps constraint names stable), and must be imported from `signalops.persistence.models` so Alembic sees them. Generate revisions against a throwaway database at the previous head, review them, and keep names under 63 characters (pass an explicit `name=` when the convention would exceed it). The integration test `test_migrations_match_models` fails if models and revisions drift. Autogenerate ignores triggers and functions, so add them by hand and cover them with tests.
 
 nginx serves the built UI and proxies `/health/` and `/v1/` to the API, resolving the `api` container per request so a stopped API returns 502 immediately. UI routes therefore never use the `/health/` or `/v1/` prefixes.
 
@@ -202,6 +203,10 @@ Backend processes read `SIGNALOPS_`-prefixed variables (`backend/signalops/confi
 | `SIGNALOPS_RETRY_MAX_ATTEMPTS` | `5` | Attempts per consumed record (including the first) for transient failures before the consumer stops without committing. The outbox never gives up on transient failures |
 | `SIGNALOPS_RETRY_BASE_DELAY_MS` / `SIGNALOPS_RETRY_MAX_DELAY_MS` | `1000` / `30000` | Full-jitter backoff: retry n waits a random time up to min(max, base × 2^(n−1)) |
 | `SIGNALOPS_STREAMING_STATS_INTERVAL_MS` | `30000` | Interval of the `consumer stats` and `outbox stats` log lines (see [reliability.md](reliability.md#streaming-stats)) |
+| `SIGNALOPS_RETENTION_SIGNALS_DAYS` | `7` | Uncited signals older than this are deleted by `signalops retention --apply` |
+| `SIGNALOPS_RETENTION_AGGREGATES_DAYS` | `32` | Closed detection windows; must exceed the ingestion age plus future bounds |
+| `SIGNALOPS_RETENTION_OUTBOX_DAYS` | `7` | Published outbox rows |
+| `SIGNALOPS_RETENTION_PROGRESS_DAYS` | `30` | Progress history of investigations that ended earlier |
 | `SIGNALOPS_METRICS_PORT` | unset (Compose: `9100`) | Prometheus listener for this process; unset means none ([observability.md](observability.md)) |
 | `SIGNALOPS_METRICS_HOST` | `0.0.0.0` | Listener address |
 | `SIGNALOPS_METRICS_REFRESH_SECONDS` | `15` | How often `metrics-exporter` reads PostgreSQL and Kafka |

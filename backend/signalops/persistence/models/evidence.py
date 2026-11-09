@@ -141,6 +141,8 @@ class Signal(Base):
             "ingested_at",
         ),
         Index("ix_signals_trace_id", "trace_id", postgresql_where=text("trace_id IS NOT NULL")),
+        # Retention (0019): rows arrive in `stored_at` order, so BRIN stays small.
+        Index("ix_signals_stored_at", "stored_at", postgresql_using="brin"),
     )
 
     id: Mapped[uuid.UUID] = uuid_pk()
@@ -159,6 +161,11 @@ class Signal(Base):
     quality_status: Mapped[str] = mapped_column(Text)
     quality_flags: Mapped[list[str]] = mapped_column(
         JSONB, default=list, server_default=text("'[]'::jsonb")
+    )
+    # Wall-clock insert time. `ingested_at` is simulated for replays, so retention
+    # uses this instead (rows stored before 0019 carry the migration time).
+    stored_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=text("now()")
     )
 
 
@@ -229,6 +236,12 @@ class SignalAggregate(Base):
             "replay_scope",
             "window_end",
             postgresql_where=text("closed_at IS NULL"),
+        ),
+        # Retention (0019): closed windows by age.
+        Index(
+            "ix_signal_aggregates_closed_window_end",
+            "window_end",
+            postgresql_where=text("closed_at IS NOT NULL"),
         ),
     )
 

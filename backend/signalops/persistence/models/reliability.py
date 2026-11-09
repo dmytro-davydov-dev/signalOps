@@ -39,6 +39,8 @@ class ConsumerReceipt(Base):
         CheckConstraint(
             length_between("consumer_group", 1, MAX_NAME_LENGTH), name="consumer_group_length"
         ),
+        # Retention (0019): a group's receipts older than its bound.
+        Index("ix_consumer_receipts_consumer_group_processed_at", "consumer_group", "processed_at"),
     )
 
     consumer_group: Mapped[str] = mapped_column(Text, primary_key=True)
@@ -75,6 +77,12 @@ class OutboxEvent(Base):
             "aggregate_id",
             "aggregate_version",
             postgresql_where=text("published_at IS NULL"),
+        ),
+        # Retention (0019): published rows by age.
+        Index(
+            "ix_outbox_events_published_at",
+            "published_at",
+            postgresql_where=text("published_at IS NOT NULL"),
         ),
     )
 

@@ -55,6 +55,13 @@ class Settings(BaseSettings):
     retry_max_delay_ms: int = Field(default=30_000, ge=10, le=300_000)
     # How often consumers and the outbox publisher log counts, lag, and backlog.
     streaming_stats_interval_ms: int = Field(default=30_000, ge=1_000, le=3_600_000)
+    # Retention (`signalops retention`, docs/retention.md). Cited evidence and
+    # deduplication receipts have their own rules and are never cut short by these.
+    retention_signals_days: int = Field(default=7, ge=1, le=3650)
+    # Must exceed the ingestion age bound plus the future bound (checked at use).
+    retention_aggregates_days: int = Field(default=32, ge=1, le=3650)
+    retention_outbox_days: int = Field(default=7, ge=1, le=3650)
+    retention_progress_days: int = Field(default=30, ge=1, le=3650)
     # Prometheus metrics listener for this process. Unset: no listener (tests,
     # ordinary local runs). Compose sets it on the private network only.
     metrics_port: int | None = Field(default=None, ge=1, le=65535)

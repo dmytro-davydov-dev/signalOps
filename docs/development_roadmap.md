@@ -27,9 +27,9 @@ PostgreSQL owns evidence, workflow progress, budgets, and the initial knowledge 
 | --- | --- |
 | Active phase | Phase 11 Operational hardening and scale |
 | Active task | P11-T04 (in progress) |
-| Last completed task | P11-T03 |
-| Latest verified commit | `3fa3792` (P11-T02); P11-T03 commit `test(P11-T03)` follows |
-| Validation evidence | P11-T03: outage checks passed on rebuilt Compose (task notes); unit and contract 708 passed; gateway, failure, lifecycle, and one-shot integration suites 44 passed; ruff, format, mypy pass. P11-T02: `SIGNALOPS_INTEGRATION=1 uv run pytest` 1356 passed, 2 skipped (opt-in outage checks), 1 unit failure from `.env` variables leaking into a settings test, fixed and rerun (`tests/unit` and `tests/contract` 707 passed with and without the sourced variables); ruff, format, mypy (218 files), `export-schemas --check` pass; Compose boundary and rotation checks in the task notes. No paid model was called |
+| Last completed task | P11-T05 |
+| Latest verified commit | `2741398` (P11-T03); P11-T05 commit `feat(P11-T05)` follows |
+| Validation evidence | P11-T05: `SIGNALOPS_INTEGRATION=1 uv run pytest` 1364 passed, 2 skipped (opt-in outage checks); retention and backup/restore suites in the task notes; ruff, format, mypy (221 files) pass; retention dry run on rebuilt Compose at 0019. P11-T03: outage checks passed on rebuilt Compose (task notes); unit and contract 708 passed; gateway, failure, lifecycle, and one-shot integration suites 44 passed; ruff, format, mypy pass. P11-T02: `SIGNALOPS_INTEGRATION=1 uv run pytest` 1356 passed, 2 skipped (opt-in outage checks), 1 unit failure from `.env` variables leaking into a settings test, fixed and rerun (`tests/unit` and `tests/contract` 707 passed with and without the sourced variables); ruff, format, mypy (218 files), `export-schemas --check` pass; Compose boundary and rotation checks in the task notes. No paid model was called |
 | Blockers | None |
 | Next task | P11-T04 |
 
@@ -1059,11 +1059,19 @@ Start the React shell in Phase 1 and add API-backed incident views in Phase 5; P
 
 ### P11-T05 Implement retention and recovery procedures
 
-- [ ] Complete this task.
+- [x] Complete this task.
 
 **Implementation:** Add dry-run cleanup for raw/normalized data, aggregates, receipts, caches, and progress history. Preserve cited excerpts/hashes or mark expired evidence. Document database backup/restore, fixture recovery, and single-node durability limits.
 
 **Acceptance:** Restoring a backup recovers durable state; cleanup cannot silently invalidate cited evidence or required deduplication history.
+
+**Notes (2026-11-09):**
+- **Decision (ADR-039):** `signalops retention` (`persistence/retention.py`) reports by default and deletes with `--apply` in batches of 5,000, one short transaction each; `--scope` limits signals and aggregates to one replay scope. Categories: signals (uncited only; cited ones stay whole, so citations, hashes, and the evidence API keep working), detection samples (cascade), closed aggregates, consumer receipts, published outbox rows, progress history of long-ended investigations, Redis `cache:`/`limit:` keys without an expiry. Receipt bounds are derived, not configured: normalizer 32 days (ingestion accepts records 30 days old plus 1 day ahead, and a re-sent record gets the same raw event ID), detector, graph projector, dispatcher 8 days (topic retention plus 1 day), unknown groups the longest. The command refuses (exit 2) aggregate retention within the ingestion horizon and signal retention within an investigation's deadline plus tool window.
+- **Found and fixed during review:** the first version aged signals by `ingested_at`, which replays simulate (Compose data reached back to 2026-10-16), so `--apply` could delete uncited evidence of a replay still running. Migration `0019_retention_indexes` now adds `signals.stored_at` (wall clock, default `now()`, no table rewrite, BRIN index) and retention ages signals by it; closed windows go only when both `window_end` and the wall-clock `closed_at` are past the bound. 0019 also adds the receipt, published-outbox, and closed-window indexes.
+- **Backup/restore (`docs/retention.md`):** `pg_dump -Fc` from the `postgres` container, `pg_restore` into an empty database, `migrate` for login roles, then rewind consumer groups to before the dump (receipts absorb the overlap). Fixture recovery and single-node durability limits are documented there.
+- **Verified:** `tests/integration/test_retention.py` (5): dry run changes nothing; of four old signals only the uncited one is deleted, a replayed signal with an old `ingested_at` stays, the diagnosis's citations still resolve within its cutoff; receipts inside their bound stay and still deduplicate; aggregates go only when window and closure are both old; pending outbox rows and the investigation stay while old progress history goes; unsafe bounds refused. `tests/integration/test_backup_restore.py`: dump with evidence, incident, completed investigation, receipts, outbox, and progress rows, restored into a scratch database: every row of every table in `public` and `evaluation` identical, and a redelivered event is still a receipt hit. On Compose (0019 applied, 483,240 signals): dry run reported 401,649 signals eligible by the earlier `ingested_at` rule (850 kept as cited); with `stored_at` none are eligible until 7 days after the migration.
+- **Order:** done before P11-T04, whose harness was also in the working tree; P11-T04 stays in progress.
+- **Left:** the consumer-group rewind after restore is documented but not exercised (it would rewind the shared development groups); incidents and cited evidence never expire; restore is to the last dump, not a point in time; no scheduler runs retention (manual or cron).
 
 **Phase gate:** All tasks above are checked, acceptance evidence is recorded in the ledger, and the phase outcome is demonstrated against real infrastructure where relevant.
 
@@ -1729,6 +1737,16 @@ Keep these outside the release critical path unless measurements justify promoti
 - Deviations and reasons: checks run against the shared Compose stack rather than in CI, because they stop shared services.
 - Remaining issues: see task notes.
 - Next task: P11-T04.
+
+### 2026-11-09 — P11-T05
+- Status: completed
+- Commit: see git log for `feat(P11-T05)`
+- Implemented: `persistence/retention.py` and `signalops retention`; retention settings; migration `0019_retention_indexes` (`signals.stored_at` with BRIN index, receipt, published-outbox, and closed-window indexes); `docs/retention.md` (retention, backup and restore, fixture recovery, single-node limits); ADR-039; data-model, development, and reliability docs.
+- Validation commands and results: `uv run ruff check .`, `ruff format --check .`, `mypy` pass; `SIGNALOPS_INTEGRATION=1 uv run pytest` 1364 passed, 2 skipped (25 min). An earlier `-x` run stopped once on `test_agent_tools.py::test_secrets_in_free_text_are_masked`; the file passed 40/40 alone and in the full run, cause not found. `docker compose run --rm --no-deps backend retention` on rebuilt images: all categories 0 eligible.
+- Evidence or artifact references: task notes.
+- Deviations and reasons: cited signals are kept whole instead of being reduced to excerpts and hashes (ADR-039); signals are aged by a new wall-clock `stored_at` column because replay `ingested_at` is simulated. The Compose database had the earlier 0019 applied; its three indexes were dropped by hand, it was stamped at 0018 and upgraded.
+- Remaining issues: see task notes.
+- Next task: P11-T04 (in progress).
 
 ## Work log template
 

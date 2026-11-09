@@ -409,6 +409,16 @@ Revision `0015_investigation_outcomes` adds a partial unique index allowing one 
 
 **Revisit when:** The API is reachable from beyond one host, more than one workspace has users, or per-person audit is required.
 
+## ADR-039: Retention keeps cited evidence whole and derives receipt bounds
+
+**Decision:** `signalops retention` reports by default and deletes only with `--apply`, in batches of 5,000 in short transactions. Signals stored (wall clock, new column `signals.stored_at`) longer ago than their bound are deleted unless an incident, a deployment, a graph edge, or a stored diagnosis (root cause or contradiction) cites them; cited signals stay whole rather than being reduced to an excerpt. Receipt bounds per consumer group are computed from topic retention and, for the normalizer, from the ingestion age and future bounds, plus a day; no setting can shorten them. Aggregate retention must exceed the ingestion age bound, and signal retention must exceed an investigation's reach, or the command refuses to run. Published outbox rows, progress history of long-ended investigations, and Redis keys without an expiry complete the categories. Closed windows go when both `window_end` and `closed_at` are past the bound. Migration 0019 adds `stored_at` (BRIN index) and the indexes the deletions use; `ingested_at` is simulated for replays and would let cleanup remove a running replay's evidence. Backups are `pg_dump -Fc` of the one database; restore is `pg_restore` into an empty database, then a consumer-group rewind to before the dump.
+
+**Reason:** Keeping cited rows whole is simpler and stronger than a separate excerpt table: citations, the evidence API, audits, and hashes keep working unchanged, and cited sets are small (bounded per incident and diagnosis). The normalizer derives raw event IDs from the record, so its receipts, not the signals, are what make a re-sent record a no-op; tying their bound to what ingestion accepts closes that gap by construction.
+
+**Trade-off:** Old cited evidence is never reclaimed while its incident or investigation exists, and incidents themselves are not expired. The dedupe receipts of the normalizer live 32 days, longer than the signals they protect. Restore is to the last dump, not a point in time, and anything requested through the API after the dump must be requested again.
+
+**Revisit when:** Cited evidence grows large enough to matter, incidents need expiry, or point-in-time recovery is required (WAL archiving).
+
 ## Open questions
 
 | # | Question | Decide by |

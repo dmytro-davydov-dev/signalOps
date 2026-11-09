@@ -196,4 +196,4 @@ These come from the plan's §13. Each needs a meaningful automated or scripted c
 
 - Single-node Kafka (replication factor 1) and local volumes: no protection against host or disk loss.
 - Docker Compose is a development environment, not production high availability.
-- Backup and restore procedures are documented in P11-T05.
+- Backup, restore, retention, and fixture recovery: docs/retention.md (P11-T05).

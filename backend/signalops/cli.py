@@ -70,6 +70,15 @@ def build_parser() -> argparse.ArgumentParser:
     commands.add_parser(
         "operations-snapshot", help="print queues, leases, outbox age, and Kafka lag as JSON"
     )
+    retention = commands.add_parser(
+        "retention",
+        help="report what retention would delete; --apply deletes it (cited evidence stays)",
+    )
+    retention.add_argument("--apply", action="store_true", help="delete, not just report")
+    retention.add_argument(
+        "--scope", help="limit signals and aggregates to one replay scope, e.g. replay:<run>"
+    )
+    retention.add_argument("--no-cache", action="store_true", help="skip the Redis cache check")
     commands.add_parser(
         "hash-token",
         help="read a token on stdin and print the sha256 digest a credentials file stores",
@@ -1031,6 +1040,55 @@ def run_metrics_exporter() -> int:
     return 0
 
 
+def run_retention(args: argparse.Namespace) -> int:
+    import asyncio
+    import json
+    from datetime import UTC, datetime
+
+    from redis.asyncio import Redis
+
+    from signalops.config import get_settings
+    from signalops.logs import configure_logging
+    from signalops.persistence.database import Database, create_engine
+    from signalops.persistence.retention import (
+        Retention,
+        RetentionPolicy,
+        RetentionPolicyError,
+        delete_unexpiring_cache_keys,
+        redis_cache_keys,
+    )
+
+    settings = get_settings()
+    configure_logging(settings.log_level)
+    try:
+        policy = RetentionPolicy.from_settings(settings)
+    except RetentionPolicyError as error:
+        print(f"retention refused: {error}", file=sys.stderr)
+        return 2
+
+    async def run() -> dict[str, object]:
+        engine = create_engine(settings)
+        redis = None if args.no_cache else Redis.from_url(str(settings.redis_url))
+        try:
+            retention = Retention(
+                Database.from_engine(engine),
+                policy,
+                cache_keys=None if redis is None else lambda: redis_cache_keys(redis),
+                delete_cache_keys=None
+                if redis is None
+                else lambda: delete_unexpiring_cache_keys(redis),
+            )
+            report = await retention.run(datetime.now(UTC), apply=args.apply, scope=args.scope)
+            return report.as_dict()
+        finally:
+            if redis is not None:
+                await redis.aclose()
+            await engine.dispose()
+
+    print(json.dumps(asyncio.run(run()), indent=2))
+    return 0
+
+
 def run_hash_token() -> int:
     """Digest for `SIGNALOPS_CREDENTIALS_FILE`. The token comes on stdin, never argv."""
     from signalops.api.credentials import token_digest
@@ -1102,6 +1160,8 @@ def main(argv: list[str] | None = None) -> int:
         return run_redrive_record(args)
     if args.command == "redrive-outbox":
         return run_redrive_outbox(args)
+    if args.command == "retention":
+        return run_retention(args)
     command = COMMANDS.get(args.command)
     if command is None:
         parser.print_help()
