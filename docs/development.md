@@ -1,6 +1,6 @@
 # Development guide
 
-> Status: Phases 1–11 complete. All commands below are verified in this repository. For a first run, follow [quickstart.md](quickstart.md).
+> Status: all 12 phases complete (release `v0.1.0`). All commands below are verified in this repository. For a first run, follow [quickstart.md](quickstart.md).
 
 ## Repository layout
 

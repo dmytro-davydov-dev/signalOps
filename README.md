@@ -4,7 +4,7 @@ SignalOps turns noisy telemetry into evidence-backed software incident diagnoses
 
 It ingests logs, trace summaries, and deployment events, detects incidents with deterministic time-window rules, and runs bounded, budgeted agent investigations. Each investigation returns a validated diagnosis that cites evidence, or an explicit *insufficient evidence* result. A replay-based evaluation lab scores diagnoses against injected faults.
 
-> **Status: Phases 1–11 of 12 complete.** Ingestion, detection, the temporal service graph, durable single- and multi-agent investigations, the live incident workspace, the evaluation lab, observability, and recovery procedures run on Docker Compose. By default a deterministic fake plays the model: it proves the plumbing and says nothing about diagnostic quality. A Claude adapter exists; no paid model run is part of the recorded results. See the [progress ledger](docs/development_roadmap.md#progress-ledger).
+> **Status: release [`v0.1.0`](docs/releases/v0.1.0.md), all 12 roadmap phases complete.** Ingestion, detection, the temporal service graph, durable single- and multi-agent investigations, the live incident workspace, the evaluation lab, observability, and recovery procedures run on Docker Compose. By default a deterministic fake plays the model: it proves the plumbing and says nothing about diagnostic quality. A Claude adapter exists; no paid model run is part of the recorded results. See the [demonstration](docs/demo.md) and the [progress ledger](docs/development_roadmap.md#progress-ledger).
 
 ## What it does
 
@@ -57,6 +57,7 @@ flowchart LR
 | [Benchmarks](docs/benchmarks.md) | One-million-record replay and 30-minute sustained run, with retained reports |
 | [Development](docs/development.md) | Repository layout, commands, configuration reference, conventions |
 | [Decisions](docs/decisions.md) | Architecture decision records |
+| [Release notes](docs/releases/v0.1.0.md) | v0.1.0: validated revision, check results, known limits, next priorities |
 
 Planning sources:
 

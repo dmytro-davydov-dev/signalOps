@@ -1,10 +1,10 @@
 # SignalOps development roadmap
 
-Version 1 · 29 October 2026 · Status: planned
+Version 1 · 29 October 2026 · Status: all twelve phases complete (release `v0.1.0`, 9 November 2026)
 
 ## Purpose
 
-Implement SignalOps, an incident intelligence platform that converts noisy logs, trace summaries, and deployment events into evidence-backed diagnoses. This roadmap expands `SignalOps_Implementation_Plan.md` dated 16 October 2026 into executable phases and tasks. It describes planned work; no implementation or verification is claimed complete.
+Implement SignalOps, an incident intelligence platform that converts noisy logs, trace summaries, and deployment events into evidence-backed diagnoses. This roadmap expands `SignalOps_Implementation_Plan.md` dated 16 October 2026 into executable phases and tasks. Completion and verification are recorded per task below and in the progress ledger; the [release notes](releases/v0.1.0.md) summarize the state at `v0.1.0`.
 
 **Stack:** React and TypeScript; Python and FastAPI; Kafka; PostgreSQL; Redis; Docker Compose. Use Pydantic, SQLAlchemy, Alembic, a Python Kafka client, and an explicit persisted Python workflow. Keep source adapters, workers, and gateway modules in one backend codebase with separate process commands.
 
@@ -25,13 +25,13 @@ PostgreSQL owns evidence, workflow progress, budgets, and the initial knowledge 
 
 | Field | Current value |
 | --- | --- |
-| Active phase | Phase 12 Portfolio packaging and release (Phase 11 gate passed 2026-11-09) |
-| Active task | None (P12-T03 not started) |
-| Last completed task | P12-T02 |
-| Latest verified commit | `1841513` (docs fix after P11-T05 `dff8287`); P11-T04 commit `perf(P11-T04)` follows |
-| Validation evidence | P12-T02: `docs/demo.md` with screenshots from `apps/web/e2e/demo.e2e.ts` (passed on the rebuilt stack); unit and contract 714 passed; seven multi-agent and evaluation integration suites 36 passed; ruff, format, mypy (223 files), frontend lint, typecheck, test (72), link check pass. P12-T01: quick start followed from a clean copy on the default ports (task notes): stack healthy, fault detected, automatic investigation diagnosed with verified citations, worker crash resumed with step reuse, every API example run; `uv run pytest tests/unit tests/contract` 712 passed; ruff, format, mypy (222 files), `docker compose config --quiet`, relative-link and anchor check over README and docs pass. P11-T04: reports `docs/benchmarks/replay-1m.json` and `sustained-100.json` (both reconciled complete); `uv run pytest tests/unit tests/contract` 712 passed; outbox, consumer, normalizer, failure, incident, detection, and investigation integration suites 160 passed; ruff, format, mypy (222 files), `docker compose config --quiet` pass. P11-T05: `SIGNALOPS_INTEGRATION=1 uv run pytest` 1364 passed, 2 skipped (opt-in outage checks); retention and backup/restore suites in the task notes; ruff, format, mypy (221 files) pass; retention dry run on rebuilt Compose at 0019. P11-T03: outage checks passed on rebuilt Compose (task notes); unit and contract 708 passed; gateway, failure, lifecycle, and one-shot integration suites 44 passed; ruff, format, mypy pass. P11-T02: `SIGNALOPS_INTEGRATION=1 uv run pytest` 1356 passed, 2 skipped (opt-in outage checks), 1 unit failure from `.env` variables leaking into a settings test, fixed and rerun (`tests/unit` and `tests/contract` 707 passed with and without the sourced variables); ruff, format, mypy (218 files), `export-schemas --check` pass; Compose boundary and rotation checks in the task notes. No paid model was called |
+| Active phase | None: all twelve phases complete; Phase 12 gate passed 2026-11-09, release `v0.1.0` |
+| Active task | None |
+| Last completed task | P12-T03 (Phase 12 gate) |
+| Latest verified commit | `d39d240` (validated code of release `v0.1.0`; the tagged commit adds release notes and this ledger) |
+| Validation evidence | P12-T03 (release, against `d39d240`): full suite 1,370 passed, 2 skipped; outage checks 2 passed; browser journey and evaluation review 2 passed; backend and frontend checks, schema check, lockfiles, Compose config pass; credentials review clean ([release notes](releases/v0.1.0.md)). P12-T02: `docs/demo.md` with screenshots from `apps/web/e2e/demo.e2e.ts` (passed on the rebuilt stack); unit and contract 714 passed; seven multi-agent and evaluation integration suites 36 passed; ruff, format, mypy (223 files), frontend lint, typecheck, test (72), link check pass. P12-T01: quick start followed from a clean copy on the default ports (task notes): stack healthy, fault detected, automatic investigation diagnosed with verified citations, worker crash resumed with step reuse, every API example run; `uv run pytest tests/unit tests/contract` 712 passed; ruff, format, mypy (222 files), `docker compose config --quiet`, relative-link and anchor check over README and docs pass. P11-T04: reports `docs/benchmarks/replay-1m.json` and `sustained-100.json` (both reconciled complete); `uv run pytest tests/unit tests/contract` 712 passed; outbox, consumer, normalizer, failure, incident, detection, and investigation integration suites 160 passed; ruff, format, mypy (222 files), `docker compose config --quiet` pass. P11-T05: `SIGNALOPS_INTEGRATION=1 uv run pytest` 1364 passed, 2 skipped (opt-in outage checks); retention and backup/restore suites in the task notes; ruff, format, mypy (221 files) pass; retention dry run on rebuilt Compose at 0019. P11-T03: outage checks passed on rebuilt Compose (task notes); unit and contract 708 passed; gateway, failure, lifecycle, and one-shot integration suites 44 passed; ruff, format, mypy pass. P11-T02: `SIGNALOPS_INTEGRATION=1 uv run pytest` 1356 passed, 2 skipped (opt-in outage checks), 1 unit failure from `.env` variables leaking into a settings test, fixed and rerun (`tests/unit` and `tests/contract` 707 passed with and without the sourced variables); ruff, format, mypy (218 files), `export-schemas --check` pass; Compose boundary and rotation checks in the task notes. No paid model was called |
 | Blockers | None |
-| Next task | P12-T03 |
+| Next task | None in this roadmap. Priorities after the release: a budgeted paid-model evaluation (needs an explicit request with scope and budget), detection false positives under load, throughput (partition key review, per-transaction batching), restore-time consumer rewind, public-exposure prerequisites ([release notes](releases/v0.1.0.md#next-priorities)) |
 
 ### Scope and release boundaries
 
@@ -1126,13 +1126,23 @@ Start the React shell in Phase 1 and add API-backed incident views in Phase 5; P
 
 ### P12-T03 Finalize release checks and roadmap state
 
-- [ ] Complete this task.
+- [x] Complete this task.
 
 **Implementation:** Run required CI/integration checks for the release commit, record benchmark artifacts, review credentials/fixtures, tag the release, and update this ledger with completed tasks and deferred items.
 
 **Acceptance:** Release notes link the exact code revision, validation results, known limits, and next priorities.
 
+**Notes (2026-11-09):**
+- **Release notes:** [`docs/releases/v0.1.0.md`](releases/v0.1.0.md): validated code revision `d39d240` (full hash in the notes), every check and its result, retained artifacts, known limits, next priorities.
+- **Checks against `d39d240`:** `SIGNALOPS_INTEGRATION=1 uv run pytest` 1,370 passed, 2 skipped (opt-in outage checks) in 19 min 55 s; outage checks 2 passed (2 min 15 s); ruff, format, mypy (223 files), `export-schemas --check`, `uv sync --locked`; `pnpm lint`, `pnpm typecheck`, `pnpm test` (72), `pnpm build`; `docker compose config --quiet`; browser journey and evaluation review 2 passed (3.2 min, headless Chrome on Compose); demonstration capture passed (P12-T02).
+- **Benchmark and evaluation artifacts:** `docs/benchmarks/replay-1m.json`, `docs/benchmarks/sustained-100.json` (P11-T04), `docs/evaluation-runs/7ac381af-heldout-fake.json` (P12-T02), all linked from the release notes.
+- **Credentials and fixtures review:** tracked files hold placeholders only (`.env.example`, docs); a scan of every tracked file for the local `.env` password and token values found none; no private-key, cloud-key, provider-key, or JWT patterns; fixtures are synthetic (one private-range IP in a contract fixture).
+- **Tag:** annotated tag `v0.1.0` on the commit that adds the release notes and this ledger state; it differs from `d39d240` only in documentation. The tag is local; nothing was pushed (no push was requested), so no GitHub Actions run of this revision exists.
+- **Left:** CI on GitHub not observed for this revision; the outage checks left the development stack at one member per consumer (it had been scaled for the benchmarks).
+
 **Phase gate:** All tasks above are checked, acceptance evidence is recorded in the ledger, and the phase outcome is demonstrated against real infrastructure where relevant.
+
+**Phase 12 gate (2026-11-09): passed on the fake provider.** All three tasks are checked. A new developer's path was followed from a clean copy (P12-T01); every claim in the demonstration is shown in a captured screenshot or linked to a test or retained report (P12-T02); the release commit passed the full integration suite, the outage checks, and the browser checks, and the release notes record the revision, results, limits, and next priorities (P12-T03). R3 is complete with one qualification carried into the notes: the held-out comparison ran on the fake provider, so it demonstrates the harness and not diagnostic quality.
 
 **Suggested phase commit:** `docs: publish reproducible SignalOps portfolio release`. Split this into task-sized commits as needed.
 
@@ -1802,6 +1812,16 @@ Keep these outside the release critical path unless measurements justify promoti
 - Deviations and reasons: the recording is regenerated by the capture script rather than committed (13 MB).
 - Remaining issues: see task notes.
 - Next task: P12-T03.
+
+### 2026-11-09 — P12-T03
+- Status: completed
+- Commit: tagged `v0.1.0` (`docs(P12-T03)`); validated code `d39d240`
+- Implemented: `docs/releases/v0.1.0.md`; final ledger, Phase 12 gate, roadmap status; README status.
+- Validation commands and results: as in the task notes (full suite 1,370 passed, 2 skipped; outage checks 2 passed; browser checks 2 passed; backend, frontend, schema, lockfile, Compose checks pass; credentials review clean).
+- Evidence or artifact references: `docs/releases/v0.1.0.md`, `docs/benchmarks/`, `docs/evaluation-runs/`, `docs/demo/`.
+- Deviations and reasons: the tag is local and the release unpushed (pushing was not requested); GitHub CI therefore has no run of this revision.
+- Remaining issues: see the release notes' known limits.
+- Next task: none in this roadmap.
 
 ## Work log template
 
