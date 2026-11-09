@@ -30,8 +30,8 @@ erDiagram
     agent_steps ||--o{ tool_calls : makes
     agent_steps ||--o{ llm_calls : makes
     investigations ||--o{ progress_events : emits
-    graph_nodes ||--o{ graph_edges : from
-    graph_nodes ||--o{ graph_edges : to
+    graph_nodes ||--o{ graph_edges : "from"
+    graph_nodes ||--o{ graph_edges : "to"
 ```
 
 ## Sources and evidence
