@@ -1,6 +1,6 @@
 # Evaluation
 
-> Status: planned. Sources: [SignalOps_Implementation_Plan.md](SignalOps_Implementation_Plan.md) §12 and roadmap Phase 10. No results exist yet. Targets below are hypotheses to test, not achievements.
+> Status: implemented (Phase 10). One held-out run on the fake provider is retained: [`evaluation-runs/7ac381af-heldout-fake.json`](evaluation-runs/7ac381af-heldout-fake.json), summarized in [demo.md](demo.md#5-comparison-against-simpler-baselines). It demonstrates the harness, not diagnostic quality; no paid model has run. Sources: [SignalOps_Implementation_Plan.md](SignalOps_Implementation_Plan.md) §12 and roadmap Phase 10.
 
 ## Goal
 
@@ -11,13 +11,13 @@ Find out whether agent investigations actually beat simpler approaches. Correctn
 | Family | Notes |
 | --- | --- |
 | Downstream timeout | `downstream-timeout`, built in P04-T01 (`signalops demo-generate`) |
-| Connection pool exhaustion | |
-| Deployment regression | Exercises the deployment investigator |
-| Memory pressure | |
+| Connection pool exhaustion | `pool-exhaustion` (P10-T03) |
+| Deployment regression | `deployment-regression`; exercises the deployment investigator |
+| Memory pressure | `memory-pressure` |
 | Healthy traffic with noisy warnings | `healthy`, built in P04-T01. Should produce **no** incident or diagnosis |
-| Mixed and insufficient-evidence variants | Tests abstention quality |
+| Mixed and insufficient-evidence variants | `mixed-timeout-deploy`, `unexplained-errors`; test abstention quality |
 
-- Scenarios are versioned under `fixtures/` with a fixed seed and a dataset hash. `fixtures/scenarios/v1/<scenario>.labels.json` holds the labels and hash; the records are regenerated from the seed rather than committed. Both P04-T01 scenarios are development variants; held-out variants come with P10-T03.
+- Scenarios are versioned under `fixtures/` with a fixed seed and a dataset hash. `fixtures/scenarios/v1/<scenario>.labels.json` holds the labels and hash; the records are regenerated from the seed rather than committed. Each scenario has development and held-out variants (`evaluation/catalog.py`).
 - **Development** variants and **held-out** variants are kept separate. Prompts are never tuned on the reporting set.
 - Synthetic replay is labelled synthetic. Real fault demonstrations run through the optional `demo` profile.
 
@@ -67,9 +67,9 @@ Recovery correctness and data quality are covered by the reliability tests and t
 - A run finishes on explicit pipeline completion markers (drained lag, flushed windows), never on arbitrary sleeps.
 - Each run records its dataset hash, workflow and prompt versions, model config, seed, pricing, and hardware.
 
-## Engineering targets (unvalidated)
+## Engineering targets
 
-These are measured in P11-T04 and published with failures included:
+Measured in P11-T04; results, including the missed sustained target, are in [benchmarks.md](benchmarks.md):
 
 - Replay 1,000,000 synthetic signals in a bounded dataset.
 - Sustain 100 events/s for 30 minutes on documented hardware.

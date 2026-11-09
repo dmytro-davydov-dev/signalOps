@@ -193,7 +193,8 @@ def synthesizer_step(request: ModelRequest) -> FakeAnswer:
                 group["roles"].append(role_report.role)
             group["ids"].extend(i for i in finding.evidence_signal_ids if i not in group["ids"])
             group["confidence"] = max(group["confidence"], finding.confidence)
-            group["claims"].append(finding.claim)
+            if finding.claim not in group["claims"]:
+                group["claims"].append(finding.claim)
     ranked = sorted(
         grouped.items(),
         key=lambda pair: (len(pair[1]["roles"]), pair[1]["confidence"], len(pair[1]["ids"])),
@@ -212,7 +213,7 @@ def synthesizer_step(request: ModelRequest) -> FakeAnswer:
     )
     contradictions = tuple(
         Contradiction(
-            description=f"{_roles(a)} point to one service and {_roles(b)} to another.",
+            description=f"{_roles(a)} {_verb(a)} to one service and {_roles(b)} to another.",
             roles=tuple(dict.fromkeys((*a.supporting_roles, *b.supporting_roles)))[:3],
             evidence_signal_ids=tuple(
                 dict.fromkeys((*a.evidence_signal_ids[:3], *b.evidence_signal_ids[:3]))
@@ -247,6 +248,10 @@ def synthesizer_step(request: ModelRequest) -> FakeAnswer:
 
 def _roles(hypothesis: Hypothesis) -> str:
     return " and ".join(role.value.replace("_", " ") for role in hypothesis.supporting_roles)
+
+
+def _verb(hypothesis: Hypothesis) -> str:
+    return "points" if len(hypothesis.supporting_roles) == 1 else "point"
 
 
 def verifier_step(request: ModelRequest) -> FakeAnswer:

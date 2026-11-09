@@ -1,0 +1,2953 @@
+{
+ "id": "7ac381af-9299-4d48-9714-5d72eac03209",
+ "label": "phase 10 gate held-out (fake provider)",
+ "split": "held_out",
+ "status": "completed",
+ "variants": [
+  "deterministic",
+  "single_agent",
+  "multi_agent"
+ ],
+ "trials": 2,
+ "dataset_hash": "17ce501dbeefef8814a5fa91e506f8e9048f0204ed966a0114c058a1a337cae6",
+ "created_at": "2026-11-08T17:28:32.428074Z",
+ "started_at": "2026-11-08T17:28:36.423810Z",
+ "completed_at": "2026-11-08T17:35:19.106660Z",
+ "error": null,
+ "case_counts": {
+  "scored": 35
+ },
+ "seed": 0,
+ "workflow_versions": {
+  "multi_agent": "v3",
+  "single_agent": "v2",
+  "deterministic": "d1"
+ },
+ "prompt_versions": {
+  "multi_agent": [
+   "telemetry-v1",
+   "deployment-v1",
+   "dependency-v1",
+   "synthesizer-v1",
+   "verifier-v2"
+  ],
+  "single_agent": [
+   "investigator-v1"
+  ],
+  "deterministic": []
+ },
+ "model_settings": {
+  "model": "fake-1",
+  "effort": "high",
+  "provider": "fake",
+  "max_attempts": 3,
+  "agent_max_repairs": 2,
+  "max_output_tokens": 8000,
+  "agent_max_tool_calls": 10,
+  "measures_model_quality": false,
+  "request_timeout_seconds": 60.0
+ },
+ "pricing_config": {
+  "unit": "microUSD per million tokens",
+  "price": {
+   "input": 4000000,
+   "output": 20000000,
+   "cache_read": 200000,
+   "cache_write": 5000000
+  },
+  "version": "2026-10-06"
+ },
+ "limits": {
+  "max_steps": 40,
+  "scenarios": [
+   "healthy/held-out",
+   "downstream-timeout/held-out",
+   "pool-exhaustion/held-out",
+   "deployment-regression/held-out",
+   "memory-pressure/held-out",
+   "mixed-timeout-deploy/held-out",
+   "unexplained-errors/held-out"
+  ],
+  "budget_microusd": 3000000,
+  "deadline_seconds": 600,
+  "deterministic_trials": 1
+ },
+ "metrics": {
+  "replays": {
+   "total": 7,
+   "completed": 7
+  },
+  "variants": {
+   "multi_agent": {
+    "cases": 14,
+    "trials": 2,
+    "samples": 14,
+    "evidence": {
+     "cited": 120,
+     "source": "automatic",
+     "precision": 1.0,
+     "supported": 120
+    },
+    "diagnoses": 12,
+    "abstentions": 0,
+    "human_audit": {
+     "source": "human",
+     "precision": null,
+     "supported": 0,
+     "audited_citations": 0
+    },
+    "model_calls": 102,
+    "accuracy_stdev": 0.0,
+    "trial_accuracy": [
+     0.4286,
+     0.4286
+    ],
+    "false_diagnoses": 8,
+    "outcome_correct": 6,
+    "harness_failures": 0,
+    "outcome_accuracy": 0.4286,
+    "over_abstentions": 0,
+    "unsupported_rate": 0.0,
+    "workflow_version": "v3",
+    "diagnosable_cases": 10,
+    "cost_microusd_mean": 118922,
+    "correct_abstentions": 0,
+    "cost_microusd_total": 1427064,
+    "latency_seconds_p50": 48.636,
+    "latency_seconds_p95": 86.646,
+    "root_cause_accuracy": 0.4,
+    "unsupported_diagnoses": 0,
+    "abstention_opportunities": 2,
+    "unknown_reserved_microusd": 0
+   },
+   "single_agent": {
+    "cases": 14,
+    "trials": 2,
+    "samples": 14,
+    "evidence": {
+     "cited": 120,
+     "source": "automatic",
+     "precision": 1.0,
+     "supported": 120
+    },
+    "diagnoses": 12,
+    "abstentions": 0,
+    "human_audit": {
+     "source": "human",
+     "precision": null,
+     "supported": 0,
+     "audited_citations": 0
+    },
+    "model_calls": 30,
+    "accuracy_stdev": 0.0,
+    "trial_accuracy": [
+     0.4286,
+     0.4286
+    ],
+    "false_diagnoses": 8,
+    "outcome_correct": 6,
+    "harness_failures": 0,
+    "outcome_accuracy": 0.4286,
+    "over_abstentions": 0,
+    "unsupported_rate": 0.0,
+    "workflow_version": "v2",
+    "diagnosable_cases": 10,
+    "cost_microusd_mean": 59823,
+    "correct_abstentions": 0,
+    "cost_microusd_total": 717872,
+    "latency_seconds_p50": 9.291,
+    "latency_seconds_p95": 35.877,
+    "root_cause_accuracy": 0.4,
+    "unsupported_diagnoses": 0,
+    "abstention_opportunities": 2,
+    "unknown_reserved_microusd": 0
+   },
+   "deterministic": {
+    "cases": 7,
+    "trials": 1,
+    "samples": 7,
+    "evidence": {
+     "cited": 60,
+     "source": "automatic",
+     "precision": 0.9833,
+     "supported": 59
+    },
+    "diagnoses": 6,
+    "abstentions": 0,
+    "human_audit": {
+     "source": "human",
+     "precision": null,
+     "supported": 0,
+     "audited_citations": 0
+    },
+    "model_calls": 0,
+    "accuracy_stdev": null,
+    "trial_accuracy": [
+     0.1429
+    ],
+    "false_diagnoses": 6,
+    "outcome_correct": 1,
+    "harness_failures": 0,
+    "outcome_accuracy": 0.1429,
+    "over_abstentions": 0,
+    "unsupported_rate": 0.0,
+    "workflow_version": "d1",
+    "diagnosable_cases": 5,
+    "cost_microusd_mean": 0,
+    "correct_abstentions": 0,
+    "cost_microusd_total": 0,
+    "latency_seconds_p50": 0.182,
+    "latency_seconds_p95": 0.889,
+    "root_cause_accuracy": 0.0,
+    "unsupported_diagnoses": 0,
+    "abstention_opportunities": 1,
+    "unknown_reserved_microusd": 0
+   }
+  },
+  "detection": {
+   "recall": 1.0,
+   "precision": 1.0,
+   "delay_clock": "event time",
+   "replays_scored": 7,
+   "true_positives": 6,
+   "false_negatives": 0,
+   "false_positives": 0,
+   "delay_seconds_p50": 78.0,
+   "delay_seconds_p95": 90.0
+  },
+  "budget_per_case": {
+   "max_steps": 40,
+   "budget_microusd": 3000000,
+   "deadline_seconds": 600
+  },
+  "judge_model_scores": null,
+  "measures_model_quality": false
+ },
+ "cases": [
+  {
+   "id": "bfc61013-04b4-4f52-be94-30276df180b0",
+   "case_key": "deployment-regression/held-out@1/deterministic/1",
+   "scenario_name": "deployment-regression/held-out",
+   "scenario_version": "1",
+   "family": "deployment_regression",
+   "split": "held_out",
+   "synthetic": true,
+   "variant": "deterministic",
+   "trial": 1,
+   "status": "scored",
+   "replay_scope": "replay:654195ff-82dc-4e8a-bf52-6a2d2e7608a4",
+   "investigation_id": "c6818c0b-1952-4d48-9877-4b676267bc01",
+   "expected": {
+    "incident_expected": true,
+    "diagnosable": true,
+    "root_cause_service": "payment",
+    "failure_type": "deployment_regression",
+    "affected_services": [
+     "checkout",
+     "payment"
+    ],
+    "fault_window": {
+     "start": "2026-10-16T10:33:00Z",
+     "end": "2026-10-16T10:37:30Z"
+    },
+    "supporting_event_ids": []
+   },
+   "observed": {
+    "incident_ids": [
+     "7a87ce81-4a75-4f48-8cad-2b7bb08b4f13"
+    ],
+    "investigation_id": "c6818c0b-1952-4d48-9877-4b676267bc01",
+    "investigation_status": "completed",
+    "diagnosis_status": "diagnosed",
+    "root_cause_service": "checkout",
+    "failure_type": "elevated_errors",
+    "cited_signal_ids": [
+     "8f84104b-217c-58c3-b89b-e0beeef2e887",
+     "ceaf8130-c2c3-5b53-96e5-3598d26e45ef",
+     "0f565bf0-4672-521d-bce3-882a384f9a5d",
+     "af90e946-db25-5906-90c7-4a12d98a2def",
+     "9eb35ecc-0914-5721-aef0-a9c0c473c1bf",
+     "ae99daf0-1c89-5421-a169-7677b8827721",
+     "07346aed-096b-5a81-b493-27caad70fbff",
+     "a9fc6ba0-fa88-5e98-ba5c-c8ff9c13219d",
+     "b3463782-a948-500c-b921-bda2e2d35a4c",
+     "d554a1ba-ef32-5bfd-8b9f-a2b8e219207e"
+    ],
+    "cited_event_ids": [
+     "checkout-log-9e29d7bb09598dceddda",
+     "checkout-span-21f5685726d0d81fc06d",
+     "checkout-span-7d426a88ef3a85226e71",
+     "checkout-log-27aa0c2f77d3882fa1eb",
+     "checkout-span-d71c4e27f15b5f4117e9",
+     "checkout-log-211eeb3282dc5c2d41bb",
+     "checkout-span-7e0fd3fa79ec92282451",
+     "checkout-log-ecc29946168290358edd",
+     "checkout-span-0ecd589cc99e1db4ebfd",
+     "checkout-log-bda3a0576bd3b80e4e97"
+    ],
+    "detected_at": "2026-10-16T10:34:30Z",
+    "started_at": "2026-11-08T17:28:48.034095Z",
+    "completed_at": "2026-11-08T17:28:48.180086Z",
+    "spent_microusd": 0,
+    "unknown_reserved_microusd": 0,
+    "model_calls": 0
+   },
+   "scores": {
+    "outcome_correct": false,
+    "root_cause_correct": false,
+    "abstained": false,
+    "false_diagnosis": true,
+    "correct_abstention": null,
+    "cited": 10,
+    "cited_supported": 10,
+    "evidence_precision": 1.0,
+    "unsupported_diagnosis": false,
+    "latency_seconds": 0.146
+   },
+   "error": null
+  },
+  {
+   "id": "199318d4-ae79-4178-a504-e2c6275ab2a8",
+   "case_key": "deployment-regression/held-out@1/multi_agent/1",
+   "scenario_name": "deployment-regression/held-out",
+   "scenario_version": "1",
+   "family": "deployment_regression",
+   "split": "held_out",
+   "synthetic": true,
+   "variant": "multi_agent",
+   "trial": 1,
+   "status": "scored",
+   "replay_scope": "replay:654195ff-82dc-4e8a-bf52-6a2d2e7608a4",
+   "investigation_id": "f25f6b0f-b99f-4b37-a4a7-75a74e926a7c",
+   "expected": {
+    "incident_expected": true,
+    "diagnosable": true,
+    "root_cause_service": "payment",
+    "failure_type": "deployment_regression",
+    "affected_services": [
+     "checkout",
+     "payment"
+    ],
+    "fault_window": {
+     "start": "2026-10-16T10:33:00Z",
+     "end": "2026-10-16T10:37:30Z"
+    },
+    "supporting_event_ids": []
+   },
+   "observed": {
+    "incident_ids": [
+     "7a87ce81-4a75-4f48-8cad-2b7bb08b4f13"
+    ],
+    "investigation_id": "f25f6b0f-b99f-4b37-a4a7-75a74e926a7c",
+    "investigation_status": "completed",
+    "diagnosis_status": "diagnosed",
+    "root_cause_service": "payment",
+    "failure_type": "elevated_errors",
+    "cited_signal_ids": [
+     "24d42b27-a5c8-5665-8c93-29ab09c5192b",
+     "e7a7c7cd-6a29-5a34-97f4-c727c53f0b2c",
+     "5d628a44-00e1-58df-b0ec-32748da9be95",
+     "fb5c68be-52ab-5747-a0ab-702c968d7d31",
+     "4701c3f7-ee45-5222-8ffa-5bab972bdffa",
+     "d378c9d5-d58c-595f-8798-5a7e7bcadf75",
+     "9013bd63-0e58-53b4-8387-558ce25fdd7a",
+     "7647de24-d9bb-5ffa-9903-0abe37e939b9",
+     "83c0e89d-10d4-57cd-8914-8772654d1c42",
+     "5087c0bd-3ebf-5830-bf79-4f1340f341ba"
+    ],
+    "cited_event_ids": [
+     "payment-span-18f269447b0d36d4d438",
+     "payment-span-87ba0fc1f8fee17758fa",
+     "payment-span-1ea157f3755c161528fe",
+     "payment-span-22e209524336e7160d46",
+     "payment-span-2d2d179792504d0552aa",
+     "payment-span-a45c726dec8f871fa5b7",
+     "payment-span-d7def127df5657c9b994",
+     "payment-span-de958bed001a130c68ae",
+     "payment-span-7e58641d385c52e03707",
+     "payment-span-000b950b03d827b9ad2e"
+    ],
+    "detected_at": "2026-10-16T10:34:30Z",
+    "started_at": "2026-11-08T17:28:48.061876Z",
+    "completed_at": "2026-11-08T17:29:06.615686Z",
+    "spent_microusd": 105584,
+    "unknown_reserved_microusd": 0,
+    "model_calls": 8
+   },
+   "scores": {
+    "outcome_correct": false,
+    "root_cause_correct": false,
+    "abstained": false,
+    "false_diagnosis": true,
+    "correct_abstention": null,
+    "cited": 10,
+    "cited_supported": 10,
+    "evidence_precision": 1.0,
+    "unsupported_diagnosis": false,
+    "latency_seconds": 18.554
+   },
+   "error": null
+  },
+  {
+   "id": "1ddea8bf-0fb8-4b10-ae4e-134cc4ed4d21",
+   "case_key": "deployment-regression/held-out@1/multi_agent/2",
+   "scenario_name": "deployment-regression/held-out",
+   "scenario_version": "1",
+   "family": "deployment_regression",
+   "split": "held_out",
+   "synthetic": true,
+   "variant": "multi_agent",
+   "trial": 2,
+   "status": "scored",
+   "replay_scope": "replay:654195ff-82dc-4e8a-bf52-6a2d2e7608a4",
+   "investigation_id": "6e23a01a-2d54-4e51-8a28-538d364b3778",
+   "expected": {
+    "incident_expected": true,
+    "diagnosable": true,
+    "root_cause_service": "payment",
+    "failure_type": "deployment_regression",
+    "affected_services": [
+     "checkout",
+     "payment"
+    ],
+    "fault_window": {
+     "start": "2026-10-16T10:33:00Z",
+     "end": "2026-10-16T10:37:30Z"
+    },
+    "supporting_event_ids": []
+   },
+   "observed": {
+    "incident_ids": [
+     "7a87ce81-4a75-4f48-8cad-2b7bb08b4f13"
+    ],
+    "investigation_id": "6e23a01a-2d54-4e51-8a28-538d364b3778",
+    "investigation_status": "completed",
+    "diagnosis_status": "diagnosed",
+    "root_cause_service": "payment",
+    "failure_type": "elevated_errors",
+    "cited_signal_ids": [
+     "24d42b27-a5c8-5665-8c93-29ab09c5192b",
+     "e7a7c7cd-6a29-5a34-97f4-c727c53f0b2c",
+     "5d628a44-00e1-58df-b0ec-32748da9be95",
+     "fb5c68be-52ab-5747-a0ab-702c968d7d31",
+     "4701c3f7-ee45-5222-8ffa-5bab972bdffa",
+     "d378c9d5-d58c-595f-8798-5a7e7bcadf75",
+     "9013bd63-0e58-53b4-8387-558ce25fdd7a",
+     "7647de24-d9bb-5ffa-9903-0abe37e939b9",
+     "83c0e89d-10d4-57cd-8914-8772654d1c42",
+     "5087c0bd-3ebf-5830-bf79-4f1340f341ba"
+    ],
+    "cited_event_ids": [
+     "payment-span-18f269447b0d36d4d438",
+     "payment-span-87ba0fc1f8fee17758fa",
+     "payment-span-1ea157f3755c161528fe",
+     "payment-span-22e209524336e7160d46",
+     "payment-span-2d2d179792504d0552aa",
+     "payment-span-a45c726dec8f871fa5b7",
+     "payment-span-d7def127df5657c9b994",
+     "payment-span-de958bed001a130c68ae",
+     "payment-span-7e58641d385c52e03707",
+     "payment-span-000b950b03d827b9ad2e"
+    ],
+    "detected_at": "2026-10-16T10:34:30Z",
+    "started_at": "2026-11-08T17:28:48.068206Z",
+    "completed_at": "2026-11-08T17:29:12.693475Z",
+    "spent_microusd": 105584,
+    "unknown_reserved_microusd": 0,
+    "model_calls": 8
+   },
+   "scores": {
+    "outcome_correct": false,
+    "root_cause_correct": false,
+    "abstained": false,
+    "false_diagnosis": true,
+    "correct_abstention": null,
+    "cited": 10,
+    "cited_supported": 10,
+    "evidence_precision": 1.0,
+    "unsupported_diagnosis": false,
+    "latency_seconds": 24.625
+   },
+   "error": null
+  },
+  {
+   "id": "a0feeee3-b6bd-415d-920c-1b738fe5c298",
+   "case_key": "deployment-regression/held-out@1/single_agent/1",
+   "scenario_name": "deployment-regression/held-out",
+   "scenario_version": "1",
+   "family": "deployment_regression",
+   "split": "held_out",
+   "synthetic": true,
+   "variant": "single_agent",
+   "trial": 1,
+   "status": "scored",
+   "replay_scope": "replay:654195ff-82dc-4e8a-bf52-6a2d2e7608a4",
+   "investigation_id": "dd9433d1-fcb1-4720-9c76-774a87b4a3e6",
+   "expected": {
+    "incident_expected": true,
+    "diagnosable": true,
+    "root_cause_service": "payment",
+    "failure_type": "deployment_regression",
+    "affected_services": [
+     "checkout",
+     "payment"
+    ],
+    "fault_window": {
+     "start": "2026-10-16T10:33:00Z",
+     "end": "2026-10-16T10:37:30Z"
+    },
+    "supporting_event_ids": []
+   },
+   "observed": {
+    "incident_ids": [
+     "7a87ce81-4a75-4f48-8cad-2b7bb08b4f13"
+    ],
+    "investigation_id": "dd9433d1-fcb1-4720-9c76-774a87b4a3e6",
+    "investigation_status": "completed",
+    "diagnosis_status": "diagnosed",
+    "root_cause_service": "payment",
+    "failure_type": "elevated_errors",
+    "cited_signal_ids": [
+     "24d42b27-a5c8-5665-8c93-29ab09c5192b",
+     "e7a7c7cd-6a29-5a34-97f4-c727c53f0b2c",
+     "5d628a44-00e1-58df-b0ec-32748da9be95",
+     "fb5c68be-52ab-5747-a0ab-702c968d7d31",
+     "4701c3f7-ee45-5222-8ffa-5bab972bdffa",
+     "d378c9d5-d58c-595f-8798-5a7e7bcadf75",
+     "9013bd63-0e58-53b4-8387-558ce25fdd7a",
+     "7647de24-d9bb-5ffa-9903-0abe37e939b9",
+     "83c0e89d-10d4-57cd-8914-8772654d1c42",
+     "5087c0bd-3ebf-5830-bf79-4f1340f341ba"
+    ],
+    "cited_event_ids": [
+     "payment-span-18f269447b0d36d4d438",
+     "payment-span-87ba0fc1f8fee17758fa",
+     "payment-span-1ea157f3755c161528fe",
+     "payment-span-22e209524336e7160d46",
+     "payment-span-2d2d179792504d0552aa",
+     "payment-span-a45c726dec8f871fa5b7",
+     "payment-span-d7def127df5657c9b994",
+     "payment-span-de958bed001a130c68ae",
+     "payment-span-7e58641d385c52e03707",
+     "payment-span-000b950b03d827b9ad2e"
+    ],
+    "detected_at": "2026-10-16T10:34:30Z",
+    "started_at": "2026-11-08T17:28:48.049201Z",
+    "completed_at": "2026-11-08T17:28:54.281439Z",
+    "spent_microusd": 42788,
+    "unknown_reserved_microusd": 0,
+    "model_calls": 2
+   },
+   "scores": {
+    "outcome_correct": false,
+    "root_cause_correct": false,
+    "abstained": false,
+    "false_diagnosis": true,
+    "correct_abstention": null,
+    "cited": 10,
+    "cited_supported": 10,
+    "evidence_precision": 1.0,
+    "unsupported_diagnosis": false,
+    "latency_seconds": 6.232
+   },
+   "error": null
+  },
+  {
+   "id": "834916f5-58bd-41f6-a73b-6217ddbf664c",
+   "case_key": "deployment-regression/held-out@1/single_agent/2",
+   "scenario_name": "deployment-regression/held-out",
+   "scenario_version": "1",
+   "family": "deployment_regression",
+   "split": "held_out",
+   "synthetic": true,
+   "variant": "single_agent",
+   "trial": 2,
+   "status": "scored",
+   "replay_scope": "replay:654195ff-82dc-4e8a-bf52-6a2d2e7608a4",
+   "investigation_id": "b27f1c3f-040e-4d85-a9d6-7463beac2b6c",
+   "expected": {
+    "incident_expected": true,
+    "diagnosable": true,
+    "root_cause_service": "payment",
+    "failure_type": "deployment_regression",
+    "affected_services": [
+     "checkout",
+     "payment"
+    ],
+    "fault_window": {
+     "start": "2026-10-16T10:33:00Z",
+     "end": "2026-10-16T10:37:30Z"
+    },
+    "supporting_event_ids": []
+   },
+   "observed": {
+    "incident_ids": [
+     "7a87ce81-4a75-4f48-8cad-2b7bb08b4f13"
+    ],
+    "investigation_id": "b27f1c3f-040e-4d85-a9d6-7463beac2b6c",
+    "investigation_status": "completed",
+    "diagnosis_status": "diagnosed",
+    "root_cause_service": "payment",
+    "failure_type": "elevated_errors",
+    "cited_signal_ids": [
+     "24d42b27-a5c8-5665-8c93-29ab09c5192b",
+     "e7a7c7cd-6a29-5a34-97f4-c727c53f0b2c",
+     "5d628a44-00e1-58df-b0ec-32748da9be95",
+     "fb5c68be-52ab-5747-a0ab-702c968d7d31",
+     "4701c3f7-ee45-5222-8ffa-5bab972bdffa",
+     "d378c9d5-d58c-595f-8798-5a7e7bcadf75",
+     "9013bd63-0e58-53b4-8387-558ce25fdd7a",
+     "7647de24-d9bb-5ffa-9903-0abe37e939b9",
+     "83c0e89d-10d4-57cd-8914-8772654d1c42",
+     "5087c0bd-3ebf-5830-bf79-4f1340f341ba"
+    ],
+    "cited_event_ids": [
+     "payment-span-18f269447b0d36d4d438",
+     "payment-span-87ba0fc1f8fee17758fa",
+     "payment-span-1ea157f3755c161528fe",
+     "payment-span-22e209524336e7160d46",
+     "payment-span-2d2d179792504d0552aa",
+     "payment-span-a45c726dec8f871fa5b7",
+     "payment-span-d7def127df5657c9b994",
+     "payment-span-de958bed001a130c68ae",
+     "payment-span-7e58641d385c52e03707",
+     "payment-span-000b950b03d827b9ad2e"
+    ],
+    "detected_at": "2026-10-16T10:34:30Z",
+    "started_at": "2026-11-08T17:28:48.055742Z",
+    "completed_at": "2026-11-08T17:28:54.308663Z",
+    "spent_microusd": 42788,
+    "unknown_reserved_microusd": 0,
+    "model_calls": 2
+   },
+   "scores": {
+    "outcome_correct": false,
+    "root_cause_correct": false,
+    "abstained": false,
+    "false_diagnosis": true,
+    "correct_abstention": null,
+    "cited": 10,
+    "cited_supported": 10,
+    "evidence_precision": 1.0,
+    "unsupported_diagnosis": false,
+    "latency_seconds": 6.253
+   },
+   "error": null
+  },
+  {
+   "id": "aca10ccb-0221-44ba-abce-61c33e88446b",
+   "case_key": "downstream-timeout/held-out@1/deterministic/1",
+   "scenario_name": "downstream-timeout/held-out",
+   "scenario_version": "1",
+   "family": "downstream_timeout",
+   "split": "held_out",
+   "synthetic": true,
+   "variant": "deterministic",
+   "trial": 1,
+   "status": "scored",
+   "replay_scope": "replay:7b25f6c1-9d4e-413c-81a0-10ef5e234f5f",
+   "investigation_id": "af438a1e-4ebf-4637-b96d-2678dd032f7e",
+   "expected": {
+    "incident_expected": true,
+    "diagnosable": true,
+    "root_cause_service": "bank-gateway",
+    "failure_type": "downstream_timeout",
+    "affected_services": [
+     "bank-gateway",
+     "checkout",
+     "payment"
+    ],
+    "fault_window": {
+     "start": "2026-10-16T10:34:12Z",
+     "end": "2026-10-16T10:38:24Z"
+    },
+    "supporting_event_ids": []
+   },
+   "observed": {
+    "incident_ids": [
+     "f92ff1c4-62d2-4da4-8b24-3bc193c31c9d"
+    ],
+    "investigation_id": "af438a1e-4ebf-4637-b96d-2678dd032f7e",
+    "investigation_status": "completed",
+    "diagnosis_status": "diagnosed",
+    "root_cause_service": "checkout",
+    "failure_type": "downstream_timeout",
+    "cited_signal_ids": [
+     "8c20b003-8b0f-5555-8018-98cb81ca2ef4",
+     "4fcda183-1a8c-5bfc-9124-ca9006d36125",
+     "3dbd759c-8e88-5213-a40a-4fa50d16ed32",
+     "948a8dd3-dfc2-59a4-b2ec-1f32b408bbe0",
+     "e29b642d-d33e-56f7-8a2f-add2a082425c",
+     "87db44e5-f78e-5178-b4bf-e939219f212b",
+     "32e7f84e-80a8-5806-a6d6-3a62f74d77a3",
+     "09633667-5bd3-5e53-9484-5c9ae67f3055",
+     "cb175499-e9d0-57ed-a614-440ebc35b4a0",
+     "a61d80c6-72a4-5eed-9481-85cace12f40d"
+    ],
+    "cited_event_ids": [
+     "checkout-span-61310e49f3d87f4659ec",
+     "checkout-span-7938617aa167858d5e77",
+     "checkout-span-8df5cf046802df21f85b",
+     "checkout-span-acab876d764cd0e88701",
+     "checkout-span-751bfa0abc047d9ac30a",
+     "checkout-span-f7a338215a24c1c630c8",
+     "checkout-span-0edce415f6108bb314db",
+     "checkout-log-9e6a73b4883ab52f2071",
+     "checkout-log-3359f7c02f3a40b4e3b6",
+     "checkout-log-68106136b785a1632306"
+    ],
+    "detected_at": "2026-10-16T10:35:30Z",
+    "started_at": "2026-11-08T17:29:26.648301Z",
+    "completed_at": "2026-11-08T17:29:26.757875Z",
+    "spent_microusd": 0,
+    "unknown_reserved_microusd": 0,
+    "model_calls": 0
+   },
+   "scores": {
+    "outcome_correct": false,
+    "root_cause_correct": false,
+    "abstained": false,
+    "false_diagnosis": true,
+    "correct_abstention": null,
+    "cited": 10,
+    "cited_supported": 10,
+    "evidence_precision": 1.0,
+    "unsupported_diagnosis": false,
+    "latency_seconds": 0.11
+   },
+   "error": null
+  },
+  {
+   "id": "05acbd4c-fd07-4a61-87c1-0046acfa9bcc",
+   "case_key": "downstream-timeout/held-out@1/multi_agent/1",
+   "scenario_name": "downstream-timeout/held-out",
+   "scenario_version": "1",
+   "family": "downstream_timeout",
+   "split": "held_out",
+   "synthetic": true,
+   "variant": "multi_agent",
+   "trial": 1,
+   "status": "scored",
+   "replay_scope": "replay:7b25f6c1-9d4e-413c-81a0-10ef5e234f5f",
+   "investigation_id": "e328f39f-994d-4101-934e-d8e8b3e4cae1",
+   "expected": {
+    "incident_expected": true,
+    "diagnosable": true,
+    "root_cause_service": "bank-gateway",
+    "failure_type": "downstream_timeout",
+    "affected_services": [
+     "bank-gateway",
+     "checkout",
+     "payment"
+    ],
+    "fault_window": {
+     "start": "2026-10-16T10:34:12Z",
+     "end": "2026-10-16T10:38:24Z"
+    },
+    "supporting_event_ids": []
+   },
+   "observed": {
+    "incident_ids": [
+     "f92ff1c4-62d2-4da4-8b24-3bc193c31c9d"
+    ],
+    "investigation_id": "e328f39f-994d-4101-934e-d8e8b3e4cae1",
+    "investigation_status": "completed",
+    "diagnosis_status": "diagnosed",
+    "root_cause_service": "bank-gateway",
+    "failure_type": "downstream_timeout",
+    "cited_signal_ids": [
+     "22706015-db0d-5b71-ab40-71aaed04e1ec",
+     "81586f5f-7f46-5e45-ab97-dd2f5ab0a066",
+     "ca9b0f65-6376-524e-951f-73573d272c6b",
+     "b5d9c0a0-4a97-5963-8699-48863f143d7a",
+     "f169a380-aaaf-5d4f-b0b7-2c248f177a8d",
+     "488e35e9-6572-5114-9b87-0dc561cb364f",
+     "68073f6d-f669-5627-91cd-487083bbba57",
+     "7aa47c16-6fe7-54fc-b7b3-de02d3ca3ba4",
+     "774f8319-8504-533d-869b-1e520819484f",
+     "7a3259bb-5188-54eb-87e4-f350a2b2db5b"
+    ],
+    "cited_event_ids": [
+     "bank-gateway-span-6c53a5afae8127ce5fc2",
+     "bank-gateway-span-b985b423fb747007ba68",
+     "bank-gateway-span-3296c393954d40c3a4fe",
+     "bank-gateway-span-972bd0237349e8484d68",
+     "bank-gateway-span-dc35bb6dc1fab232ae69",
+     "bank-gateway-span-e56c0e1a0e9a38a88cfb",
+     "bank-gateway-span-c91627c3ca44c75534e2",
+     "bank-gateway-span-7fb24f1ccc801d103b9e",
+     "bank-gateway-span-00cf7dd27b4262086743",
+     "bank-gateway-span-8c48ae8e8847659ca91b"
+    ],
+    "detected_at": "2026-10-16T10:35:30Z",
+    "started_at": "2026-11-08T17:29:26.668846Z",
+    "completed_at": "2026-11-08T17:30:12.223436Z",
+    "spent_microusd": 133844,
+    "unknown_reserved_microusd": 0,
+    "model_calls": 9
+   },
+   "scores": {
+    "outcome_correct": true,
+    "root_cause_correct": true,
+    "abstained": false,
+    "false_diagnosis": false,
+    "correct_abstention": null,
+    "cited": 10,
+    "cited_supported": 10,
+    "evidence_precision": 1.0,
+    "unsupported_diagnosis": false,
+    "latency_seconds": 45.555
+   },
+   "error": null
+  },
+  {
+   "id": "cb5fb99d-5a28-4241-8007-d203d35e2825",
+   "case_key": "downstream-timeout/held-out@1/multi_agent/2",
+   "scenario_name": "downstream-timeout/held-out",
+   "scenario_version": "1",
+   "family": "downstream_timeout",
+   "split": "held_out",
+   "synthetic": true,
+   "variant": "multi_agent",
+   "trial": 2,
+   "status": "scored",
+   "replay_scope": "replay:7b25f6c1-9d4e-413c-81a0-10ef5e234f5f",
+   "investigation_id": "a92f2345-afe0-41ae-8191-1388740469da",
+   "expected": {
+    "incident_expected": true,
+    "diagnosable": true,
+    "root_cause_service": "bank-gateway",
+    "failure_type": "downstream_timeout",
+    "affected_services": [
+     "bank-gateway",
+     "checkout",
+     "payment"
+    ],
+    "fault_window": {
+     "start": "2026-10-16T10:34:12Z",
+     "end": "2026-10-16T10:38:24Z"
+    },
+    "supporting_event_ids": []
+   },
+   "observed": {
+    "incident_ids": [
+     "f92ff1c4-62d2-4da4-8b24-3bc193c31c9d"
+    ],
+    "investigation_id": "a92f2345-afe0-41ae-8191-1388740469da",
+    "investigation_status": "completed",
+    "diagnosis_status": "diagnosed",
+    "root_cause_service": "bank-gateway",
+    "failure_type": "downstream_timeout",
+    "cited_signal_ids": [
+     "22706015-db0d-5b71-ab40-71aaed04e1ec",
+     "81586f5f-7f46-5e45-ab97-dd2f5ab0a066",
+     "ca9b0f65-6376-524e-951f-73573d272c6b",
+     "b5d9c0a0-4a97-5963-8699-48863f143d7a",
+     "f169a380-aaaf-5d4f-b0b7-2c248f177a8d",
+     "488e35e9-6572-5114-9b87-0dc561cb364f",
+     "68073f6d-f669-5627-91cd-487083bbba57",
+     "7aa47c16-6fe7-54fc-b7b3-de02d3ca3ba4",
+     "774f8319-8504-533d-869b-1e520819484f",
+     "7a3259bb-5188-54eb-87e4-f350a2b2db5b"
+    ],
+    "cited_event_ids": [
+     "bank-gateway-span-6c53a5afae8127ce5fc2",
+     "bank-gateway-span-b985b423fb747007ba68",
+     "bank-gateway-span-3296c393954d40c3a4fe",
+     "bank-gateway-span-972bd0237349e8484d68",
+     "bank-gateway-span-dc35bb6dc1fab232ae69",
+     "bank-gateway-span-e56c0e1a0e9a38a88cfb",
+     "bank-gateway-span-c91627c3ca44c75534e2",
+     "bank-gateway-span-7fb24f1ccc801d103b9e",
+     "bank-gateway-span-00cf7dd27b4262086743",
+     "bank-gateway-span-8c48ae8e8847659ca91b"
+    ],
+    "detected_at": "2026-10-16T10:35:30Z",
+    "started_at": "2026-11-08T17:29:26.674128Z",
+    "completed_at": "2026-11-08T17:30:15.309793Z",
+    "spent_microusd": 133844,
+    "unknown_reserved_microusd": 0,
+    "model_calls": 9
+   },
+   "scores": {
+    "outcome_correct": true,
+    "root_cause_correct": true,
+    "abstained": false,
+    "false_diagnosis": false,
+    "correct_abstention": null,
+    "cited": 10,
+    "cited_supported": 10,
+    "evidence_precision": 1.0,
+    "unsupported_diagnosis": false,
+    "latency_seconds": 48.636
+   },
+   "error": null
+  },
+  {
+   "id": "8b5dafc6-c8d0-4176-9691-92519875ab2c",
+   "case_key": "downstream-timeout/held-out@1/single_agent/1",
+   "scenario_name": "downstream-timeout/held-out",
+   "scenario_version": "1",
+   "family": "downstream_timeout",
+   "split": "held_out",
+   "synthetic": true,
+   "variant": "single_agent",
+   "trial": 1,
+   "status": "scored",
+   "replay_scope": "replay:7b25f6c1-9d4e-413c-81a0-10ef5e234f5f",
+   "investigation_id": "5a5c06e0-1ec9-420a-bbc2-c520a3537bba",
+   "expected": {
+    "incident_expected": true,
+    "diagnosable": true,
+    "root_cause_service": "bank-gateway",
+    "failure_type": "downstream_timeout",
+    "affected_services": [
+     "bank-gateway",
+     "checkout",
+     "payment"
+    ],
+    "fault_window": {
+     "start": "2026-10-16T10:34:12Z",
+     "end": "2026-10-16T10:38:24Z"
+    },
+    "supporting_event_ids": []
+   },
+   "observed": {
+    "incident_ids": [
+     "f92ff1c4-62d2-4da4-8b24-3bc193c31c9d"
+    ],
+    "investigation_id": "5a5c06e0-1ec9-420a-bbc2-c520a3537bba",
+    "investigation_status": "completed",
+    "diagnosis_status": "diagnosed",
+    "root_cause_service": "bank-gateway",
+    "failure_type": "downstream_timeout",
+    "cited_signal_ids": [
+     "22706015-db0d-5b71-ab40-71aaed04e1ec",
+     "81586f5f-7f46-5e45-ab97-dd2f5ab0a066",
+     "ca9b0f65-6376-524e-951f-73573d272c6b",
+     "b5d9c0a0-4a97-5963-8699-48863f143d7a",
+     "f169a380-aaaf-5d4f-b0b7-2c248f177a8d",
+     "488e35e9-6572-5114-9b87-0dc561cb364f",
+     "68073f6d-f669-5627-91cd-487083bbba57",
+     "7aa47c16-6fe7-54fc-b7b3-de02d3ca3ba4",
+     "774f8319-8504-533d-869b-1e520819484f",
+     "7a3259bb-5188-54eb-87e4-f350a2b2db5b"
+    ],
+    "cited_event_ids": [
+     "bank-gateway-span-6c53a5afae8127ce5fc2",
+     "bank-gateway-span-b985b423fb747007ba68",
+     "bank-gateway-span-3296c393954d40c3a4fe",
+     "bank-gateway-span-972bd0237349e8484d68",
+     "bank-gateway-span-dc35bb6dc1fab232ae69",
+     "bank-gateway-span-e56c0e1a0e9a38a88cfb",
+     "bank-gateway-span-c91627c3ca44c75534e2",
+     "bank-gateway-span-7fb24f1ccc801d103b9e",
+     "bank-gateway-span-00cf7dd27b4262086743",
+     "bank-gateway-span-8c48ae8e8847659ca91b"
+    ],
+    "detected_at": "2026-10-16T10:35:30Z",
+    "started_at": "2026-11-08T17:29:26.657230Z",
+    "completed_at": "2026-11-08T17:29:35.950058Z",
+    "spent_microusd": 76932,
+    "unknown_reserved_microusd": 0,
+    "model_calls": 3
+   },
+   "scores": {
+    "outcome_correct": true,
+    "root_cause_correct": true,
+    "abstained": false,
+    "false_diagnosis": false,
+    "correct_abstention": null,
+    "cited": 10,
+    "cited_supported": 10,
+    "evidence_precision": 1.0,
+    "unsupported_diagnosis": false,
+    "latency_seconds": 9.293
+   },
+   "error": null
+  },
+  {
+   "id": "67e0df9b-1e4c-4c90-bd32-75857f4e446e",
+   "case_key": "downstream-timeout/held-out@1/single_agent/2",
+   "scenario_name": "downstream-timeout/held-out",
+   "scenario_version": "1",
+   "family": "downstream_timeout",
+   "split": "held_out",
+   "synthetic": true,
+   "variant": "single_agent",
+   "trial": 2,
+   "status": "scored",
+   "replay_scope": "replay:7b25f6c1-9d4e-413c-81a0-10ef5e234f5f",
+   "investigation_id": "0dc43bf8-d724-4b3c-aef2-3f404ee5548c",
+   "expected": {
+    "incident_expected": true,
+    "diagnosable": true,
+    "root_cause_service": "bank-gateway",
+    "failure_type": "downstream_timeout",
+    "affected_services": [
+     "bank-gateway",
+     "checkout",
+     "payment"
+    ],
+    "fault_window": {
+     "start": "2026-10-16T10:34:12Z",
+     "end": "2026-10-16T10:38:24Z"
+    },
+    "supporting_event_ids": []
+   },
+   "observed": {
+    "incident_ids": [
+     "f92ff1c4-62d2-4da4-8b24-3bc193c31c9d"
+    ],
+    "investigation_id": "0dc43bf8-d724-4b3c-aef2-3f404ee5548c",
+    "investigation_status": "completed",
+    "diagnosis_status": "diagnosed",
+    "root_cause_service": "bank-gateway",
+    "failure_type": "downstream_timeout",
+    "cited_signal_ids": [
+     "22706015-db0d-5b71-ab40-71aaed04e1ec",
+     "81586f5f-7f46-5e45-ab97-dd2f5ab0a066",
+     "ca9b0f65-6376-524e-951f-73573d272c6b",
+     "b5d9c0a0-4a97-5963-8699-48863f143d7a",
+     "f169a380-aaaf-5d4f-b0b7-2c248f177a8d",
+     "488e35e9-6572-5114-9b87-0dc561cb364f",
+     "68073f6d-f669-5627-91cd-487083bbba57",
+     "7aa47c16-6fe7-54fc-b7b3-de02d3ca3ba4",
+     "774f8319-8504-533d-869b-1e520819484f",
+     "7a3259bb-5188-54eb-87e4-f350a2b2db5b"
+    ],
+    "cited_event_ids": [
+     "bank-gateway-span-6c53a5afae8127ce5fc2",
+     "bank-gateway-span-b985b423fb747007ba68",
+     "bank-gateway-span-3296c393954d40c3a4fe",
+     "bank-gateway-span-972bd0237349e8484d68",
+     "bank-gateway-span-dc35bb6dc1fab232ae69",
+     "bank-gateway-span-e56c0e1a0e9a38a88cfb",
+     "bank-gateway-span-c91627c3ca44c75534e2",
+     "bank-gateway-span-7fb24f1ccc801d103b9e",
+     "bank-gateway-span-00cf7dd27b4262086743",
+     "bank-gateway-span-8c48ae8e8847659ca91b"
+    ],
+    "detected_at": "2026-10-16T10:35:30Z",
+    "started_at": "2026-11-08T17:29:26.662962Z",
+    "completed_at": "2026-11-08T17:29:35.954381Z",
+    "spent_microusd": 76932,
+    "unknown_reserved_microusd": 0,
+    "model_calls": 3
+   },
+   "scores": {
+    "outcome_correct": true,
+    "root_cause_correct": true,
+    "abstained": false,
+    "false_diagnosis": false,
+    "correct_abstention": null,
+    "cited": 10,
+    "cited_supported": 10,
+    "evidence_precision": 1.0,
+    "unsupported_diagnosis": false,
+    "latency_seconds": 9.291
+   },
+   "error": null
+  },
+  {
+   "id": "324cc280-3116-44db-b9cb-b179ce8b51c2",
+   "case_key": "healthy/held-out@1/deterministic/1",
+   "scenario_name": "healthy/held-out",
+   "scenario_version": "1",
+   "family": "healthy_noise",
+   "split": "held_out",
+   "synthetic": true,
+   "variant": "deterministic",
+   "trial": 1,
+   "status": "scored",
+   "replay_scope": "replay:761e9b5b-0699-4c51-ba8a-31331aea1aa1",
+   "investigation_id": null,
+   "expected": {
+    "incident_expected": false,
+    "diagnosable": false,
+    "root_cause_service": null,
+    "failure_type": null,
+    "affected_services": [],
+    "fault_window": null,
+    "supporting_event_ids": []
+   },
+   "observed": {
+    "incident_ids": [],
+    "investigation_id": null,
+    "investigation_status": null,
+    "diagnosis_status": null,
+    "root_cause_service": null,
+    "failure_type": null,
+    "cited_signal_ids": [],
+    "cited_event_ids": [],
+    "detected_at": null,
+    "started_at": null,
+    "completed_at": null,
+    "spent_microusd": 0,
+    "unknown_reserved_microusd": 0,
+    "model_calls": 0
+   },
+   "scores": {
+    "outcome_correct": true,
+    "root_cause_correct": null,
+    "abstained": false,
+    "false_diagnosis": false,
+    "correct_abstention": null,
+    "cited": 0,
+    "cited_supported": 0,
+    "evidence_precision": null,
+    "unsupported_diagnosis": false,
+    "latency_seconds": null
+   },
+   "error": null
+  },
+  {
+   "id": "ba940c6e-0290-47bb-beaf-504b6c790cfe",
+   "case_key": "healthy/held-out@1/multi_agent/1",
+   "scenario_name": "healthy/held-out",
+   "scenario_version": "1",
+   "family": "healthy_noise",
+   "split": "held_out",
+   "synthetic": true,
+   "variant": "multi_agent",
+   "trial": 1,
+   "status": "scored",
+   "replay_scope": "replay:761e9b5b-0699-4c51-ba8a-31331aea1aa1",
+   "investigation_id": null,
+   "expected": {
+    "incident_expected": false,
+    "diagnosable": false,
+    "root_cause_service": null,
+    "failure_type": null,
+    "affected_services": [],
+    "fault_window": null,
+    "supporting_event_ids": []
+   },
+   "observed": {
+    "incident_ids": [],
+    "investigation_id": null,
+    "investigation_status": null,
+    "diagnosis_status": null,
+    "root_cause_service": null,
+    "failure_type": null,
+    "cited_signal_ids": [],
+    "cited_event_ids": [],
+    "detected_at": null,
+    "started_at": null,
+    "completed_at": null,
+    "spent_microusd": 0,
+    "unknown_reserved_microusd": 0,
+    "model_calls": 0
+   },
+   "scores": {
+    "outcome_correct": true,
+    "root_cause_correct": null,
+    "abstained": false,
+    "false_diagnosis": false,
+    "correct_abstention": null,
+    "cited": 0,
+    "cited_supported": 0,
+    "evidence_precision": null,
+    "unsupported_diagnosis": false,
+    "latency_seconds": null
+   },
+   "error": null
+  },
+  {
+   "id": "bebcac9c-062d-4a93-b1f8-3377fd1569a7",
+   "case_key": "healthy/held-out@1/multi_agent/2",
+   "scenario_name": "healthy/held-out",
+   "scenario_version": "1",
+   "family": "healthy_noise",
+   "split": "held_out",
+   "synthetic": true,
+   "variant": "multi_agent",
+   "trial": 2,
+   "status": "scored",
+   "replay_scope": "replay:761e9b5b-0699-4c51-ba8a-31331aea1aa1",
+   "investigation_id": null,
+   "expected": {
+    "incident_expected": false,
+    "diagnosable": false,
+    "root_cause_service": null,
+    "failure_type": null,
+    "affected_services": [],
+    "fault_window": null,
+    "supporting_event_ids": []
+   },
+   "observed": {
+    "incident_ids": [],
+    "investigation_id": null,
+    "investigation_status": null,
+    "diagnosis_status": null,
+    "root_cause_service": null,
+    "failure_type": null,
+    "cited_signal_ids": [],
+    "cited_event_ids": [],
+    "detected_at": null,
+    "started_at": null,
+    "completed_at": null,
+    "spent_microusd": 0,
+    "unknown_reserved_microusd": 0,
+    "model_calls": 0
+   },
+   "scores": {
+    "outcome_correct": true,
+    "root_cause_correct": null,
+    "abstained": false,
+    "false_diagnosis": false,
+    "correct_abstention": null,
+    "cited": 0,
+    "cited_supported": 0,
+    "evidence_precision": null,
+    "unsupported_diagnosis": false,
+    "latency_seconds": null
+   },
+   "error": null
+  },
+  {
+   "id": "ce78941d-2a68-497d-88cb-562dc66ce3b1",
+   "case_key": "healthy/held-out@1/single_agent/1",
+   "scenario_name": "healthy/held-out",
+   "scenario_version": "1",
+   "family": "healthy_noise",
+   "split": "held_out",
+   "synthetic": true,
+   "variant": "single_agent",
+   "trial": 1,
+   "status": "scored",
+   "replay_scope": "replay:761e9b5b-0699-4c51-ba8a-31331aea1aa1",
+   "investigation_id": null,
+   "expected": {
+    "incident_expected": false,
+    "diagnosable": false,
+    "root_cause_service": null,
+    "failure_type": null,
+    "affected_services": [],
+    "fault_window": null,
+    "supporting_event_ids": []
+   },
+   "observed": {
+    "incident_ids": [],
+    "investigation_id": null,
+    "investigation_status": null,
+    "diagnosis_status": null,
+    "root_cause_service": null,
+    "failure_type": null,
+    "cited_signal_ids": [],
+    "cited_event_ids": [],
+    "detected_at": null,
+    "started_at": null,
+    "completed_at": null,
+    "spent_microusd": 0,
+    "unknown_reserved_microusd": 0,
+    "model_calls": 0
+   },
+   "scores": {
+    "outcome_correct": true,
+    "root_cause_correct": null,
+    "abstained": false,
+    "false_diagnosis": false,
+    "correct_abstention": null,
+    "cited": 0,
+    "cited_supported": 0,
+    "evidence_precision": null,
+    "unsupported_diagnosis": false,
+    "latency_seconds": null
+   },
+   "error": null
+  },
+  {
+   "id": "70bb2424-13f9-47bb-862a-e25c9c3b05a9",
+   "case_key": "healthy/held-out@1/single_agent/2",
+   "scenario_name": "healthy/held-out",
+   "scenario_version": "1",
+   "family": "healthy_noise",
+   "split": "held_out",
+   "synthetic": true,
+   "variant": "single_agent",
+   "trial": 2,
+   "status": "scored",
+   "replay_scope": "replay:761e9b5b-0699-4c51-ba8a-31331aea1aa1",
+   "investigation_id": null,
+   "expected": {
+    "incident_expected": false,
+    "diagnosable": false,
+    "root_cause_service": null,
+    "failure_type": null,
+    "affected_services": [],
+    "fault_window": null,
+    "supporting_event_ids": []
+   },
+   "observed": {
+    "incident_ids": [],
+    "investigation_id": null,
+    "investigation_status": null,
+    "diagnosis_status": null,
+    "root_cause_service": null,
+    "failure_type": null,
+    "cited_signal_ids": [],
+    "cited_event_ids": [],
+    "detected_at": null,
+    "started_at": null,
+    "completed_at": null,
+    "spent_microusd": 0,
+    "unknown_reserved_microusd": 0,
+    "model_calls": 0
+   },
+   "scores": {
+    "outcome_correct": true,
+    "root_cause_correct": null,
+    "abstained": false,
+    "false_diagnosis": false,
+    "correct_abstention": null,
+    "cited": 0,
+    "cited_supported": 0,
+    "evidence_precision": null,
+    "unsupported_diagnosis": false,
+    "latency_seconds": null
+   },
+   "error": null
+  },
+  {
+   "id": "d66a165f-f274-4ae3-9075-0e97333d0084",
+   "case_key": "memory-pressure/held-out@1/deterministic/1",
+   "scenario_name": "memory-pressure/held-out",
+   "scenario_version": "1",
+   "family": "memory_pressure",
+   "split": "held_out",
+   "synthetic": true,
+   "variant": "deterministic",
+   "trial": 1,
+   "status": "scored",
+   "replay_scope": "replay:7fed13bd-4b1f-49dd-afd6-63bb649210d4",
+   "investigation_id": "b6c94659-6b91-45f9-8413-e94cc0be114f",
+   "expected": {
+    "incident_expected": true,
+    "diagnosable": true,
+    "root_cause_service": "payment",
+    "failure_type": "memory_pressure",
+    "affected_services": [
+     "checkout",
+     "payment"
+    ],
+    "fault_window": {
+     "start": "2026-10-16T10:36:00Z",
+     "end": "2026-10-16T10:43:30Z"
+    },
+    "supporting_event_ids": []
+   },
+   "observed": {
+    "incident_ids": [
+     "49caeac2-ef58-424e-b444-8c7047f22a87"
+    ],
+    "investigation_id": "b6c94659-6b91-45f9-8413-e94cc0be114f",
+    "investigation_status": "completed",
+    "diagnosis_status": "diagnosed",
+    "root_cause_service": "checkout",
+    "failure_type": "downstream_timeout",
+    "cited_signal_ids": [
+     "87579a9e-dd8c-55e0-843d-fb29b920622b",
+     "064001dd-45ea-5e35-a627-687779d90a88",
+     "49a3cc03-d8f5-5c52-8baf-21f50edbdb76",
+     "0d27009c-d729-5007-8d48-1e128c4ffed6",
+     "d4a39fcb-4e34-52af-8649-de089f1ec8ce",
+     "0fb5c31d-6845-55b6-8322-0a1be3a43092",
+     "efa03682-401e-5594-8c3b-b2e10b305346",
+     "8d69a47f-0cc5-5807-a830-929fc1ae146b",
+     "53f209f8-13a1-528f-9cb5-4950d3932d13",
+     "f72a45d1-2340-5618-963c-002bf6dd09f3"
+    ],
+    "cited_event_ids": [
+     "checkout-span-fdae0a9159d4973a20c7",
+     "checkout-span-19656026e2d58040b446",
+     "checkout-span-d27af248f1c3ce19984d",
+     "checkout-span-17e79a050c8504b37d12",
+     "checkout-span-c953df80e94d6239c872",
+     "checkout-log-991670e55d999d4c2423",
+     "checkout-log-1f8e576b4ef13719d494",
+     "checkout-log-f44b0a0d718d29276f55",
+     "checkout-log-87faf24904b0dcaad099",
+     "checkout-log-97ed8a3aeecaf3c798f1"
+    ],
+    "detected_at": "2026-10-16T10:37:30Z",
+    "started_at": "2026-11-08T17:30:42.505553Z",
+    "completed_at": "2026-11-08T17:30:43.395016Z",
+    "spent_microusd": 0,
+    "unknown_reserved_microusd": 0,
+    "model_calls": 0
+   },
+   "scores": {
+    "outcome_correct": false,
+    "root_cause_correct": false,
+    "abstained": false,
+    "false_diagnosis": true,
+    "correct_abstention": null,
+    "cited": 10,
+    "cited_supported": 10,
+    "evidence_precision": 1.0,
+    "unsupported_diagnosis": false,
+    "latency_seconds": 0.889
+   },
+   "error": null
+  },
+  {
+   "id": "d2476cce-a704-4ee1-8592-28f4251ae47f",
+   "case_key": "memory-pressure/held-out@1/multi_agent/1",
+   "scenario_name": "memory-pressure/held-out",
+   "scenario_version": "1",
+   "family": "memory_pressure",
+   "split": "held_out",
+   "synthetic": true,
+   "variant": "multi_agent",
+   "trial": 1,
+   "status": "scored",
+   "replay_scope": "replay:7fed13bd-4b1f-49dd-afd6-63bb649210d4",
+   "investigation_id": "beb5ddf2-cd0a-4bbe-b2ef-9b8ef3bff8c4",
+   "expected": {
+    "incident_expected": true,
+    "diagnosable": true,
+    "root_cause_service": "payment",
+    "failure_type": "memory_pressure",
+    "affected_services": [
+     "checkout",
+     "payment"
+    ],
+    "fault_window": {
+     "start": "2026-10-16T10:36:00Z",
+     "end": "2026-10-16T10:43:30Z"
+    },
+    "supporting_event_ids": []
+   },
+   "observed": {
+    "incident_ids": [
+     "49caeac2-ef58-424e-b444-8c7047f22a87"
+    ],
+    "investigation_id": "beb5ddf2-cd0a-4bbe-b2ef-9b8ef3bff8c4",
+    "investigation_status": "completed",
+    "diagnosis_status": "diagnosed",
+    "root_cause_service": "payment",
+    "failure_type": "downstream_timeout",
+    "cited_signal_ids": [
+     "c9db9070-ff8a-5482-bab4-4b5dcd9660ba",
+     "3c33aed5-3c02-545b-9609-c1544d821531",
+     "f2200124-3c64-5fc2-b148-acc75605c154",
+     "1dd3186d-6d4d-5c38-b7e7-2ef51d6625d5",
+     "1f97e20a-5d3e-5673-942e-17a9e8e3d4f1",
+     "ad76e002-5426-5704-bfbb-16afd976baff",
+     "6016a051-02d9-5300-a76b-7c1d987f2a3e",
+     "40be70c6-37bf-57f3-a8ce-099d2c504d8a",
+     "267e5071-4b46-5506-ac7a-e2586848a52b",
+     "a136ea7f-a44a-56ea-87e3-53bb87eec7c9"
+    ],
+    "cited_event_ids": [
+     "payment-span-59b85fbbe7082a1774fc",
+     "payment-span-20615155e5154047cdb9",
+     "payment-span-a3fb044d163d4ebd3bff",
+     "payment-span-8f841a1f594c54677044",
+     "payment-span-a3d6e297cae986e0a3a0",
+     "payment-span-d8787ac53b28ff9d6927",
+     "payment-span-76f8288ddcb060ba450b",
+     "payment-span-ae541ae74a00cd7c981f",
+     "payment-span-635a83a2e251d1fda303",
+     "payment-span-645ea34deb430c6d32a3"
+    ],
+    "detected_at": "2026-10-16T10:37:30Z",
+    "started_at": "2026-11-08T17:30:42.524494Z",
+    "completed_at": "2026-11-08T17:32:06.141250Z",
+    "spent_microusd": 135152,
+    "unknown_reserved_microusd": 0,
+    "model_calls": 9
+   },
+   "scores": {
+    "outcome_correct": false,
+    "root_cause_correct": false,
+    "abstained": false,
+    "false_diagnosis": true,
+    "correct_abstention": null,
+    "cited": 10,
+    "cited_supported": 10,
+    "evidence_precision": 1.0,
+    "unsupported_diagnosis": false,
+    "latency_seconds": 83.617
+   },
+   "error": null
+  },
+  {
+   "id": "6ee21f42-3d72-428c-8c68-7b812ff4da79",
+   "case_key": "memory-pressure/held-out@1/multi_agent/2",
+   "scenario_name": "memory-pressure/held-out",
+   "scenario_version": "1",
+   "family": "memory_pressure",
+   "split": "held_out",
+   "synthetic": true,
+   "variant": "multi_agent",
+   "trial": 2,
+   "status": "scored",
+   "replay_scope": "replay:7fed13bd-4b1f-49dd-afd6-63bb649210d4",
+   "investigation_id": "351bb414-3ea4-4a51-ac91-3eb0d5e9de15",
+   "expected": {
+    "incident_expected": true,
+    "diagnosable": true,
+    "root_cause_service": "payment",
+    "failure_type": "memory_pressure",
+    "affected_services": [
+     "checkout",
+     "payment"
+    ],
+    "fault_window": {
+     "start": "2026-10-16T10:36:00Z",
+     "end": "2026-10-16T10:43:30Z"
+    },
+    "supporting_event_ids": []
+   },
+   "observed": {
+    "incident_ids": [
+     "49caeac2-ef58-424e-b444-8c7047f22a87"
+    ],
+    "investigation_id": "351bb414-3ea4-4a51-ac91-3eb0d5e9de15",
+    "investigation_status": "completed",
+    "diagnosis_status": "diagnosed",
+    "root_cause_service": "payment",
+    "failure_type": "downstream_timeout",
+    "cited_signal_ids": [
+     "c9db9070-ff8a-5482-bab4-4b5dcd9660ba",
+     "3c33aed5-3c02-545b-9609-c1544d821531",
+     "f2200124-3c64-5fc2-b148-acc75605c154",
+     "1dd3186d-6d4d-5c38-b7e7-2ef51d6625d5",
+     "1f97e20a-5d3e-5673-942e-17a9e8e3d4f1",
+     "ad76e002-5426-5704-bfbb-16afd976baff",
+     "6016a051-02d9-5300-a76b-7c1d987f2a3e",
+     "40be70c6-37bf-57f3-a8ce-099d2c504d8a",
+     "267e5071-4b46-5506-ac7a-e2586848a52b",
+     "a136ea7f-a44a-56ea-87e3-53bb87eec7c9"
+    ],
+    "cited_event_ids": [
+     "payment-span-59b85fbbe7082a1774fc",
+     "payment-span-20615155e5154047cdb9",
+     "payment-span-a3fb044d163d4ebd3bff",
+     "payment-span-8f841a1f594c54677044",
+     "payment-span-a3d6e297cae986e0a3a0",
+     "payment-span-d8787ac53b28ff9d6927",
+     "payment-span-76f8288ddcb060ba450b",
+     "payment-span-ae541ae74a00cd7c981f",
+     "payment-span-635a83a2e251d1fda303",
+     "payment-span-645ea34deb430c6d32a3"
+    ],
+    "detected_at": "2026-10-16T10:37:30Z",
+    "started_at": "2026-11-08T17:30:42.530857Z",
+    "completed_at": "2026-11-08T17:32:09.177016Z",
+    "spent_microusd": 135152,
+    "unknown_reserved_microusd": 0,
+    "model_calls": 9
+   },
+   "scores": {
+    "outcome_correct": false,
+    "root_cause_correct": false,
+    "abstained": false,
+    "false_diagnosis": true,
+    "correct_abstention": null,
+    "cited": 10,
+    "cited_supported": 10,
+    "evidence_precision": 1.0,
+    "unsupported_diagnosis": false,
+    "latency_seconds": 86.646
+   },
+   "error": null
+  },
+  {
+   "id": "6e44ec97-de0a-4673-9499-f5a89302a7b3",
+   "case_key": "memory-pressure/held-out@1/single_agent/1",
+   "scenario_name": "memory-pressure/held-out",
+   "scenario_version": "1",
+   "family": "memory_pressure",
+   "split": "held_out",
+   "synthetic": true,
+   "variant": "single_agent",
+   "trial": 1,
+   "status": "scored",
+   "replay_scope": "replay:7fed13bd-4b1f-49dd-afd6-63bb649210d4",
+   "investigation_id": "72498a98-ecdb-4cc2-abb8-85ff2f14885b",
+   "expected": {
+    "incident_expected": true,
+    "diagnosable": true,
+    "root_cause_service": "payment",
+    "failure_type": "memory_pressure",
+    "affected_services": [
+     "checkout",
+     "payment"
+    ],
+    "fault_window": {
+     "start": "2026-10-16T10:36:00Z",
+     "end": "2026-10-16T10:43:30Z"
+    },
+    "supporting_event_ids": []
+   },
+   "observed": {
+    "incident_ids": [
+     "49caeac2-ef58-424e-b444-8c7047f22a87"
+    ],
+    "investigation_id": "72498a98-ecdb-4cc2-abb8-85ff2f14885b",
+    "investigation_status": "completed",
+    "diagnosis_status": "diagnosed",
+    "root_cause_service": "payment",
+    "failure_type": "downstream_timeout",
+    "cited_signal_ids": [
+     "c9db9070-ff8a-5482-bab4-4b5dcd9660ba",
+     "3c33aed5-3c02-545b-9609-c1544d821531",
+     "f2200124-3c64-5fc2-b148-acc75605c154",
+     "1dd3186d-6d4d-5c38-b7e7-2ef51d6625d5",
+     "1f97e20a-5d3e-5673-942e-17a9e8e3d4f1",
+     "ad76e002-5426-5704-bfbb-16afd976baff",
+     "6016a051-02d9-5300-a76b-7c1d987f2a3e",
+     "40be70c6-37bf-57f3-a8ce-099d2c504d8a",
+     "267e5071-4b46-5506-ac7a-e2586848a52b",
+     "a136ea7f-a44a-56ea-87e3-53bb87eec7c9"
+    ],
+    "cited_event_ids": [
+     "payment-span-59b85fbbe7082a1774fc",
+     "payment-span-20615155e5154047cdb9",
+     "payment-span-a3fb044d163d4ebd3bff",
+     "payment-span-8f841a1f594c54677044",
+     "payment-span-a3d6e297cae986e0a3a0",
+     "payment-span-d8787ac53b28ff9d6927",
+     "payment-span-76f8288ddcb060ba450b",
+     "payment-span-ae541ae74a00cd7c981f",
+     "payment-span-635a83a2e251d1fda303",
+     "payment-span-645ea34deb430c6d32a3"
+    ],
+    "detected_at": "2026-10-16T10:37:30Z",
+    "started_at": "2026-11-08T17:30:42.512706Z",
+    "completed_at": "2026-11-08T17:31:06.105696Z",
+    "spent_microusd": 79244,
+    "unknown_reserved_microusd": 0,
+    "model_calls": 3
+   },
+   "scores": {
+    "outcome_correct": false,
+    "root_cause_correct": false,
+    "abstained": false,
+    "false_diagnosis": true,
+    "correct_abstention": null,
+    "cited": 10,
+    "cited_supported": 10,
+    "evidence_precision": 1.0,
+    "unsupported_diagnosis": false,
+    "latency_seconds": 23.593
+   },
+   "error": null
+  },
+  {
+   "id": "e8533a2d-0e58-44ce-b617-8ebcb844ae68",
+   "case_key": "memory-pressure/held-out@1/single_agent/2",
+   "scenario_name": "memory-pressure/held-out",
+   "scenario_version": "1",
+   "family": "memory_pressure",
+   "split": "held_out",
+   "synthetic": true,
+   "variant": "single_agent",
+   "trial": 2,
+   "status": "scored",
+   "replay_scope": "replay:7fed13bd-4b1f-49dd-afd6-63bb649210d4",
+   "investigation_id": "d803d4e3-abee-421f-b755-76a0bf8a33e3",
+   "expected": {
+    "incident_expected": true,
+    "diagnosable": true,
+    "root_cause_service": "payment",
+    "failure_type": "memory_pressure",
+    "affected_services": [
+     "checkout",
+     "payment"
+    ],
+    "fault_window": {
+     "start": "2026-10-16T10:36:00Z",
+     "end": "2026-10-16T10:43:30Z"
+    },
+    "supporting_event_ids": []
+   },
+   "observed": {
+    "incident_ids": [
+     "49caeac2-ef58-424e-b444-8c7047f22a87"
+    ],
+    "investigation_id": "d803d4e3-abee-421f-b755-76a0bf8a33e3",
+    "investigation_status": "completed",
+    "diagnosis_status": "diagnosed",
+    "root_cause_service": "payment",
+    "failure_type": "downstream_timeout",
+    "cited_signal_ids": [
+     "c9db9070-ff8a-5482-bab4-4b5dcd9660ba",
+     "3c33aed5-3c02-545b-9609-c1544d821531",
+     "f2200124-3c64-5fc2-b148-acc75605c154",
+     "1dd3186d-6d4d-5c38-b7e7-2ef51d6625d5",
+     "1f97e20a-5d3e-5673-942e-17a9e8e3d4f1",
+     "ad76e002-5426-5704-bfbb-16afd976baff",
+     "6016a051-02d9-5300-a76b-7c1d987f2a3e",
+     "40be70c6-37bf-57f3-a8ce-099d2c504d8a",
+     "267e5071-4b46-5506-ac7a-e2586848a52b",
+     "a136ea7f-a44a-56ea-87e3-53bb87eec7c9"
+    ],
+    "cited_event_ids": [
+     "payment-span-59b85fbbe7082a1774fc",
+     "payment-span-20615155e5154047cdb9",
+     "payment-span-a3fb044d163d4ebd3bff",
+     "payment-span-8f841a1f594c54677044",
+     "payment-span-a3d6e297cae986e0a3a0",
+     "payment-span-d8787ac53b28ff9d6927",
+     "payment-span-76f8288ddcb060ba450b",
+     "payment-span-ae541ae74a00cd7c981f",
+     "payment-span-635a83a2e251d1fda303",
+     "payment-span-645ea34deb430c6d32a3"
+    ],
+    "detected_at": "2026-10-16T10:37:30Z",
+    "started_at": "2026-11-08T17:30:42.518219Z",
+    "completed_at": "2026-11-08T17:31:03.071168Z",
+    "spent_microusd": 79244,
+    "unknown_reserved_microusd": 0,
+    "model_calls": 3
+   },
+   "scores": {
+    "outcome_correct": false,
+    "root_cause_correct": false,
+    "abstained": false,
+    "false_diagnosis": true,
+    "correct_abstention": null,
+    "cited": 10,
+    "cited_supported": 10,
+    "evidence_precision": 1.0,
+    "unsupported_diagnosis": false,
+    "latency_seconds": 20.553
+   },
+   "error": null
+  },
+  {
+   "id": "865f189e-d3f1-4840-89a0-f45446f0a101",
+   "case_key": "mixed-timeout-deploy/held-out@1/deterministic/1",
+   "scenario_name": "mixed-timeout-deploy/held-out",
+   "scenario_version": "1",
+   "family": "mixed",
+   "split": "held_out",
+   "synthetic": true,
+   "variant": "deterministic",
+   "trial": 1,
+   "status": "scored",
+   "replay_scope": "replay:9a36e043-bfa5-4f3a-93c0-8011cf6b8a3d",
+   "investigation_id": "63972039-f2a1-49b7-accf-31bf3b6cdf5e",
+   "expected": {
+    "incident_expected": true,
+    "diagnosable": true,
+    "root_cause_service": "bank-gateway",
+    "failure_type": "downstream_timeout",
+    "affected_services": [
+     "bank-gateway",
+     "checkout",
+     "payment"
+    ],
+    "fault_window": {
+     "start": "2026-10-16T10:33:30Z",
+     "end": "2026-10-16T10:37:30Z"
+    },
+    "supporting_event_ids": []
+   },
+   "observed": {
+    "incident_ids": [
+     "c36a20fa-60b8-43b5-afca-627b5c3ec907"
+    ],
+    "investigation_id": "63972039-f2a1-49b7-accf-31bf3b6cdf5e",
+    "investigation_status": "completed",
+    "diagnosis_status": "diagnosed",
+    "root_cause_service": "checkout",
+    "failure_type": "deployment_regression",
+    "cited_signal_ids": [
+     "861b6236-8816-5304-94d5-cdbdfa3f351f",
+     "e8bb99cf-f6bc-5a70-aa34-944b28fa96c6",
+     "fb050f8c-5679-5c9b-9e4d-06933c8dc0d3",
+     "935bd26f-0254-5b12-868a-9284899d3303",
+     "c31a47ad-65dd-5fa1-b8fb-8482eab0c0f5",
+     "22f3f2e5-541f-546a-a0f5-b48e5562ef62",
+     "58e104e5-f631-5951-a2a9-17a59b43c91c",
+     "a15eeea2-5ad8-5212-95a5-804dd9d7c5de",
+     "dbc5debd-8156-533c-bffe-778d2f13a568",
+     "bc36a7e1-1221-520b-81d2-cc2bbc2defab"
+    ],
+    "cited_event_ids": [
+     "checkout-deploy-f863f223aaf601915a33",
+     "checkout-log-d1ec426bbec45eb235c7",
+     "checkout-span-226b02ea0ab4cf20b5a5",
+     "checkout-log-6ad7350b06149375fc42",
+     "checkout-span-ef26823237a77b1bfb13",
+     "checkout-span-ba4720d6585831651877",
+     "checkout-log-fe516c38c9d2b0bbd9fd",
+     "checkout-span-f2d48355dbe387925386",
+     "checkout-log-d8605b3e11c3070b8c19",
+     "checkout-log-4c698fa1eb453217f01b"
+    ],
+    "detected_at": "2026-10-16T10:34:30Z",
+    "started_at": "2026-11-08T17:32:21.413093Z",
+    "completed_at": "2026-11-08T17:32:22.263713Z",
+    "spent_microusd": 0,
+    "unknown_reserved_microusd": 0,
+    "model_calls": 0
+   },
+   "scores": {
+    "outcome_correct": false,
+    "root_cause_correct": false,
+    "abstained": false,
+    "false_diagnosis": true,
+    "correct_abstention": null,
+    "cited": 10,
+    "cited_supported": 9,
+    "evidence_precision": 0.9,
+    "unsupported_diagnosis": false,
+    "latency_seconds": 0.851
+   },
+   "error": null
+  },
+  {
+   "id": "4765007b-7fc6-4d59-9d67-4ce926373309",
+   "case_key": "mixed-timeout-deploy/held-out@1/multi_agent/1",
+   "scenario_name": "mixed-timeout-deploy/held-out",
+   "scenario_version": "1",
+   "family": "mixed",
+   "split": "held_out",
+   "synthetic": true,
+   "variant": "multi_agent",
+   "trial": 1,
+   "status": "scored",
+   "replay_scope": "replay:9a36e043-bfa5-4f3a-93c0-8011cf6b8a3d",
+   "investigation_id": "162a8a71-3671-4c5c-928d-a5d01e1506c4",
+   "expected": {
+    "incident_expected": true,
+    "diagnosable": true,
+    "root_cause_service": "bank-gateway",
+    "failure_type": "downstream_timeout",
+    "affected_services": [
+     "bank-gateway",
+     "checkout",
+     "payment"
+    ],
+    "fault_window": {
+     "start": "2026-10-16T10:33:30Z",
+     "end": "2026-10-16T10:37:30Z"
+    },
+    "supporting_event_ids": []
+   },
+   "observed": {
+    "incident_ids": [
+     "c36a20fa-60b8-43b5-afca-627b5c3ec907"
+    ],
+    "investigation_id": "162a8a71-3671-4c5c-928d-a5d01e1506c4",
+    "investigation_status": "completed",
+    "diagnosis_status": "diagnosed",
+    "root_cause_service": "bank-gateway",
+    "failure_type": "downstream_timeout",
+    "cited_signal_ids": [
+     "3668b598-c069-566a-b245-bad2553731f0",
+     "0f307ff9-4120-57bf-9d56-02b78487fa8a",
+     "a6563458-49a1-5ec7-b192-82c49ccb0a46",
+     "c71e06cb-8978-5b3c-8dfa-ab59b46e18dd",
+     "9f384b15-abad-5bad-a798-42e9de219b12",
+     "fbde3c8d-48af-5fc0-be7f-1f827b252370",
+     "bc1cc393-28f9-5b49-b55a-39d18951b86a",
+     "5d4fd184-68bb-5360-809b-432c4a7f6795",
+     "0cd96d02-3500-588b-ae09-8b932d84632f",
+     "5edc3b9d-2ca7-5a97-b87e-05d97675b862"
+    ],
+    "cited_event_ids": [
+     "bank-gateway-span-f04418dd26ab8f32f01f",
+     "bank-gateway-span-3842476c511c33e545c9",
+     "bank-gateway-span-f75a83254ca81c466fcc",
+     "bank-gateway-span-a608493b1040fee511c7",
+     "bank-gateway-span-68ae2d9ab494fa5335fe",
+     "bank-gateway-span-0ab4fb3e4a703872b3ee",
+     "bank-gateway-span-454faaa8f85526725dbc",
+     "bank-gateway-span-2ddf57761f10fd1acc86",
+     "bank-gateway-span-9cde439eff591c7ff872",
+     "bank-gateway-span-75ddd9c42c70efc0fc77"
+    ],
+    "detected_at": "2026-10-16T10:34:30Z",
+    "started_at": "2026-11-08T17:32:21.432967Z",
+    "completed_at": "2026-11-08T17:33:12.255119Z",
+    "spent_microusd": 144592,
+    "unknown_reserved_microusd": 0,
+    "model_calls": 9
+   },
+   "scores": {
+    "outcome_correct": true,
+    "root_cause_correct": true,
+    "abstained": false,
+    "false_diagnosis": false,
+    "correct_abstention": null,
+    "cited": 10,
+    "cited_supported": 10,
+    "evidence_precision": 1.0,
+    "unsupported_diagnosis": false,
+    "latency_seconds": 50.822
+   },
+   "error": null
+  },
+  {
+   "id": "1eae5dbd-0423-4b14-a3cd-bf0dcd4d866d",
+   "case_key": "mixed-timeout-deploy/held-out@1/multi_agent/2",
+   "scenario_name": "mixed-timeout-deploy/held-out",
+   "scenario_version": "1",
+   "family": "mixed",
+   "split": "held_out",
+   "synthetic": true,
+   "variant": "multi_agent",
+   "trial": 2,
+   "status": "scored",
+   "replay_scope": "replay:9a36e043-bfa5-4f3a-93c0-8011cf6b8a3d",
+   "investigation_id": "546597d8-4138-424c-8cf6-3f09637c32c3",
+   "expected": {
+    "incident_expected": true,
+    "diagnosable": true,
+    "root_cause_service": "bank-gateway",
+    "failure_type": "downstream_timeout",
+    "affected_services": [
+     "bank-gateway",
+     "checkout",
+     "payment"
+    ],
+    "fault_window": {
+     "start": "2026-10-16T10:33:30Z",
+     "end": "2026-10-16T10:37:30Z"
+    },
+    "supporting_event_ids": []
+   },
+   "observed": {
+    "incident_ids": [
+     "c36a20fa-60b8-43b5-afca-627b5c3ec907"
+    ],
+    "investigation_id": "546597d8-4138-424c-8cf6-3f09637c32c3",
+    "investigation_status": "completed",
+    "diagnosis_status": "diagnosed",
+    "root_cause_service": "bank-gateway",
+    "failure_type": "downstream_timeout",
+    "cited_signal_ids": [
+     "3668b598-c069-566a-b245-bad2553731f0",
+     "0f307ff9-4120-57bf-9d56-02b78487fa8a",
+     "a6563458-49a1-5ec7-b192-82c49ccb0a46",
+     "c71e06cb-8978-5b3c-8dfa-ab59b46e18dd",
+     "9f384b15-abad-5bad-a798-42e9de219b12",
+     "fbde3c8d-48af-5fc0-be7f-1f827b252370",
+     "bc1cc393-28f9-5b49-b55a-39d18951b86a",
+     "5d4fd184-68bb-5360-809b-432c4a7f6795",
+     "0cd96d02-3500-588b-ae09-8b932d84632f",
+     "5edc3b9d-2ca7-5a97-b87e-05d97675b862"
+    ],
+    "cited_event_ids": [
+     "bank-gateway-span-f04418dd26ab8f32f01f",
+     "bank-gateway-span-3842476c511c33e545c9",
+     "bank-gateway-span-f75a83254ca81c466fcc",
+     "bank-gateway-span-a608493b1040fee511c7",
+     "bank-gateway-span-68ae2d9ab494fa5335fe",
+     "bank-gateway-span-0ab4fb3e4a703872b3ee",
+     "bank-gateway-span-454faaa8f85526725dbc",
+     "bank-gateway-span-2ddf57761f10fd1acc86",
+     "bank-gateway-span-9cde439eff591c7ff872",
+     "bank-gateway-span-75ddd9c42c70efc0fc77"
+    ],
+    "detected_at": "2026-10-16T10:34:30Z",
+    "started_at": "2026-11-08T17:32:21.438726Z",
+    "completed_at": "2026-11-08T17:33:15.301378Z",
+    "spent_microusd": 144592,
+    "unknown_reserved_microusd": 0,
+    "model_calls": 9
+   },
+   "scores": {
+    "outcome_correct": true,
+    "root_cause_correct": true,
+    "abstained": false,
+    "false_diagnosis": false,
+    "correct_abstention": null,
+    "cited": 10,
+    "cited_supported": 10,
+    "evidence_precision": 1.0,
+    "unsupported_diagnosis": false,
+    "latency_seconds": 53.863
+   },
+   "error": null
+  },
+  {
+   "id": "baa95978-e42d-402e-8cd0-3c94971f9625",
+   "case_key": "mixed-timeout-deploy/held-out@1/single_agent/1",
+   "scenario_name": "mixed-timeout-deploy/held-out",
+   "scenario_version": "1",
+   "family": "mixed",
+   "split": "held_out",
+   "synthetic": true,
+   "variant": "single_agent",
+   "trial": 1,
+   "status": "scored",
+   "replay_scope": "replay:9a36e043-bfa5-4f3a-93c0-8011cf6b8a3d",
+   "investigation_id": "4bc65493-1782-4c7b-a83a-21aaa4f4716e",
+   "expected": {
+    "incident_expected": true,
+    "diagnosable": true,
+    "root_cause_service": "bank-gateway",
+    "failure_type": "downstream_timeout",
+    "affected_services": [
+     "bank-gateway",
+     "checkout",
+     "payment"
+    ],
+    "fault_window": {
+     "start": "2026-10-16T10:33:30Z",
+     "end": "2026-10-16T10:37:30Z"
+    },
+    "supporting_event_ids": []
+   },
+   "observed": {
+    "incident_ids": [
+     "c36a20fa-60b8-43b5-afca-627b5c3ec907"
+    ],
+    "investigation_id": "4bc65493-1782-4c7b-a83a-21aaa4f4716e",
+    "investigation_status": "completed",
+    "diagnosis_status": "diagnosed",
+    "root_cause_service": "bank-gateway",
+    "failure_type": "downstream_timeout",
+    "cited_signal_ids": [
+     "3668b598-c069-566a-b245-bad2553731f0",
+     "0f307ff9-4120-57bf-9d56-02b78487fa8a",
+     "a6563458-49a1-5ec7-b192-82c49ccb0a46",
+     "c71e06cb-8978-5b3c-8dfa-ab59b46e18dd",
+     "9f384b15-abad-5bad-a798-42e9de219b12",
+     "fbde3c8d-48af-5fc0-be7f-1f827b252370",
+     "bc1cc393-28f9-5b49-b55a-39d18951b86a",
+     "5d4fd184-68bb-5360-809b-432c4a7f6795",
+     "0cd96d02-3500-588b-ae09-8b932d84632f",
+     "5edc3b9d-2ca7-5a97-b87e-05d97675b862"
+    ],
+    "cited_event_ids": [
+     "bank-gateway-span-f04418dd26ab8f32f01f",
+     "bank-gateway-span-3842476c511c33e545c9",
+     "bank-gateway-span-f75a83254ca81c466fcc",
+     "bank-gateway-span-a608493b1040fee511c7",
+     "bank-gateway-span-68ae2d9ab494fa5335fe",
+     "bank-gateway-span-0ab4fb3e4a703872b3ee",
+     "bank-gateway-span-454faaa8f85526725dbc",
+     "bank-gateway-span-2ddf57761f10fd1acc86",
+     "bank-gateway-span-9cde439eff591c7ff872",
+     "bank-gateway-span-75ddd9c42c70efc0fc77"
+    ],
+    "detected_at": "2026-10-16T10:34:30Z",
+    "started_at": "2026-11-08T17:32:21.420673Z",
+    "completed_at": "2026-11-08T17:32:31.404086Z",
+    "spent_microusd": 80736,
+    "unknown_reserved_microusd": 0,
+    "model_calls": 3
+   },
+   "scores": {
+    "outcome_correct": true,
+    "root_cause_correct": true,
+    "abstained": false,
+    "false_diagnosis": false,
+    "correct_abstention": null,
+    "cited": 10,
+    "cited_supported": 10,
+    "evidence_precision": 1.0,
+    "unsupported_diagnosis": false,
+    "latency_seconds": 9.983
+   },
+   "error": null
+  },
+  {
+   "id": "798a190c-1ec0-4b3a-90ea-f8517735b11e",
+   "case_key": "mixed-timeout-deploy/held-out@1/single_agent/2",
+   "scenario_name": "mixed-timeout-deploy/held-out",
+   "scenario_version": "1",
+   "family": "mixed",
+   "split": "held_out",
+   "synthetic": true,
+   "variant": "single_agent",
+   "trial": 2,
+   "status": "scored",
+   "replay_scope": "replay:9a36e043-bfa5-4f3a-93c0-8011cf6b8a3d",
+   "investigation_id": "de679970-5955-4e3a-8306-d0da340d3967",
+   "expected": {
+    "incident_expected": true,
+    "diagnosable": true,
+    "root_cause_service": "bank-gateway",
+    "failure_type": "downstream_timeout",
+    "affected_services": [
+     "bank-gateway",
+     "checkout",
+     "payment"
+    ],
+    "fault_window": {
+     "start": "2026-10-16T10:33:30Z",
+     "end": "2026-10-16T10:37:30Z"
+    },
+    "supporting_event_ids": []
+   },
+   "observed": {
+    "incident_ids": [
+     "c36a20fa-60b8-43b5-afca-627b5c3ec907"
+    ],
+    "investigation_id": "de679970-5955-4e3a-8306-d0da340d3967",
+    "investigation_status": "completed",
+    "diagnosis_status": "diagnosed",
+    "root_cause_service": "bank-gateway",
+    "failure_type": "downstream_timeout",
+    "cited_signal_ids": [
+     "3668b598-c069-566a-b245-bad2553731f0",
+     "0f307ff9-4120-57bf-9d56-02b78487fa8a",
+     "a6563458-49a1-5ec7-b192-82c49ccb0a46",
+     "c71e06cb-8978-5b3c-8dfa-ab59b46e18dd",
+     "9f384b15-abad-5bad-a798-42e9de219b12",
+     "fbde3c8d-48af-5fc0-be7f-1f827b252370",
+     "bc1cc393-28f9-5b49-b55a-39d18951b86a",
+     "5d4fd184-68bb-5360-809b-432c4a7f6795",
+     "0cd96d02-3500-588b-ae09-8b932d84632f",
+     "5edc3b9d-2ca7-5a97-b87e-05d97675b862"
+    ],
+    "cited_event_ids": [
+     "bank-gateway-span-f04418dd26ab8f32f01f",
+     "bank-gateway-span-3842476c511c33e545c9",
+     "bank-gateway-span-f75a83254ca81c466fcc",
+     "bank-gateway-span-a608493b1040fee511c7",
+     "bank-gateway-span-68ae2d9ab494fa5335fe",
+     "bank-gateway-span-0ab4fb3e4a703872b3ee",
+     "bank-gateway-span-454faaa8f85526725dbc",
+     "bank-gateway-span-2ddf57761f10fd1acc86",
+     "bank-gateway-span-9cde439eff591c7ff872",
+     "bank-gateway-span-75ddd9c42c70efc0fc77"
+    ],
+    "detected_at": "2026-10-16T10:34:30Z",
+    "started_at": "2026-11-08T17:32:21.426932Z",
+    "completed_at": "2026-11-08T17:32:31.415667Z",
+    "spent_microusd": 80736,
+    "unknown_reserved_microusd": 0,
+    "model_calls": 3
+   },
+   "scores": {
+    "outcome_correct": true,
+    "root_cause_correct": true,
+    "abstained": false,
+    "false_diagnosis": false,
+    "correct_abstention": null,
+    "cited": 10,
+    "cited_supported": 10,
+    "evidence_precision": 1.0,
+    "unsupported_diagnosis": false,
+    "latency_seconds": 9.989
+   },
+   "error": null
+  },
+  {
+   "id": "f54c517a-9cf7-476d-973b-3be706c3ddec",
+   "case_key": "pool-exhaustion/held-out@1/deterministic/1",
+   "scenario_name": "pool-exhaustion/held-out",
+   "scenario_version": "1",
+   "family": "connection_pool_exhaustion",
+   "split": "held_out",
+   "synthetic": true,
+   "variant": "deterministic",
+   "trial": 1,
+   "status": "scored",
+   "replay_scope": "replay:5ed41052-3a4a-43c4-a362-3b29f857d0d6",
+   "investigation_id": "60114ebe-47d0-4c9a-92ed-91aef901ecd9",
+   "expected": {
+    "incident_expected": true,
+    "diagnosable": true,
+    "root_cause_service": "payment",
+    "failure_type": "connection_pool_exhaustion",
+    "affected_services": [
+     "checkout",
+     "payment"
+    ],
+    "fault_window": {
+     "start": "2026-10-16T10:34:30Z",
+     "end": "2026-10-16T10:38:30Z"
+    },
+    "supporting_event_ids": []
+   },
+   "observed": {
+    "incident_ids": [
+     "1149e20d-f65d-44b7-beb8-e7f4a54ead20"
+    ],
+    "investigation_id": "60114ebe-47d0-4c9a-92ed-91aef901ecd9",
+    "investigation_status": "completed",
+    "diagnosis_status": "diagnosed",
+    "root_cause_service": "checkout",
+    "failure_type": "elevated_errors",
+    "cited_signal_ids": [
+     "4d212b28-8ea3-5fa9-b162-06da2fa7ade4",
+     "9cdb3158-13e0-5d7a-bc71-796c4f5c077c",
+     "4be8ac1a-96f2-5443-ba81-906b710253ba",
+     "79dd89f8-08b0-5356-8bd3-b624d90696a0",
+     "4cdeb477-0f94-50e6-b5d9-6fc2d44f0521",
+     "ba714d62-d28b-502f-b350-0dfe3d36ae93",
+     "23ca8696-50f1-5623-8865-2b40fee81639",
+     "948879c2-8aa6-5816-a178-7ce9eb79a41f",
+     "f1c95d81-ab60-5810-8b2f-0a0bed1b9dce",
+     "f6da627c-dc0f-553c-bad0-88ffb9cd8c50"
+    ],
+    "cited_event_ids": [
+     "checkout-log-36cb5f627dae4466a516",
+     "checkout-span-3e877aa992d415a2da56",
+     "checkout-log-acd62ceece47d802e8c3",
+     "checkout-span-f9774f7d775c9795f273",
+     "checkout-span-1c24fece99c97c63283e",
+     "checkout-log-68b84115679d230170d1",
+     "checkout-log-6e0b25aff6b5eae667ba",
+     "checkout-span-714b7d5f72cc309f0fcf",
+     "checkout-log-bd62ec22d07984520b72",
+     "checkout-span-1207ca5aab1d779fd6c5"
+    ],
+    "detected_at": "2026-10-16T10:35:30Z",
+    "started_at": "2026-11-08T17:33:26.106913Z",
+    "completed_at": "2026-11-08T17:33:26.362832Z",
+    "spent_microusd": 0,
+    "unknown_reserved_microusd": 0,
+    "model_calls": 0
+   },
+   "scores": {
+    "outcome_correct": false,
+    "root_cause_correct": false,
+    "abstained": false,
+    "false_diagnosis": true,
+    "correct_abstention": null,
+    "cited": 10,
+    "cited_supported": 10,
+    "evidence_precision": 1.0,
+    "unsupported_diagnosis": false,
+    "latency_seconds": 0.256
+   },
+   "error": null
+  },
+  {
+   "id": "596c75a6-9a47-4c78-95df-e47f7d85e37b",
+   "case_key": "pool-exhaustion/held-out@1/multi_agent/1",
+   "scenario_name": "pool-exhaustion/held-out",
+   "scenario_version": "1",
+   "family": "connection_pool_exhaustion",
+   "split": "held_out",
+   "synthetic": true,
+   "variant": "multi_agent",
+   "trial": 1,
+   "status": "scored",
+   "replay_scope": "replay:5ed41052-3a4a-43c4-a362-3b29f857d0d6",
+   "investigation_id": "4acb8262-59a4-47fb-a785-befdffc450cb",
+   "expected": {
+    "incident_expected": true,
+    "diagnosable": true,
+    "root_cause_service": "payment",
+    "failure_type": "connection_pool_exhaustion",
+    "affected_services": [
+     "checkout",
+     "payment"
+    ],
+    "fault_window": {
+     "start": "2026-10-16T10:34:30Z",
+     "end": "2026-10-16T10:38:30Z"
+    },
+    "supporting_event_ids": []
+   },
+   "observed": {
+    "incident_ids": [
+     "1149e20d-f65d-44b7-beb8-e7f4a54ead20"
+    ],
+    "investigation_id": "4acb8262-59a4-47fb-a785-befdffc450cb",
+    "investigation_status": "completed",
+    "diagnosis_status": "diagnosed",
+    "root_cause_service": "payment",
+    "failure_type": "elevated_errors",
+    "cited_signal_ids": [
+     "0a111421-ec51-5008-8604-789b32f57e1b",
+     "480b02ed-0436-5f15-8582-70b380403a17",
+     "14290f47-ca04-54d0-8e04-f83c5a35863b",
+     "46186e72-6d86-5be0-9b96-0d5b7e4975ae",
+     "71295525-6cff-5779-a44a-3ac4d97f3c19",
+     "1fcf0125-48ee-5b42-840f-71290f0a58ff",
+     "a24ba293-5241-5ff9-9d82-6207584cc7c2",
+     "9dc78a01-dedd-5d04-abe9-6b6a6cf15121",
+     "fe8c9654-3fd3-5fae-97c6-12ed78a9f657",
+     "6097e8e6-f304-5fd0-8f23-93c73a38825a"
+    ],
+    "cited_event_ids": [
+     "payment-span-0d5edaa9f57d2d519c25",
+     "payment-span-5592882625e43ffcd74b",
+     "payment-span-82f82ca2695a60794a26",
+     "payment-span-e8e13a3cfc7b7c7d5d32",
+     "payment-span-d9f7b86054429d098bad",
+     "payment-span-96878ea8dbc79bac471c",
+     "payment-span-0997378a28b5946a11fa",
+     "payment-span-68e95f91a5f9a285a5d2",
+     "payment-span-b712ea4c8b297e7c4a47",
+     "payment-span-c61d6952503577709e18"
+    ],
+    "detected_at": "2026-10-16T10:35:30Z",
+    "started_at": "2026-11-08T17:33:26.122654Z",
+    "completed_at": "2026-11-08T17:34:12.255261Z",
+    "spent_microusd": 101344,
+    "unknown_reserved_microusd": 0,
+    "model_calls": 8
+   },
+   "scores": {
+    "outcome_correct": false,
+    "root_cause_correct": false,
+    "abstained": false,
+    "false_diagnosis": true,
+    "correct_abstention": null,
+    "cited": 10,
+    "cited_supported": 10,
+    "evidence_precision": 1.0,
+    "unsupported_diagnosis": false,
+    "latency_seconds": 46.133
+   },
+   "error": null
+  },
+  {
+   "id": "18353006-93dd-42cc-9dc2-27c6fda86d81",
+   "case_key": "pool-exhaustion/held-out@1/multi_agent/2",
+   "scenario_name": "pool-exhaustion/held-out",
+   "scenario_version": "1",
+   "family": "connection_pool_exhaustion",
+   "split": "held_out",
+   "synthetic": true,
+   "variant": "multi_agent",
+   "trial": 2,
+   "status": "scored",
+   "replay_scope": "replay:5ed41052-3a4a-43c4-a362-3b29f857d0d6",
+   "investigation_id": "65953733-4adb-450d-b7d2-a25e30818dd1",
+   "expected": {
+    "incident_expected": true,
+    "diagnosable": true,
+    "root_cause_service": "payment",
+    "failure_type": "connection_pool_exhaustion",
+    "affected_services": [
+     "checkout",
+     "payment"
+    ],
+    "fault_window": {
+     "start": "2026-10-16T10:34:30Z",
+     "end": "2026-10-16T10:38:30Z"
+    },
+    "supporting_event_ids": []
+   },
+   "observed": {
+    "incident_ids": [
+     "1149e20d-f65d-44b7-beb8-e7f4a54ead20"
+    ],
+    "investigation_id": "65953733-4adb-450d-b7d2-a25e30818dd1",
+    "investigation_status": "completed",
+    "diagnosis_status": "diagnosed",
+    "root_cause_service": "payment",
+    "failure_type": "elevated_errors",
+    "cited_signal_ids": [
+     "0a111421-ec51-5008-8604-789b32f57e1b",
+     "480b02ed-0436-5f15-8582-70b380403a17",
+     "14290f47-ca04-54d0-8e04-f83c5a35863b",
+     "46186e72-6d86-5be0-9b96-0d5b7e4975ae",
+     "71295525-6cff-5779-a44a-3ac4d97f3c19",
+     "1fcf0125-48ee-5b42-840f-71290f0a58ff",
+     "a24ba293-5241-5ff9-9d82-6207584cc7c2",
+     "9dc78a01-dedd-5d04-abe9-6b6a6cf15121",
+     "fe8c9654-3fd3-5fae-97c6-12ed78a9f657",
+     "6097e8e6-f304-5fd0-8f23-93c73a38825a"
+    ],
+    "cited_event_ids": [
+     "payment-span-0d5edaa9f57d2d519c25",
+     "payment-span-5592882625e43ffcd74b",
+     "payment-span-82f82ca2695a60794a26",
+     "payment-span-e8e13a3cfc7b7c7d5d32",
+     "payment-span-d9f7b86054429d098bad",
+     "payment-span-96878ea8dbc79bac471c",
+     "payment-span-0997378a28b5946a11fa",
+     "payment-span-68e95f91a5f9a285a5d2",
+     "payment-span-b712ea4c8b297e7c4a47",
+     "payment-span-c61d6952503577709e18"
+    ],
+    "detected_at": "2026-10-16T10:35:30Z",
+    "started_at": "2026-11-08T17:33:26.127531Z",
+    "completed_at": "2026-11-08T17:34:18.337512Z",
+    "spent_microusd": 101344,
+    "unknown_reserved_microusd": 0,
+    "model_calls": 8
+   },
+   "scores": {
+    "outcome_correct": false,
+    "root_cause_correct": false,
+    "abstained": false,
+    "false_diagnosis": true,
+    "correct_abstention": null,
+    "cited": 10,
+    "cited_supported": 10,
+    "evidence_precision": 1.0,
+    "unsupported_diagnosis": false,
+    "latency_seconds": 52.21
+   },
+   "error": null
+  },
+  {
+   "id": "26874c5f-4e9e-447b-ae06-137d4ec76e18",
+   "case_key": "pool-exhaustion/held-out@1/single_agent/1",
+   "scenario_name": "pool-exhaustion/held-out",
+   "scenario_version": "1",
+   "family": "connection_pool_exhaustion",
+   "split": "held_out",
+   "synthetic": true,
+   "variant": "single_agent",
+   "trial": 1,
+   "status": "scored",
+   "replay_scope": "replay:5ed41052-3a4a-43c4-a362-3b29f857d0d6",
+   "investigation_id": "7f8e9221-a35e-437b-be79-3eafe3b8c8d6",
+   "expected": {
+    "incident_expected": true,
+    "diagnosable": true,
+    "root_cause_service": "payment",
+    "failure_type": "connection_pool_exhaustion",
+    "affected_services": [
+     "checkout",
+     "payment"
+    ],
+    "fault_window": {
+     "start": "2026-10-16T10:34:30Z",
+     "end": "2026-10-16T10:38:30Z"
+    },
+    "supporting_event_ids": []
+   },
+   "observed": {
+    "incident_ids": [
+     "1149e20d-f65d-44b7-beb8-e7f4a54ead20"
+    ],
+    "investigation_id": "7f8e9221-a35e-437b-be79-3eafe3b8c8d6",
+    "investigation_status": "completed",
+    "diagnosis_status": "diagnosed",
+    "root_cause_service": "payment",
+    "failure_type": "elevated_errors",
+    "cited_signal_ids": [
+     "0a111421-ec51-5008-8604-789b32f57e1b",
+     "480b02ed-0436-5f15-8582-70b380403a17",
+     "14290f47-ca04-54d0-8e04-f83c5a35863b",
+     "46186e72-6d86-5be0-9b96-0d5b7e4975ae",
+     "71295525-6cff-5779-a44a-3ac4d97f3c19",
+     "1fcf0125-48ee-5b42-840f-71290f0a58ff",
+     "a24ba293-5241-5ff9-9d82-6207584cc7c2",
+     "9dc78a01-dedd-5d04-abe9-6b6a6cf15121",
+     "fe8c9654-3fd3-5fae-97c6-12ed78a9f657",
+     "6097e8e6-f304-5fd0-8f23-93c73a38825a"
+    ],
+    "cited_event_ids": [
+     "payment-span-0d5edaa9f57d2d519c25",
+     "payment-span-5592882625e43ffcd74b",
+     "payment-span-82f82ca2695a60794a26",
+     "payment-span-e8e13a3cfc7b7c7d5d32",
+     "payment-span-d9f7b86054429d098bad",
+     "payment-span-96878ea8dbc79bac471c",
+     "payment-span-0997378a28b5946a11fa",
+     "payment-span-68e95f91a5f9a285a5d2",
+     "payment-span-b712ea4c8b297e7c4a47",
+     "payment-span-c61d6952503577709e18"
+    ],
+    "detected_at": "2026-10-16T10:35:30Z",
+    "started_at": "2026-11-08T17:33:26.112851Z",
+    "completed_at": "2026-11-08T17:33:32.490285Z",
+    "spent_microusd": 43032,
+    "unknown_reserved_microusd": 0,
+    "model_calls": 2
+   },
+   "scores": {
+    "outcome_correct": false,
+    "root_cause_correct": false,
+    "abstained": false,
+    "false_diagnosis": true,
+    "correct_abstention": null,
+    "cited": 10,
+    "cited_supported": 10,
+    "evidence_precision": 1.0,
+    "unsupported_diagnosis": false,
+    "latency_seconds": 6.377
+   },
+   "error": null
+  },
+  {
+   "id": "5c16683a-c212-4060-8b2a-be4d2c9f8868",
+   "case_key": "pool-exhaustion/held-out@1/single_agent/2",
+   "scenario_name": "pool-exhaustion/held-out",
+   "scenario_version": "1",
+   "family": "connection_pool_exhaustion",
+   "split": "held_out",
+   "synthetic": true,
+   "variant": "single_agent",
+   "trial": 2,
+   "status": "scored",
+   "replay_scope": "replay:5ed41052-3a4a-43c4-a362-3b29f857d0d6",
+   "investigation_id": "5b5b9e36-db15-4124-84f4-c3f1dc32e148",
+   "expected": {
+    "incident_expected": true,
+    "diagnosable": true,
+    "root_cause_service": "payment",
+    "failure_type": "connection_pool_exhaustion",
+    "affected_services": [
+     "checkout",
+     "payment"
+    ],
+    "fault_window": {
+     "start": "2026-10-16T10:34:30Z",
+     "end": "2026-10-16T10:38:30Z"
+    },
+    "supporting_event_ids": []
+   },
+   "observed": {
+    "incident_ids": [
+     "1149e20d-f65d-44b7-beb8-e7f4a54ead20"
+    ],
+    "investigation_id": "5b5b9e36-db15-4124-84f4-c3f1dc32e148",
+    "investigation_status": "completed",
+    "diagnosis_status": "diagnosed",
+    "root_cause_service": "payment",
+    "failure_type": "elevated_errors",
+    "cited_signal_ids": [
+     "0a111421-ec51-5008-8604-789b32f57e1b",
+     "480b02ed-0436-5f15-8582-70b380403a17",
+     "14290f47-ca04-54d0-8e04-f83c5a35863b",
+     "46186e72-6d86-5be0-9b96-0d5b7e4975ae",
+     "71295525-6cff-5779-a44a-3ac4d97f3c19",
+     "1fcf0125-48ee-5b42-840f-71290f0a58ff",
+     "a24ba293-5241-5ff9-9d82-6207584cc7c2",
+     "9dc78a01-dedd-5d04-abe9-6b6a6cf15121",
+     "fe8c9654-3fd3-5fae-97c6-12ed78a9f657",
+     "6097e8e6-f304-5fd0-8f23-93c73a38825a"
+    ],
+    "cited_event_ids": [
+     "payment-span-0d5edaa9f57d2d519c25",
+     "payment-span-5592882625e43ffcd74b",
+     "payment-span-82f82ca2695a60794a26",
+     "payment-span-e8e13a3cfc7b7c7d5d32",
+     "payment-span-d9f7b86054429d098bad",
+     "payment-span-96878ea8dbc79bac471c",
+     "payment-span-0997378a28b5946a11fa",
+     "payment-span-68e95f91a5f9a285a5d2",
+     "payment-span-b712ea4c8b297e7c4a47",
+     "payment-span-c61d6952503577709e18"
+    ],
+    "detected_at": "2026-10-16T10:35:30Z",
+    "started_at": "2026-11-08T17:33:26.117912Z",
+    "completed_at": "2026-11-08T17:33:32.495257Z",
+    "spent_microusd": 43032,
+    "unknown_reserved_microusd": 0,
+    "model_calls": 2
+   },
+   "scores": {
+    "outcome_correct": false,
+    "root_cause_correct": false,
+    "abstained": false,
+    "false_diagnosis": true,
+    "correct_abstention": null,
+    "cited": 10,
+    "cited_supported": 10,
+    "evidence_precision": 1.0,
+    "unsupported_diagnosis": false,
+    "latency_seconds": 6.377
+   },
+   "error": null
+  },
+  {
+   "id": "42ad8574-440d-421f-8e05-c9c6307c8c5f",
+   "case_key": "unexplained-errors/held-out@1/deterministic/1",
+   "scenario_name": "unexplained-errors/held-out",
+   "scenario_version": "1",
+   "family": "insufficient_evidence",
+   "split": "held_out",
+   "synthetic": true,
+   "variant": "deterministic",
+   "trial": 1,
+   "status": "scored",
+   "replay_scope": "replay:850266cb-94ca-43c0-a9a2-ffede45e33a4",
+   "investigation_id": "3ba56637-9855-4b2d-82b4-7c6a03ac25c9",
+   "expected": {
+    "incident_expected": true,
+    "diagnosable": false,
+    "root_cause_service": null,
+    "failure_type": null,
+    "affected_services": [
+     "checkout"
+    ],
+    "fault_window": {
+     "start": "2026-10-16T10:34:00Z",
+     "end": "2026-10-16T10:38:00Z"
+    },
+    "supporting_event_ids": []
+   },
+   "observed": {
+    "incident_ids": [
+     "983cbe18-d516-4254-9a4b-168cc8a0d782"
+    ],
+    "investigation_id": "3ba56637-9855-4b2d-82b4-7c6a03ac25c9",
+    "investigation_status": "completed",
+    "diagnosis_status": "diagnosed",
+    "root_cause_service": "checkout",
+    "failure_type": "elevated_errors",
+    "cited_signal_ids": [
+     "73c7173f-aa79-53a2-ac07-2cfa138f2e6d",
+     "e5a22030-02e3-58cf-88c4-c4703dc95185",
+     "7f7def48-f341-58ff-a924-12f40e944c33",
+     "ea3930ce-622f-5452-9fce-d4b817215819",
+     "3eefdbdf-34ca-573e-9574-5599b8d836e0",
+     "57ed6ee3-2055-5961-85ed-45c92ebc116a",
+     "739fcc2f-8887-5be5-b5aa-2c8e844e8d1a",
+     "88293d4f-ac8b-568d-a951-64e55a49647c",
+     "16bc04dd-c84e-5467-aa15-0df6f0ba4405",
+     "7dd00386-91a0-5d80-a807-5bc6e744c96c"
+    ],
+    "cited_event_ids": [
+     "checkout-log-7267f35722bcd6ade2e3",
+     "checkout-span-ece0a450b8b76ea3c1e4",
+     "checkout-span-48200f0ed123086873bf",
+     "checkout-log-af082d1ae6281e8225ec",
+     "checkout-log-d3eb4c05440584d5c3b5",
+     "checkout-span-d1e1643677faff5fdbaf",
+     "checkout-span-0eb15360110f286c4c71",
+     "checkout-log-131733af4a19c991198c",
+     "checkout-log-c6871af9af007f694767",
+     "checkout-span-a939e4bb1abcace2e597"
+    ],
+    "detected_at": "2026-10-16T10:35:30Z",
+    "started_at": "2026-11-08T17:34:27.179439Z",
+    "completed_at": "2026-11-08T17:34:27.361854Z",
+    "spent_microusd": 0,
+    "unknown_reserved_microusd": 0,
+    "model_calls": 0
+   },
+   "scores": {
+    "outcome_correct": false,
+    "root_cause_correct": null,
+    "abstained": false,
+    "false_diagnosis": true,
+    "correct_abstention": false,
+    "cited": 10,
+    "cited_supported": 10,
+    "evidence_precision": 1.0,
+    "unsupported_diagnosis": false,
+    "latency_seconds": 0.182
+   },
+   "error": null
+  },
+  {
+   "id": "0c32a09a-8347-4ee1-85ae-0f1461b0eb92",
+   "case_key": "unexplained-errors/held-out@1/multi_agent/1",
+   "scenario_name": "unexplained-errors/held-out",
+   "scenario_version": "1",
+   "family": "insufficient_evidence",
+   "split": "held_out",
+   "synthetic": true,
+   "variant": "multi_agent",
+   "trial": 1,
+   "status": "scored",
+   "replay_scope": "replay:850266cb-94ca-43c0-a9a2-ffede45e33a4",
+   "investigation_id": "9e5733e3-943b-42de-b6de-6617fb712665",
+   "expected": {
+    "incident_expected": true,
+    "diagnosable": false,
+    "root_cause_service": null,
+    "failure_type": null,
+    "affected_services": [
+     "checkout"
+    ],
+    "fault_window": {
+     "start": "2026-10-16T10:34:00Z",
+     "end": "2026-10-16T10:38:00Z"
+    },
+    "supporting_event_ids": []
+   },
+   "observed": {
+    "incident_ids": [
+     "983cbe18-d516-4254-9a4b-168cc8a0d782"
+    ],
+    "investigation_id": "9e5733e3-943b-42de-b6de-6617fb712665",
+    "investigation_status": "completed",
+    "diagnosis_status": "diagnosed",
+    "root_cause_service": "checkout",
+    "failure_type": "elevated_errors",
+    "cited_signal_ids": [
+     "44972bb6-6187-5251-9a4f-8f2f6acb50e5",
+     "93203412-44d1-5df1-9390-1cc7ce029292",
+     "b59c3b59-e299-5c03-9dd5-b0cc8fdae285",
+     "74e40785-c8d7-58c1-b471-9a5beb7d09f7",
+     "a644daed-ac80-5a7c-bacd-7c62887f00ba",
+     "b7a522c3-2ba8-5db5-9e0f-13ffdb4cdf47",
+     "b1391045-cbe8-5fe6-9172-f05fa94cfd17",
+     "7dd00386-91a0-5d80-a807-5bc6e744c96c",
+     "739fcc2f-8887-5be5-b5aa-2c8e844e8d1a",
+     "57ed6ee3-2055-5961-85ed-45c92ebc116a"
+    ],
+    "cited_event_ids": [
+     "checkout-span-ed78e64660a3f85d606c",
+     "checkout-span-ee0e60df785005e65e68",
+     "checkout-span-b95d1496cc87ef88ff25",
+     "checkout-span-914d265dc6b99644d369",
+     "checkout-span-78a02361fcde4dbb6833",
+     "checkout-span-f2df3afa480fe2c29f3f",
+     "checkout-span-d9b3d76789a5a9e658b5",
+     "checkout-span-a939e4bb1abcace2e597",
+     "checkout-span-0eb15360110f286c4c71",
+     "checkout-span-d1e1643677faff5fdbaf"
+    ],
+    "detected_at": "2026-10-16T10:35:30Z",
+    "started_at": "2026-11-08T17:34:27.204374Z",
+    "completed_at": "2026-11-08T17:35:12.257978Z",
+    "spent_microusd": 93016,
+    "unknown_reserved_microusd": 0,
+    "model_calls": 8
+   },
+   "scores": {
+    "outcome_correct": false,
+    "root_cause_correct": null,
+    "abstained": false,
+    "false_diagnosis": true,
+    "correct_abstention": false,
+    "cited": 10,
+    "cited_supported": 10,
+    "evidence_precision": 1.0,
+    "unsupported_diagnosis": false,
+    "latency_seconds": 45.054
+   },
+   "error": null
+  },
+  {
+   "id": "5aa4157a-f847-4254-a597-b271db520b33",
+   "case_key": "unexplained-errors/held-out@1/multi_agent/2",
+   "scenario_name": "unexplained-errors/held-out",
+   "scenario_version": "1",
+   "family": "insufficient_evidence",
+   "split": "held_out",
+   "synthetic": true,
+   "variant": "multi_agent",
+   "trial": 2,
+   "status": "scored",
+   "replay_scope": "replay:850266cb-94ca-43c0-a9a2-ffede45e33a4",
+   "investigation_id": "3aebf813-4f18-468e-ad28-d3041a094abc",
+   "expected": {
+    "incident_expected": true,
+    "diagnosable": false,
+    "root_cause_service": null,
+    "failure_type": null,
+    "affected_services": [
+     "checkout"
+    ],
+    "fault_window": {
+     "start": "2026-10-16T10:34:00Z",
+     "end": "2026-10-16T10:38:00Z"
+    },
+    "supporting_event_ids": []
+   },
+   "observed": {
+    "incident_ids": [
+     "983cbe18-d516-4254-9a4b-168cc8a0d782"
+    ],
+    "investigation_id": "3aebf813-4f18-468e-ad28-d3041a094abc",
+    "investigation_status": "completed",
+    "diagnosis_status": "diagnosed",
+    "root_cause_service": "checkout",
+    "failure_type": "elevated_errors",
+    "cited_signal_ids": [
+     "44972bb6-6187-5251-9a4f-8f2f6acb50e5",
+     "93203412-44d1-5df1-9390-1cc7ce029292",
+     "b59c3b59-e299-5c03-9dd5-b0cc8fdae285",
+     "74e40785-c8d7-58c1-b471-9a5beb7d09f7",
+     "a644daed-ac80-5a7c-bacd-7c62887f00ba",
+     "b7a522c3-2ba8-5db5-9e0f-13ffdb4cdf47",
+     "b1391045-cbe8-5fe6-9172-f05fa94cfd17",
+     "7dd00386-91a0-5d80-a807-5bc6e744c96c",
+     "739fcc2f-8887-5be5-b5aa-2c8e844e8d1a",
+     "57ed6ee3-2055-5961-85ed-45c92ebc116a"
+    ],
+    "cited_event_ids": [
+     "checkout-span-ed78e64660a3f85d606c",
+     "checkout-span-ee0e60df785005e65e68",
+     "checkout-span-b95d1496cc87ef88ff25",
+     "checkout-span-914d265dc6b99644d369",
+     "checkout-span-78a02361fcde4dbb6833",
+     "checkout-span-f2df3afa480fe2c29f3f",
+     "checkout-span-d9b3d76789a5a9e658b5",
+     "checkout-span-a939e4bb1abcace2e597",
+     "checkout-span-0eb15360110f286c4c71",
+     "checkout-span-d1e1643677faff5fdbaf"
+    ],
+    "detected_at": "2026-10-16T10:35:30Z",
+    "started_at": "2026-11-08T17:34:27.210642Z",
+    "completed_at": "2026-11-08T17:35:18.338273Z",
+    "spent_microusd": 93016,
+    "unknown_reserved_microusd": 0,
+    "model_calls": 8
+   },
+   "scores": {
+    "outcome_correct": false,
+    "root_cause_correct": null,
+    "abstained": false,
+    "false_diagnosis": true,
+    "correct_abstention": false,
+    "cited": 10,
+    "cited_supported": 10,
+    "evidence_precision": 1.0,
+    "unsupported_diagnosis": false,
+    "latency_seconds": 51.128
+   },
+   "error": null
+  },
+  {
+   "id": "54044bd4-5808-4929-ab00-fcc4e831471f",
+   "case_key": "unexplained-errors/held-out@1/single_agent/1",
+   "scenario_name": "unexplained-errors/held-out",
+   "scenario_version": "1",
+   "family": "insufficient_evidence",
+   "split": "held_out",
+   "synthetic": true,
+   "variant": "single_agent",
+   "trial": 1,
+   "status": "scored",
+   "replay_scope": "replay:850266cb-94ca-43c0-a9a2-ffede45e33a4",
+   "investigation_id": "080351dd-9c72-4579-a087-0b79a9733e60",
+   "expected": {
+    "incident_expected": true,
+    "diagnosable": false,
+    "root_cause_service": null,
+    "failure_type": null,
+    "affected_services": [
+     "checkout"
+    ],
+    "fault_window": {
+     "start": "2026-10-16T10:34:00Z",
+     "end": "2026-10-16T10:38:00Z"
+    },
+    "supporting_event_ids": []
+   },
+   "observed": {
+    "incident_ids": [
+     "983cbe18-d516-4254-9a4b-168cc8a0d782"
+    ],
+    "investigation_id": "080351dd-9c72-4579-a087-0b79a9733e60",
+    "investigation_status": "completed",
+    "diagnosis_status": "diagnosed",
+    "root_cause_service": "checkout",
+    "failure_type": "elevated_errors",
+    "cited_signal_ids": [
+     "44972bb6-6187-5251-9a4f-8f2f6acb50e5",
+     "93203412-44d1-5df1-9390-1cc7ce029292",
+     "b59c3b59-e299-5c03-9dd5-b0cc8fdae285",
+     "74e40785-c8d7-58c1-b471-9a5beb7d09f7",
+     "a644daed-ac80-5a7c-bacd-7c62887f00ba",
+     "b7a522c3-2ba8-5db5-9e0f-13ffdb4cdf47",
+     "b1391045-cbe8-5fe6-9172-f05fa94cfd17",
+     "7dd00386-91a0-5d80-a807-5bc6e744c96c",
+     "739fcc2f-8887-5be5-b5aa-2c8e844e8d1a",
+     "57ed6ee3-2055-5961-85ed-45c92ebc116a"
+    ],
+    "cited_event_ids": [
+     "checkout-span-ed78e64660a3f85d606c",
+     "checkout-span-ee0e60df785005e65e68",
+     "checkout-span-b95d1496cc87ef88ff25",
+     "checkout-span-914d265dc6b99644d369",
+     "checkout-span-78a02361fcde4dbb6833",
+     "checkout-span-f2df3afa480fe2c29f3f",
+     "checkout-span-d9b3d76789a5a9e658b5",
+     "checkout-span-a939e4bb1abcace2e597",
+     "checkout-span-0eb15360110f286c4c71",
+     "checkout-span-d1e1643677faff5fdbaf"
+    ],
+    "detected_at": "2026-10-16T10:35:30Z",
+    "started_at": "2026-11-08T17:34:27.191148Z",
+    "completed_at": "2026-11-08T17:34:33.512586Z",
+    "spent_microusd": 36204,
+    "unknown_reserved_microusd": 0,
+    "model_calls": 2
+   },
+   "scores": {
+    "outcome_correct": false,
+    "root_cause_correct": null,
+    "abstained": false,
+    "false_diagnosis": true,
+    "correct_abstention": false,
+    "cited": 10,
+    "cited_supported": 10,
+    "evidence_precision": 1.0,
+    "unsupported_diagnosis": false,
+    "latency_seconds": 6.321
+   },
+   "error": null
+  },
+  {
+   "id": "595b729a-1658-4268-a335-082e3e611831",
+   "case_key": "unexplained-errors/held-out@1/single_agent/2",
+   "scenario_name": "unexplained-errors/held-out",
+   "scenario_version": "1",
+   "family": "insufficient_evidence",
+   "split": "held_out",
+   "synthetic": true,
+   "variant": "single_agent",
+   "trial": 2,
+   "status": "scored",
+   "replay_scope": "replay:850266cb-94ca-43c0-a9a2-ffede45e33a4",
+   "investigation_id": "5d4c182c-ea1e-4603-9228-174f397f718c",
+   "expected": {
+    "incident_expected": true,
+    "diagnosable": false,
+    "root_cause_service": null,
+    "failure_type": null,
+    "affected_services": [
+     "checkout"
+    ],
+    "fault_window": {
+     "start": "2026-10-16T10:34:00Z",
+     "end": "2026-10-16T10:38:00Z"
+    },
+    "supporting_event_ids": []
+   },
+   "observed": {
+    "incident_ids": [
+     "983cbe18-d516-4254-9a4b-168cc8a0d782"
+    ],
+    "investigation_id": "5d4c182c-ea1e-4603-9228-174f397f718c",
+    "investigation_status": "completed",
+    "diagnosis_status": "diagnosed",
+    "root_cause_service": "checkout",
+    "failure_type": "elevated_errors",
+    "cited_signal_ids": [
+     "44972bb6-6187-5251-9a4f-8f2f6acb50e5",
+     "93203412-44d1-5df1-9390-1cc7ce029292",
+     "b59c3b59-e299-5c03-9dd5-b0cc8fdae285",
+     "74e40785-c8d7-58c1-b471-9a5beb7d09f7",
+     "a644daed-ac80-5a7c-bacd-7c62887f00ba",
+     "b7a522c3-2ba8-5db5-9e0f-13ffdb4cdf47",
+     "b1391045-cbe8-5fe6-9172-f05fa94cfd17",
+     "7dd00386-91a0-5d80-a807-5bc6e744c96c",
+     "739fcc2f-8887-5be5-b5aa-2c8e844e8d1a",
+     "57ed6ee3-2055-5961-85ed-45c92ebc116a"
+    ],
+    "cited_event_ids": [
+     "checkout-span-ed78e64660a3f85d606c",
+     "checkout-span-ee0e60df785005e65e68",
+     "checkout-span-b95d1496cc87ef88ff25",
+     "checkout-span-914d265dc6b99644d369",
+     "checkout-span-78a02361fcde4dbb6833",
+     "checkout-span-f2df3afa480fe2c29f3f",
+     "checkout-span-d9b3d76789a5a9e658b5",
+     "checkout-span-a939e4bb1abcace2e597",
+     "checkout-span-0eb15360110f286c4c71",
+     "checkout-span-d1e1643677faff5fdbaf"
+    ],
+    "detected_at": "2026-10-16T10:35:30Z",
+    "started_at": "2026-11-08T17:34:27.198381Z",
+    "completed_at": "2026-11-08T17:35:03.075578Z",
+    "spent_microusd": 36204,
+    "unknown_reserved_microusd": 0,
+    "model_calls": 2
+   },
+   "scores": {
+    "outcome_correct": false,
+    "root_cause_correct": null,
+    "abstained": false,
+    "false_diagnosis": true,
+    "correct_abstention": false,
+    "cited": 10,
+    "cited_supported": 10,
+    "evidence_precision": 1.0,
+    "unsupported_diagnosis": false,
+    "latency_seconds": 35.877
+   },
+   "error": null
+  }
+ ]
+}

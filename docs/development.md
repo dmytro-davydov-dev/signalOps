@@ -152,6 +152,8 @@ E2E_OPERATOR_TOKEN='<operator-token>' pnpm e2e
 
 A second test (`apps/web/e2e/evaluation.e2e.ts`, P10 gate) reviews an evaluation run that already completed: it opens the run, checks the fake-provider notice, the three-variant comparison, and detection, filters to incorrect cases, opens a failed case with citations, checks the expected and observed outcomes and the labelled evidence, and follows the link to the investigation in its replay scope. It saves screenshots to `apps/web/e2e-results/`. Queue a run first (`POST /v1/evaluation-runs` or the Evaluation page, with `docker compose --profile evaluation up -d evaluation-worker` running), then `pnpm exec playwright test evaluation` runs only this test.
 
+A third file (`apps/web/e2e/demo.e2e.ts`) captures the screenshots in [demo.md](demo.md). It is skipped unless `E2E_DEMO_CAPTURE=1`, because it kills and restarts `investigation-worker` and overwrites `docs/demo/*.png`; see [demo.md](demo.md#reproducing-the-capture).
+
 The report is written to `apps/web/e2e-report/` and failure traces to `apps/web/e2e-results/`. CI does not run this check, because it needs the full stack; `pnpm test` does not include it.
 
 ### Profiles

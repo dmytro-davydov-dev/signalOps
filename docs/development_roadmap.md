@@ -26,12 +26,12 @@ PostgreSQL owns evidence, workflow progress, budgets, and the initial knowledge 
 | Field | Current value |
 | --- | --- |
 | Active phase | Phase 12 Portfolio packaging and release (Phase 11 gate passed 2026-11-09) |
-| Active task | None (P12-T02 not started) |
-| Last completed task | P12-T01 |
+| Active task | None (P12-T03 not started) |
+| Last completed task | P12-T02 |
 | Latest verified commit | `1841513` (docs fix after P11-T05 `dff8287`); P11-T04 commit `perf(P11-T04)` follows |
-| Validation evidence | P12-T01: quick start followed from a clean copy on the default ports (task notes): stack healthy, fault detected, automatic investigation diagnosed with verified citations, worker crash resumed with step reuse, every API example run; `uv run pytest tests/unit tests/contract` 712 passed; ruff, format, mypy (222 files), `docker compose config --quiet`, relative-link and anchor check over README and docs pass. P11-T04: reports `docs/benchmarks/replay-1m.json` and `sustained-100.json` (both reconciled complete); `uv run pytest tests/unit tests/contract` 712 passed; outbox, consumer, normalizer, failure, incident, detection, and investigation integration suites 160 passed; ruff, format, mypy (222 files), `docker compose config --quiet` pass. P11-T05: `SIGNALOPS_INTEGRATION=1 uv run pytest` 1364 passed, 2 skipped (opt-in outage checks); retention and backup/restore suites in the task notes; ruff, format, mypy (221 files) pass; retention dry run on rebuilt Compose at 0019. P11-T03: outage checks passed on rebuilt Compose (task notes); unit and contract 708 passed; gateway, failure, lifecycle, and one-shot integration suites 44 passed; ruff, format, mypy pass. P11-T02: `SIGNALOPS_INTEGRATION=1 uv run pytest` 1356 passed, 2 skipped (opt-in outage checks), 1 unit failure from `.env` variables leaking into a settings test, fixed and rerun (`tests/unit` and `tests/contract` 707 passed with and without the sourced variables); ruff, format, mypy (218 files), `export-schemas --check` pass; Compose boundary and rotation checks in the task notes. No paid model was called |
+| Validation evidence | P12-T02: `docs/demo.md` with screenshots from `apps/web/e2e/demo.e2e.ts` (passed on the rebuilt stack); unit and contract 714 passed; seven multi-agent and evaluation integration suites 36 passed; ruff, format, mypy (223 files), frontend lint, typecheck, test (72), link check pass. P12-T01: quick start followed from a clean copy on the default ports (task notes): stack healthy, fault detected, automatic investigation diagnosed with verified citations, worker crash resumed with step reuse, every API example run; `uv run pytest tests/unit tests/contract` 712 passed; ruff, format, mypy (222 files), `docker compose config --quiet`, relative-link and anchor check over README and docs pass. P11-T04: reports `docs/benchmarks/replay-1m.json` and `sustained-100.json` (both reconciled complete); `uv run pytest tests/unit tests/contract` 712 passed; outbox, consumer, normalizer, failure, incident, detection, and investigation integration suites 160 passed; ruff, format, mypy (222 files), `docker compose config --quiet` pass. P11-T05: `SIGNALOPS_INTEGRATION=1 uv run pytest` 1364 passed, 2 skipped (opt-in outage checks); retention and backup/restore suites in the task notes; ruff, format, mypy (221 files) pass; retention dry run on rebuilt Compose at 0019. P11-T03: outage checks passed on rebuilt Compose (task notes); unit and contract 708 passed; gateway, failure, lifecycle, and one-shot integration suites 44 passed; ruff, format, mypy pass. P11-T02: `SIGNALOPS_INTEGRATION=1 uv run pytest` 1356 passed, 2 skipped (opt-in outage checks), 1 unit failure from `.env` variables leaking into a settings test, fixed and rerun (`tests/unit` and `tests/contract` 707 passed with and without the sourced variables); ruff, format, mypy (218 files), `export-schemas --check` pass; Compose boundary and rotation checks in the task notes. No paid model was called |
 | Blockers | None |
-| Next task | P12-T02 |
+| Next task | P12-T03 |
 
 ### Scope and release boundaries
 
@@ -1111,11 +1111,18 @@ Start the React shell in Phase 1 and add API-backed incident views in Phase 5; P
 
 ### P12-T02 Prepare the demonstration narrative
 
-- [ ] Complete this task.
+- [x] Complete this task.
 
 **Implementation:** Record fault injection, noisy telemetry, incident detection, diagnosis with evidence, worker crash/resume, and baseline comparison. Label synthetic data, hardware limits, and unsupported hypotheses.
 
 **Acceptance:** Every claimed capability is visible in the demo or linked to retained verification evidence.
+
+**Notes (2026-11-09):**
+- **Added:** `docs/demo.md`: a "read this first" block (synthetic data, fake provider, one host, estimated costs), five narrative steps (fault injection into noisy telemetry, incident detection, diagnosis with verified evidence, worker kill and resume, baseline comparison), a claims-and-evidence table mapping 22 claims to the demo step and the tests or retained reports that verify them, a "Not claimed" list, and capture instructions. Screenshots `docs/demo/01`–`06` captured by `apps/web/e2e/demo.e2e.ts` (headless Google Chrome, skipped unless `E2E_DEMO_CAPTURE=1`). The Phase 10 evaluation run `7ac381af` is exported to `docs/evaluation-runs/7ac381af-heldout-fake.json` so the comparison no longer depends on a local database. `docs/evaluation.md` status and scenario table updated (it still said "no results exist").
+- **Recording:** the capture also records a video (13 MB WebM, `apps/web/e2e-results/`, git-ignored). It is not committed because of its size; the screenshots and the script reproduce it.
+- **Fixed, found in the screenshots:** the fake synthesizer joined identical claims from two specialists, so an alternative hypothesis showed its sentence twice, and a contradiction from one role read "point". Claims are now deduplicated per hypothesis and the verb agrees (`gateway/fake_roles.py`, `tests/unit/test_fake_roles.py`). The screenshots were recaptured after rebuilding the images.
+- **Verified:** capture run passed twice (5.2 min each), the second on the fixed images: incident detected, the automatic `v3` investigation diagnosed with 10 verified citations, the second investigation killed after two completed steps finished with eight steps at attempt 2 and three unknown-cost calls holding 0.5646 USD, evaluation run page with the fake-provider notice. `uv run pytest tests/unit tests/contract` 714 passed; multi-agent, synthesis, recovery, prompt-injection, parallel-branch, evaluation-run, and observability integration suites 36 passed; ruff, format, mypy (223 files); `pnpm lint`, `pnpm typecheck`, `pnpm test` (72); link and anchor check.
+- **Left:** no paid-model run, so the narrative shows the harness, not diagnostic quality or a multi-agent benefit; the incident list screenshot comes from the development stack and includes older incidents (captioned).
 
 ### P12-T03 Finalize release checks and roadmap state
 
@@ -1785,6 +1792,16 @@ Keep these outside the release critical path unless measurements justify promoti
 - Deviations and reasons: none.
 - Remaining issues: no browser rerun of the guide; macOS untested.
 - Next task: P12-T02.
+
+### 2026-11-09 — P12-T02
+- Status: completed
+- Commit: see git log for `docs(P12-T02)`
+- Implemented: `docs/demo.md`, `docs/demo/*.png`, `apps/web/e2e/demo.e2e.ts`, `docs/evaluation-runs/7ac381af-heldout-fake.json`; fake synthesizer claim deduplication with `tests/unit/test_fake_roles.py`; evaluation and development docs updated.
+- Validation commands and results: as in the task notes.
+- Evidence or artifact references: `docs/demo/`, `docs/evaluation-runs/`.
+- Deviations and reasons: the recording is regenerated by the capture script rather than committed (13 MB).
+- Remaining issues: see task notes.
+- Next task: P12-T03.
 
 ## Work log template
 
