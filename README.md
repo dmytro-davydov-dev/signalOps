@@ -43,7 +43,7 @@ flowchart LR
 | --- | --- |
 | [Quick start](docs/quickstart.md) | Run the fake-provider demonstration end to end; environment and settings |
 | [Demonstration](docs/demo.md) | One fault from injection to diagnosis, a worker crash and resume, the baseline comparison, and the evidence behind each claim |
-| [Application flow](docs/application_flow.md) | For non-technical readers: one incident from telemetry to diagnosis, and how to read the rule firings table |
+| [Application flow](docs/application_flow.md) | One incident from telemetry to diagnosis, and how to read the rule firings table, in a technical and a non-technical version |
 | [Architecture](docs/architecture.md) | Components, process boundaries, ownership of state, event flow |
 | [Events](docs/events.md) | Kafka topics, keys, the common envelope, delivery and failure rules |
 | [Data model](docs/data-model.md) | PostgreSQL tables, constraints, temporal graph, indexes, ER diagram |
