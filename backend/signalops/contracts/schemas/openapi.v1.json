@@ -2856,6 +2856,19 @@
             "title": "Model Calls",
             "type": "integer"
           },
+          "root_cause_confidence": {
+            "anyOf": [
+              {
+                "maximum": 1.0,
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Root Cause Confidence"
+          },
           "root_cause_service": {
             "anyOf": [
               {

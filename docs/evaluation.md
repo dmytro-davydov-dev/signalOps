@@ -112,6 +112,20 @@ Every incorrect case gets one `failure_stage` (`evaluation/attribution.py`), sto
 
 "First failing stage" is a convention: later stages may also have failed, and the case page shows every stored stage (findings, leading hypothesis, verdict, citation checks) with each cited signal labelled and linked to the investigation's evidence. `limit_hit` is orthogonal: some role ended on a limit, a refusal, or no turns. `metrics.variants.<variant>.failure_stages` counts incorrect cases by stage (`by_stage` sums to `incorrect`) and those with a limit hit; the run page shows the breakdown per variant.
 
+## Statistics and report v2 (P13-T05)
+
+`evaluation/statistics.py` (standard library only) and `evaluation/report.py` add to every run's metrics, without changing a v1 field (`report_version: evaluation-report/v2`):
+
+| Field | Meaning |
+| --- | --- |
+| `variants.<v>.intervals` | Wilson 95% intervals with counts for outcome accuracy, root-cause accuracy, unsupported rate, correct-abstention rate, evidence precision, and harness failures. Every stage-metric ratio carries `ci95` too |
+| `variants.<v>.cost_per_correct_microusd` | Spent microUSD over correct outcomes, next to `cost_microusd_mean` |
+| `variants.<v>.calibration` | Brier score and five equal-width reliability bins of the stored root-cause confidence against `root_cause_correct`, over asserted causes; `meaningful: false` with a note when the provider does not measure model quality |
+| `comparisons[]` | Each pair of variants on identical cases (same scenarios; trials matched, a once-per-scenario baseline matched with every trial): the accuracy difference with a cluster bootstrap over scenarios (seed = run seed, 10,000 resamples, percentile interval); exact McNemar when each variant has one trial per scenario; cost and latency differences by the same bootstrap; `verdict` (`no detectable difference` unless McNemar p < 0.05, or the bootstrap interval excludes 0 when McNemar does not apply); `min_detectable_difference`: 6 / scenarios, the smallest difference exact McNemar can call significant with every discordant pair one way |
+| `reproducibility` | Catalog version, dataset hash, seeds, bootstrap settings; the export adds the git revision, workflow and prompt versions, model settings, pricing, and limits |
+
+`signalops evaluation-export <run-id> [--out-dir docs/evaluation-runs]` (evaluator connection) writes `<id8>-<split>-<provider>.json`, the run detail as the API returns it with metrics recomputed from the stored cases, and a Markdown summary beside it. Exporting the same run from the same tree twice gives identical files. Older runs gain intervals and comparisons on export; their cases keep no stage scores or failure stages, which only a new run stores. The run page shows intervals, the paired comparisons, and the calibration label; v1 metrics without these sections still render.
+
 ## Replay orchestration (P10-T02, ADR-035)
 
 `evaluation/replay.py` replays one dataset into its own scope. `signalops evaluation-replay <scenario> --seed N` runs it and prints the report; `--in-process` runs the pipeline processors locally instead of through Kafka.

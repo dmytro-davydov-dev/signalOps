@@ -167,6 +167,8 @@ class ObservedOutcome(ContractModel):
     diagnosis_status: str | None = None
     root_cause_service: Name | None = None
     failure_type: FailureType | None = None
+    # The model's own confidence in the cause (P13-T05 calibration); None if none asserted.
+    root_cause_confidence: float | None = Field(default=None, ge=0.0, le=1.0)
     cited_signal_ids: tuple[uuid.UUID, ...] = ()
     # Source event IDs of the cited signals in the case's replay scope.
     cited_event_ids: tuple[SourceEventId, ...] = ()

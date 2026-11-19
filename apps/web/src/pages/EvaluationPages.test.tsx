@@ -121,8 +121,29 @@ const detail = {
   metrics: {
     variants: {
       deterministic: { ...variantMetrics(0), failure_stages: failureStages(1, "rule_error") },
-      multi_agent: { ...variantMetrics(1), failure_stages: failureStages(0) },
+      multi_agent: {
+        ...variantMetrics(1),
+        failure_stages: failureStages(0),
+        intervals: {
+          outcome_accuracy: { numerator: 1, denominator: 1, rate: 1, ci95: [0.2065, 1] },
+        },
+        calibration: { meaningful: false, samples: 1, brier: 0.09, bins: [] },
+      },
     },
+    comparisons: [
+      {
+        left: "deterministic",
+        right: "multi_agent",
+        scenarios: 1,
+        pairs: 1,
+        accuracy_difference: { estimate: -1, ci95: [-1, -1] },
+        mcnemar: { only_left_correct: 0, only_right_correct: 1, p_value: 1 },
+        test: "exact McNemar",
+        significant: false,
+        verdict: "no detectable difference",
+        min_detectable_difference: null,
+      },
+    ],
     detection: {
       replays_scored: 1,
       true_positives: 1,
@@ -246,7 +267,7 @@ describe("evaluation pages", () => {
     renderRoute(`/evaluations/${RUN}`);
 
     expect(await screen.findByRole("heading", { name: "held-out comparison" })).toBeInTheDocument();
-    expect(screen.getByRole("note")).toHaveTextContent("fake provider");
+    expect(screen.getAllByRole("note")[0]).toHaveTextContent("fake provider");
     expect(screen.getByText(/the same for every variant/)).toBeInTheDocument();
     const [comparison] = screen.getAllByRole("table");
     if (comparison === undefined) throw new Error("no comparison table");
@@ -254,6 +275,14 @@ describe("evaluation pages", () => {
     expect(within(comparison).getByRole("row", { name: /Deterministic rule/ })).toHaveTextContent("0%");
     expect(screen.getByText(/Precision 100%, recall 100%/)).toBeInTheDocument();
 
+    expect(within(comparison).getByRole("row", { name: /Multi-agent/ })).toHaveTextContent(
+      "[20.7%–100%]",
+    );
+    const paired = screen.getByRole("table", { name: "Paired comparisons" });
+    expect(within(paired).getByRole("row", { name: /Deterministic rule − Multi-agent/ })).toHaveTextContent(
+      "no detectable difference",
+    );
+    expect(screen.getByRole("note", { name: "Calibration" })).toHaveTextContent("Not meaningful");
     const breakdown = screen.getByRole("table", { name: "First failing stage by variant" });
     expect(within(breakdown).getByRole("row", { name: /Baseline rule was wrong/ })).toHaveTextContent(
       "10",

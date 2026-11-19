@@ -76,6 +76,8 @@ function RunView() {
       ) : (
         <>
           <Comparison run={run} />
+          <PairedComparisons metrics={run.metrics} />
+          <Calibration run={run} />
           <FailureBreakdown run={run} />
           <Detection metrics={run.metrics} />
         </>
@@ -150,8 +152,15 @@ function Comparison({ run }: { run: EvaluationRunDetail }) {
                   <td>
                     {percent(at("outcome_accuracy"))}
                     {sd !== undefined && ` ± ${percent(sd)}`}
+                    <Interval source={variants} path={[variant, "intervals", "outcome_accuracy"]} />
                   </td>
-                  <td>{percent(at("root_cause_accuracy"))}</td>
+                  <td>
+                    {percent(at("root_cause_accuracy"))}
+                    <Interval
+                      source={variants}
+                      path={[variant, "intervals", "root_cause_accuracy"]}
+                    />
+                  </td>
                   <td>{percent(at("evidence", "precision"))}</td>
                   <td>
                     {at("unsupported_diagnoses") ?? 0} ({percent(at("unsupported_rate"))})
@@ -172,9 +181,104 @@ function Comparison({ run }: { run: EvaluationRunDetail }) {
         </table>
       </div>
       <p className="hint">
-        Evidence precision uses the scenarios' labels of which records the fault produced. Human
+        Brackets show 95% Wilson intervals where the run reports them (report v2). Evidence
+        precision uses the scenarios' labels of which records the fault produced. Human
         audits are counted separately on each case. No score comes from a judge model.
       </p>
+    </>
+  );
+}
+
+function Interval({ source, path }: { source: unknown; path: string[] }) {
+  const low = metric(source, ...path, "ci95", "0");
+  const high = metric(source, ...path, "ci95", "1");
+  if (low === undefined || high === undefined) return null;
+  return (
+    <span className="hint">
+      {" "}
+      [{percent(low)}–{percent(high)}]
+    </span>
+  );
+}
+
+function PairedComparisons({ metrics }: { metrics: Record<string, unknown> }) {
+  const items = Array.isArray(metrics.comparisons) ? (metrics.comparisons as unknown[]) : [];
+  if (items.length === 0) return null;
+  return (
+    <>
+      <h2>Paired comparisons</h2>
+      <div className="scroll-x">
+        <table aria-label="Paired comparisons">
+          <thead>
+            <tr>
+              <th scope="col">Pair</th>
+              <th scope="col">Accuracy difference [95%]</th>
+              <th scope="col">Test</th>
+              <th scope="col">Result</th>
+              <th scope="col">Smallest detectable</th>
+            </tr>
+          </thead>
+          <tbody>
+            {items.map((item, index) => {
+              const record = item as Record<string, unknown>;
+              const left = String(record.left);
+              const right = String(record.right);
+              const estimate = metric(record, "accuracy_difference", "estimate");
+              const p = metric(record, "mcnemar", "p_value");
+              return (
+                <tr key={index}>
+                  <th scope="row">
+                    {VARIANT_LABELS[left] ?? left} − {VARIANT_LABELS[right] ?? right}
+                  </th>
+                  <td>
+                    {percent(estimate)}
+                    <Interval source={record} path={["accuracy_difference"]} />
+                  </td>
+                  <td>
+                    {String(record.test)}
+                    {p !== undefined && `, p = ${String(p)}`}
+                  </td>
+                  <td>{String(record.verdict)}</td>
+                  <td>{percent(metric(record, "min_detectable_difference"))}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+      <p className="hint">
+        Each pair compares the same scenarios and trials. A difference is reported only when the
+        test supports it.
+      </p>
+    </>
+  );
+}
+
+function Calibration({ run }: { run: EvaluationRunDetail }) {
+  const variants = run.metrics?.variants;
+  const reported = run.variants.filter(
+    (variant) => metric(variants, variant, "calibration", "samples") !== undefined,
+  );
+  if (reported.length === 0) return null;
+  const meaningful = run.model_settings.measures_model_quality !== false;
+  return (
+    <>
+      <h2>Confidence calibration</h2>
+      {!meaningful && (
+        <p className="state state-stale" role="note" aria-label="Calibration">
+          Not meaningful: the fake provider&apos;s confidences are fixed numbers, not a model&apos;s
+          assessment.
+        </p>
+      )}
+      <ul>
+        {reported.map((variant) => (
+          <li key={variant}>
+            {VARIANT_LABELS[variant] ?? variant}: Brier score{" "}
+            {metric(variants, variant, "calibration", "brier")?.toFixed(3) ?? "—"} over{" "}
+            {metric(variants, variant, "calibration", "samples")} asserted causes
+          </li>
+        ))}
+      </ul>
     </>
   );
 }

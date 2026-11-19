@@ -17,23 +17,20 @@ from signalops.api.auth import OperatorWorkspace
 from signalops.config import Settings
 from signalops.contracts.evaluation import (
     AuditRecord,
-    CaseScores,
-    ExpectedOutcome,
     ObservedOutcome,
 )
 from signalops.contracts.evaluation_api import (
     AuditView,
     CitedSignal,
     EvaluationCaseDetail,
-    EvaluationCaseRow,
     EvaluationRunDetail,
     EvaluationRunList,
     EvaluationRunSummary,
     StageOutputView,
 )
-from signalops.contracts.evaluation_stages import StageScores
 from signalops.contracts.workflow import StepStatus
 from signalops.dependencies import Resources
+from signalops.evaluation.export import case_row, run_detail, run_summary
 from signalops.evaluation.runner import RunRequest, UnknownScenarioError, queue_run
 from signalops.evaluation.stage_views import cited_by, stage_outputs
 from signalops.persistence.database import Database
@@ -65,56 +62,6 @@ def evaluation_database(request: Request) -> Database:
     return resources.evaluation
 
 
-def _summary(run: EvaluationRun, counts: dict[str, int]) -> EvaluationRunSummary:
-    return EvaluationRunSummary(
-        id=run.id,
-        label=run.label,
-        split=run.split,  # type: ignore[arg-type]
-        status=run.status,  # type: ignore[arg-type]
-        variants=tuple(run.variants),  # type: ignore[arg-type]
-        trials=run.trials,
-        dataset_hash=run.dataset_hash,
-        created_at=run.created_at,
-        started_at=run.started_at,
-        completed_at=run.completed_at,
-        error=run.error,
-        case_counts=counts,
-    )
-
-
-def _row(
-    case: EvaluationCase, scenario: EvaluationScenario, replay: EvaluationReplay
-) -> dict[str, Any]:
-    return {
-        "id": case.id,
-        "case_key": case.case_key,
-        "scenario_name": scenario.name,
-        "scenario_version": scenario.version,
-        "family": scenario.family,
-        "split": scenario.split,
-        "synthetic": scenario.synthetic,
-        "variant": case.variant,
-        "trial": case.trial,
-        "status": case.status,
-        "replay_scope": replay.replay_scope,
-        "investigation_id": case.investigation_id,
-        "expected": ExpectedOutcome.model_validate(case.expected_outcome),
-        "observed": (
-            None
-            if case.observed_outcome is None
-            else ObservedOutcome.model_validate(case.observed_outcome)
-        ),
-        "scores": None if case.scores is None else CaseScores.model_validate(case.scores),
-        "stage_scores": (
-            None if case.stage_scores is None else StageScores.model_validate(case.stage_scores)
-        ),
-        "failure_stage": case.failure_stage,
-        "failure_origin": case.failure_origin,
-        "limit_hit": case.limit_hit,
-        "error": case.error,
-    }
-
-
 async def _owned_run(
     database: Database, run_id: uuid.UUID, workspace_id: uuid.UUID
 ) -> EvaluationRun:
@@ -136,7 +83,7 @@ async def start_run(
         run = await queue_run(database, body, workspace_id=workspace_id, settings=settings)
     except UnknownScenarioError as error:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, str(error)) from error
-    return _summary(run, {})
+    return run_summary(run, {})
 
 
 @router.get("/evaluation-runs")
@@ -149,7 +96,7 @@ async def list_runs(
     async with database.transaction() as session:
         repository = EvaluationRepository(session)
         runs = await repository.runs(workspace_id, limit=limit)
-        items = [_summary(run, await repository.case_counts(run.id)) for run in runs]
+        items = [run_summary(run, await repository.case_counts(run.id)) for run in runs]
     return EvaluationRunList(items=tuple(items))
 
 
@@ -161,31 +108,7 @@ async def get_run(
     database = evaluation_database(request)
     run = await _owned_run(database, run_id, workspace_id)
     async with database.transaction() as session:
-        repository = EvaluationRepository(session)
-        rows = (
-            await session.execute(
-                select(EvaluationCase, EvaluationScenario, EvaluationReplay)
-                .join(EvaluationScenario, EvaluationScenario.id == EvaluationCase.scenario_id)
-                .join(EvaluationReplay, EvaluationReplay.id == EvaluationCase.replay_id)
-                .where(EvaluationCase.run_id == run.id)
-                .order_by(EvaluationCase.case_key)
-            )
-        ).all()
-        counts = await repository.case_counts(run.id)
-    summary = _summary(run, counts)
-    return EvaluationRunDetail(
-        **summary.model_dump(),
-        seed=run.seed,
-        workflow_versions=run.workflow_versions,
-        prompt_versions=run.prompt_versions,
-        model_settings=run.model_config,
-        pricing_config=run.pricing_config,
-        limits=run.limits,
-        metrics=run.metrics,
-        cases=tuple(
-            EvaluationCaseRow(**_row(case, scenario, replay)) for case, scenario, replay in rows
-        ),
-    )
+        return await run_detail(session, run)
 
 
 async def _case_detail(
@@ -203,7 +126,7 @@ async def _case_detail(
         if found is None:
             raise HTTPException(status.HTTP_404_NOT_FOUND, "evaluation case not found")
         case, scenario, replay = found
-        row = _row(case, scenario, replay)
+        row = case_row(case, scenario, replay)
         observed: ObservedOutcome | None = row["observed"]
         cited = observed.cited_signal_ids if observed is not None else ()
         supporting = set(scenario.expected_outcome.get("supporting_event_ids", []))

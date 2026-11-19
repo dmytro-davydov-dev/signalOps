@@ -383,6 +383,10 @@ export function recordAudit(
 export function metric(source: unknown, ...path: string[]): number | undefined {
   let value: unknown = source;
   for (const key of path) {
+    if (Array.isArray(value)) {
+      value = (value as unknown[])[Number(key)];
+      continue;
+    }
     if (!isRecord(value)) return undefined;
     value = value[key];
   }

@@ -599,6 +599,7 @@ async def observe(
         diagnosis_status=None if diagnosis is None else diagnosis.status.value,
         root_cause_service=None if cause is None else cause.service_name,
         failure_type=None if cause is None else cause.failure_type,
+        root_cause_confidence=None if cause is None else cause.confidence,
         cited_signal_ids=cited,
         cited_event_ids=event_ids,
         detected_at=incidents[0].detected_at if incidents else None,

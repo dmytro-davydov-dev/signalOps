@@ -210,6 +210,14 @@ def build_parser() -> argparse.ArgumentParser:
     evaluate.add_argument(
         "--in-process", action="store_true", help="with --execute: replay without Kafka"
     )
+    export_run = commands.add_parser(
+        "evaluation-export",
+        help="write a run's report (evaluation-report/v2 JSON) and a Markdown summary",
+    )
+    export_run.add_argument("run_id", type=uuid.UUID, help="evaluation run ID")
+    export_run.add_argument(
+        "--out-dir", default="docs/evaluation-runs", help="directory (default docs/evaluation-runs)"
+    )
     catalog = commands.add_parser(
         "evaluation-catalog",
         help="write each catalog scenario's definition and labels as fixture files",
@@ -788,6 +796,49 @@ def run_evaluation_run(args: argparse.Namespace) -> int:
     return asyncio.run(run())
 
 
+def run_evaluation_export(args: argparse.Namespace) -> int:
+    import asyncio
+    from pathlib import Path
+
+    from signalops.config import get_settings
+    from signalops.evaluation.export import (
+        export_documents,
+        export_name,
+        git_revision,
+        run_detail,
+    )
+    from signalops.persistence.database import Database, create_engine
+    from signalops.persistence.repositories.evaluation import EvaluationRepository
+
+    evaluator = get_settings().evaluator_settings()
+
+    async def read() -> tuple[str, str, str] | None:
+        engine = create_engine(evaluator)
+        try:
+            database = Database.from_engine(engine)
+            async with database.transaction() as session:
+                run = await EvaluationRepository(session).run(args.run_id)
+                if run is None:
+                    return None
+                detail = await run_detail(session, run, recompute=True)
+        finally:
+            await engine.dispose()
+        report, summary = export_documents(detail, git_revision())
+        return export_name(detail), report, summary
+
+    exported = asyncio.run(read())
+    if exported is None:
+        print(f"no evaluation run {args.run_id}", file=sys.stderr)
+        return 1
+    name, report, summary = exported
+    out = Path(args.out_dir)
+    out.mkdir(parents=True, exist_ok=True)
+    (out / f"{name}.json").write_text(report)
+    (out / f"{name}.md").write_text(summary)
+    print(f"wrote {out / name}.json and {out / name}.md")
+    return 0
+
+
 def run_evaluation_catalog(args: argparse.Namespace) -> int:
     from pathlib import Path
 
@@ -1293,6 +1344,8 @@ def main(argv: list[str] | None = None) -> int:
         return run_evaluation_run(args)
     if args.command == "evaluation-worker":
         return run_evaluation_worker(args)
+    if args.command == "evaluation-export":
+        return run_evaluation_export(args)
     if args.command == "evaluation-catalog":
         return run_evaluation_catalog(args)
     if args.command == "demo-shop":

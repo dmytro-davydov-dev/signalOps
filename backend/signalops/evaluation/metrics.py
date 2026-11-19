@@ -27,6 +27,15 @@ from signalops.contracts.evaluation_stages import (
     VerdictCell,
 )
 from signalops.contracts.roles import SPECIALIST_ROLES
+from signalops.evaluation.report import (
+    REPORT_VERSION,
+    calibration,
+    comparisons,
+    cost_per_correct,
+    interval,
+    reproducibility,
+    variant_intervals,
+)
 from signalops.persistence.models import (
     EvaluationAudit,
     EvaluationCase,
@@ -49,12 +58,8 @@ def _quantile(values: Sequence[float], q: float) -> float | None:
 
 
 def ratio(numerator: int, denominator: int) -> dict[str, Any]:
-    """A rate with the counts it comes from."""
-    return {
-        "numerator": numerator,
-        "denominator": denominator,
-        "rate": _rate(numerator, denominator),
-    }
+    """A rate with the counts it comes from and its Wilson 95% interval (P13-T05)."""
+    return interval(numerator, denominator)
 
 
 def stage_summary(rows: Sequence[EvaluationCase]) -> dict[str, Any]:
@@ -252,6 +257,9 @@ def variant_summary(
         "model_calls": sum(item.model_calls for item in observed),
         "stages": stage_summary(rows),
         "failure_stages": failure_summary(rows),
+        "intervals": variant_intervals(rows),
+        "cost_per_correct_microusd": cost_per_correct(rows),
+        "calibration": calibration(rows, bool(run.model_config.get("measures_model_quality"))),
     }
 
 
@@ -285,4 +293,7 @@ def summarize(
         },
         "measures_model_quality": run.model_config.get("measures_model_quality"),
         "judge_model_scores": None,
+        "report_version": REPORT_VERSION,
+        "comparisons": comparisons(run, {v: by_variant.get(v, []) for v in run.variants}),
+        "reproducibility": reproducibility(run),
     }

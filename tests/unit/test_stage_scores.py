@@ -75,6 +75,14 @@ UNEXPLAINED = ExpectedOutcome(
 )
 
 
+def counts(numerator: int, denominator: int, rate: float | None) -> dict[str, Any]:
+    return {"numerator": numerator, "denominator": denominator, "rate": rate}
+
+
+def without_interval(value: dict[str, Any]) -> dict[str, Any]:
+    return {key: item for key, item in value.items() if key != "ci95"}
+
+
 def provenance(role: AgentRole, ending: AgentEnding = AgentEnding.SUBMITTED) -> Provenance:
     return Provenance(role=role, prompt_version="test-v1", ended_by=ending)
 
@@ -257,16 +265,16 @@ def test_metrics_aggregate_numerators_and_denominators() -> None:
     )
     summary = stage_summary([case(good), case(lost), case(unexplained, abstained=True)])
     # Lead recall counts diagnosable cases only.
-    assert summary["specialist_lead_recall"] == {"numerator": 2, "denominator": 2, "rate": 1.0}
-    assert summary["synthesis_lead_retention"] == {"numerator": 1, "denominator": 2, "rate": 0.5}
+    assert without_interval(summary["specialist_lead_recall"]) == counts(2, 2, 1.0)
+    assert without_interval(summary["synthesis_lead_retention"]) == counts(1, 2, 0.5)
     telemetry = summary["per_role"]["telemetry_investigator"]
-    assert telemetry["evidence_precision"] == {"numerator": 6, "denominator": 8, "rate": 0.75}
+    assert telemetry["evidence_precision"] == {**counts(6, 8, 0.75), "ci95": [0.4093, 0.9285]}
     assert summary["verifier_matrix"]["correct_accepted"] == 1
     assert summary["verifier_matrix"]["wrong_accepted"] == 1
     assert summary["verifier_matrix"]["wrong_rejected"] == 1
     # The contradiction label exists only on the timeout outcome.
-    assert summary["contradiction_recall"] == {"numerator": 2, "denominator": 2, "rate": 1.0}
-    assert summary["abstentions_with_limit"] == {"numerator": 0, "denominator": 1, "rate": 0.0}
+    assert without_interval(summary["contradiction_recall"]) == counts(2, 2, 1.0)
+    assert without_interval(summary["abstentions_with_limit"]) == counts(0, 1, 0.0)
     assert summary["synthesis_invariant_violations"] == 0
 
 
@@ -319,7 +327,7 @@ def test_a_specialist_with_no_turns_is_a_limit_ending_and_loses_the_lead() -> No
     assert mutated.lead_retained is None
     summary = stage_summary([case(mutated, abstained=True)])
     assert summary["limit_endings"] == {"no_turns": 1}
-    assert summary["abstentions_with_limit"] == {"numerator": 1, "denominator": 1, "rate": 1.0}
+    assert without_interval(summary["abstentions_with_limit"]) == counts(1, 1, 1.0)
 
 
 def test_a_planted_synthesis_violation_is_reported() -> None:
@@ -401,11 +409,7 @@ def test_single_agent_proposal_and_conclusion() -> None:
     correct_abstention = _v2(abstention, diagnosis(None), UNEXPLAINED)
     assert correct_abstention.proposal_correct is True
     summary = stage_summary([case(kept), case(dropped), case(limited, abstained=True)])
-    assert summary["single_agent"]["proposal_correct"] == {
-        "numerator": 2,
-        "denominator": 3,
-        "rate": 0.6667,
-    }
+    assert without_interval(summary["single_agent"]["proposal_correct"]) == counts(2, 3, 0.6667)
     assert summary["single_agent"]["conclusions"]["dropped"] == 1
 
 
