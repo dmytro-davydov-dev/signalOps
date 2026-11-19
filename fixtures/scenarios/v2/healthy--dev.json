@@ -1,0 +1,29 @@
+{
+  "name": "healthy/dev",
+  "version": "2",
+  "family": "healthy_noise",
+  "split": "development",
+  "synthetic": true,
+  "dataset_ref": "generator:v1",
+  "dataset_hash": "8163ba51f15b1835ef8558c5691939c5996c73de2f38e05a3e5e2e2bcb9b9541",
+  "record_count": 931,
+  "injection_spec": {
+    "generator_scenario": "healthy",
+    "seed": 42,
+    "start": "2026-10-16T10:30:00.000Z",
+    "duration_seconds": 600,
+    "fault_start_fraction": 0.4,
+    "fault_end_fraction": 0.8,
+    "intensity": 0.75,
+    "target": null
+  },
+  "expected_outcome": {
+    "incident_expected": false,
+    "diagnosable": false,
+    "root_cause_service": null,
+    "failure_type": null,
+    "affected_services": [],
+    "fault_window": null,
+    "supporting_event_ids": []
+  }
+}

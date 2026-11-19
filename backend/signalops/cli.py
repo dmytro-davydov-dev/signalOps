@@ -200,12 +200,24 @@ def build_parser() -> argparse.ArgumentParser:
     )
     evaluate.add_argument("--trials", type=int, default=3, help="trials per agent variant")
     evaluate.add_argument("--scenario", action="append", help="limit to these scenario names")
+    evaluate.add_argument(
+        "--catalog", choices=["1", "2"], default="2", help="scenario catalog version (default 2)"
+    )
     evaluate.add_argument("--budget-microusd", type=int, help="equal budget per case")
     evaluate.add_argument(
         "--execute", action="store_true", help="execute the run here instead of queueing it"
     )
     evaluate.add_argument(
         "--in-process", action="store_true", help="with --execute: replay without Kafka"
+    )
+    catalog = commands.add_parser(
+        "evaluation-catalog",
+        help="write each catalog scenario's definition and labels as fixture files",
+    )
+    catalog.add_argument("--version", choices=["1", "2"], default="2", help="catalog version")
+    catalog.add_argument("--out", required=True, help="directory, e.g. fixtures/scenarios/v2")
+    catalog.add_argument(
+        "--check", action="store_true", help="exit 1 if the files differ from regeneration"
     )
     worker = commands.add_parser(
         "evaluation-worker", help="claim and execute queued evaluation runs until stopped"
@@ -741,6 +753,7 @@ def run_evaluation_run(args: argparse.Namespace) -> int:
         trials=args.trials,
         scenarios=tuple(args.scenario or ()),
         budget_microusd=args.budget_microusd,
+        catalog_version=args.catalog,
     )
     evaluator = settings.evaluator_settings()
 
@@ -773,6 +786,34 @@ def run_evaluation_run(args: argparse.Namespace) -> int:
             await engine.dispose()
 
     return asyncio.run(run())
+
+
+def run_evaluation_catalog(args: argparse.Namespace) -> int:
+    from pathlib import Path
+
+    from signalops.evaluation.catalog import fixture_documents
+
+    out = Path(args.out)
+    documents = fixture_documents(args.version)
+    stale = sorted(
+        name
+        for name, text in documents.items()
+        if not (out / name).is_file() or (out / name).read_text() != text
+    )
+    extra = (
+        sorted(path.name for path in out.glob("*.json") if path.name not in documents)
+        if out.is_dir()
+        else []
+    )
+    if args.check:
+        for name in [*stale, *extra]:
+            print(f"out of date: {out / name}")
+        return 1 if stale or extra else 0
+    out.mkdir(parents=True, exist_ok=True)
+    for name in stale:
+        (out / name).write_text(documents[name])
+    print(f"{len(stale)} written, {len(documents) - len(stale)} unchanged in {out}")
+    return 0
 
 
 def run_evaluation_worker(args: argparse.Namespace) -> int:
@@ -1252,6 +1293,8 @@ def main(argv: list[str] | None = None) -> int:
         return run_evaluation_run(args)
     if args.command == "evaluation-worker":
         return run_evaluation_worker(args)
+    if args.command == "evaluation-catalog":
+        return run_evaluation_catalog(args)
     if args.command == "demo-shop":
         return run_demo_shop(args)
     if args.command == "evaluation-replay":

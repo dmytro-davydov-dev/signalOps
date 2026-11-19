@@ -1,10 +1,14 @@
 """Every catalog scenario, replayed in process, detects what its labels expect (P10-T03).
 
 Fault scenarios open exactly one incident, on a service the fault affects, inside
-the fault window; healthy noise opens none. Run in parallel to bound the time.
+the fault window; healthy noise opens none. Both catalog versions are replayed,
+including catalog v2's adversarial variants (P13-T01). Run a few at a time to bound
+the time without exhausting connections. `SIGNALOPS_CATALOG_SCENARIOS=name@version,...`
+limits the check to some entries while tuning a variant.
 """
 
 import asyncio
+import os
 import uuid
 
 import pytest
@@ -47,15 +51,24 @@ async def _check(database: db.Database, entry: CatalogEntry) -> None:
     assert services <= set(expected.affected_services), (entry.name, services)
 
 
+CONCURRENCY = 8
+ONLY = {name for name in os.environ.get("SIGNALOPS_CATALOG_SCENARIOS", "").split(",") if name}
+SELECTED = [entry for entry in ENTRIES if not ONLY or f"{entry.name}@{entry.version}" in ONLY]
+
+
 async def test_every_catalog_scenario_detects_what_its_labels_expect(
     database: db.Database,
 ) -> None:
-    results = await asyncio.gather(
-        *(_check(database, entry) for entry in ENTRIES), return_exceptions=True
-    )
+    slots = asyncio.Semaphore(CONCURRENCY)
+
+    async def bounded(entry: CatalogEntry) -> None:
+        async with slots:
+            await _check(database, entry)
+
+    results = await asyncio.gather(*(bounded(entry) for entry in SELECTED), return_exceptions=True)
     failures = [
-        f"{entry.name}: {result!r}"
-        for entry, result in zip(ENTRIES, results, strict=True)
+        f"{entry.name}@{entry.version}: {result!r}"
+        for entry, result in zip(SELECTED, results, strict=True)
         if isinstance(result, BaseException)
     ]
     assert failures == []

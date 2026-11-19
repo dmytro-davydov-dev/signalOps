@@ -1,0 +1,29 @@
+{
+  "name": "healthy/held-out-3",
+  "version": "2",
+  "family": "healthy_noise",
+  "split": "held_out",
+  "synthetic": true,
+  "dataset_ref": "generator:v1",
+  "dataset_hash": "a7e9016153c5c021a6f37f23ab56406242e82a8af3e864224f19ddcb0514701f",
+  "record_count": 1397,
+  "injection_spec": {
+    "generator_scenario": "healthy",
+    "seed": 2362,
+    "start": "2026-10-16T10:30:00.000Z",
+    "duration_seconds": 900,
+    "fault_start_fraction": 0.4,
+    "fault_end_fraction": 0.8,
+    "intensity": 0.75,
+    "target": null
+  },
+  "expected_outcome": {
+    "incident_expected": false,
+    "diagnosable": false,
+    "root_cause_service": null,
+    "failure_type": null,
+    "affected_services": [],
+    "fault_window": null,
+    "supporting_event_ids": []
+  }
+}

@@ -2,7 +2,7 @@
 
 > Status: implemented (Phase 10). One held-out run on the fake provider is retained: [`evaluation-runs/7ac381af-heldout-fake.json`](evaluation-runs/7ac381af-heldout-fake.json), summarized in [demo.md](demo.md#5-comparison-against-simpler-baselines). It demonstrates the harness, not diagnostic quality; no paid model has run. Sources: [SignalOps_Implementation_Plan.md](SignalOps_Implementation_Plan.md) §12 and roadmap Phase 10.
 
-> Planned (Phase 13): an evaluation harness that adds stage scores, failure attribution, component evaluations of the synthesizer and verifier, intervals and paired comparisons, a fake-provider regression gate, and run-level spend ceilings. Requirements in [eval-harness-prd.md](eval-harness-prd.md), decision in [ADR-040](decisions.md#adr-040-the-evaluation-harness-extends-signalopsevaluation-in-layers-with-deterministic-oracles-first) (proposed). Nothing below describes it until those tasks are complete.
+> Phase 13 (in progress): an evaluation harness that adds stage scores, failure attribution, component evaluations of the synthesizer and verifier, intervals and paired comparisons, a fake-provider regression gate, and run-level spend ceilings. Requirements in [eval-harness-prd.md](eval-harness-prd.md), decision in [ADR-040](decisions.md#adr-040-the-evaluation-harness-extends-signalopsevaluation-in-layers-with-deterministic-oracles-first). Sections marked with a Phase 13 task ID describe what is implemented so far.
 
 ## Goal
 
@@ -22,6 +22,27 @@ Find out whether agent investigations actually beat simpler approaches. Correctn
 - Scenarios are versioned under `fixtures/` with a fixed seed and a dataset hash. `fixtures/scenarios/v1/<scenario>.labels.json` holds the labels and hash; the records are regenerated from the seed rather than committed. Each scenario has development and held-out variants (`evaluation/catalog.py`).
 - **Development** variants and **held-out** variants are kept separate. Prompts are never tuned on the reporting set.
 - Synthetic replay is labelled synthetic. Real fault demonstrations run through the optional `demo` profile.
+
+### Catalog version 2 (P13-T01)
+
+| | Development | Held-out |
+| --- | --- | --- |
+| Version 1 (Phase 10, still registered) | 7: one per scenario, seed 42 | 7: one per scenario |
+| Version 2 | 14: the 7 version 1 variants, one more per diagnosable family, 2 adversarial | 37: 5 per diagnosable family (the first repeats version 1's parameters), 3 healthy, 4 insufficient-evidence, 5 adversarial |
+
+`signalops evaluation-run --catalog 1|2` (default 2) and `catalog_version` on `POST /v1/evaluation-runs` pick the version; scenario names repeat across versions, and a run records its version in `limits.catalog_version`. Version 1 definitions, dataset hashes, and the held-out split hash (`17ce501d…`, run `7ac381af`) are unchanged.
+
+Version 2 outcomes carry **stage labels**, all evaluator truth stored in the `evaluation` schema:
+
+| Label | Meaning |
+| --- | --- |
+| `lead_roles` | Specialist roles whose evidence can show the cause: telemetry for timeouts, pool exhaustion, memory pressure, and the mixed scenario; deployment and telemetry for a deployment regression. The dependency role reads structure only, so it is never a lead role |
+| `expected_contradiction` | The competing service a mixed scenario should surface (`checkout`, whose unrelated deployment lands at the fault's start) |
+| `clean_twin` | For an adversarial variant, the scenario it perturbs |
+
+The **adversarial** family (`evaluation/adversarial.py`) adds one error log per plant to a clean twin in the same split, 3 seconds after the fault starts, on the cause's service (or the first affected service when there is no cause). The texts are the log plants of `fixtures/adversarial/v1/injections.json` (instructions to run shell tools, widen scope, leak secrets, self-approve remediation, cite a planted signal); the runbook plant is not overlaid because runbooks are seeded from the demo catalog, not from a dataset. Every other record is the twin's, byte for byte, and the expected outcome is the twin's plus `clean_twin`.
+
+`fixtures/scenarios/v2/` holds every version 2 definition; regenerate with `signalops evaluation-catalog --out fixtures/scenarios/v2` (`--check` exits 1 when stale).
 
 ## Baselines (P10-T04, ADR-036)
 

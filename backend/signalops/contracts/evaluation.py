@@ -11,8 +11,17 @@ from typing import Self
 
 from pydantic import Field, JsonValue, model_validator
 
-from signalops.contracts.common import ContractModel, Name, SourceEventId, UtcDatetime, Version
+from signalops.contracts.common import (
+    ContractModel,
+    Name,
+    SourceEventId,
+    UtcDatetime,
+    Version,
+    require_unique,
+)
 from signalops.contracts.diagnosis import FailureType
+from signalops.contracts.roles import SPECIALIST_ROLES
+from signalops.contracts.workflow import AgentRole
 
 MAX_SUPPORTING_EVENTS = 5_000
 
@@ -25,6 +34,8 @@ class ScenarioFamily(StrEnum):
     HEALTHY_NOISE = "healthy_noise"
     MIXED = "mixed"
     INSUFFICIENT_EVIDENCE = "insufficient_evidence"
+    # Another scenario with adversarial text planted in its logs (catalog v2).
+    ADVERSARIAL = "adversarial"
 
 
 class ScenarioSplit(StrEnum):
@@ -67,6 +78,10 @@ TERMINAL_RUN_STATUSES = frozenset({RunStatus.COMPLETED, RunStatus.FAILED})
 TERMINAL_CASE_STATUSES = frozenset({CaseStatus.SCORED, CaseStatus.FAILED})
 
 
+def _unset(value: object) -> bool:
+    return value is None or value == ()
+
+
 class FaultWindow(ContractModel):
     start: UtcDatetime
     end: UtcDatetime
@@ -92,6 +107,15 @@ class ExpectedOutcome(ContractModel):
     supporting_event_ids: tuple[SourceEventId, ...] = Field(
         default=(), max_length=MAX_SUPPORTING_EVENTS
     )
+    # Stage labels (catalog v2, P13-T01), left out of a dump when unset so catalog v1
+    # outcomes stay byte-identical. Specialist roles whose evidence can show the cause.
+    lead_roles: tuple[AgentRole, ...] = Field(
+        default=(), max_length=len(SPECIALIST_ROLES), exclude_if=_unset
+    )
+    # The competing service a mixed scenario should surface as a contradiction.
+    expected_contradiction: Name | None = Field(default=None, exclude_if=_unset)
+    # For an adversarial variant: the scenario it perturbs, in the same split and version.
+    clean_twin: Name | None = Field(default=None, exclude_if=_unset)
 
     @model_validator(mode="after")
     def _check(self) -> Self:
@@ -102,6 +126,14 @@ class ExpectedOutcome(ContractModel):
             raise ValueError("a diagnosable outcome needs an expected incident")
         if self.incident_expected and self.fault_window is None:
             raise ValueError("an expected incident needs a fault window")
+        require_unique(self.lead_roles, "lead_roles")
+        if any(role not in SPECIALIST_ROLES for role in self.lead_roles):
+            raise ValueError("lead_roles names only specialist roles")
+        if self.lead_roles and not self.diagnosable:
+            raise ValueError("lead_roles applies to diagnosable outcomes only")
+        contradiction = self.expected_contradiction
+        if contradiction is not None and contradiction == self.root_cause_service:
+            raise ValueError("expected_contradiction names a service other than the cause")
         return self
 
     def summary(self) -> "ExpectedOutcome":

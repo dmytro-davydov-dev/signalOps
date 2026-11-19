@@ -56,7 +56,15 @@ from signalops.contracts.evaluation import (
 )
 from signalops.contracts.workflow import TERMINAL_INVESTIGATION_STATUSES
 from signalops.detection.detector import DetectionPolicy
-from signalops.evaluation.catalog import ENTRIES, CatalogEntry, definition_of, split_hash
+from signalops.evaluation.catalog import (
+    CATALOG_VERSION,
+    CATALOG_VERSIONS,
+    ENTRIES,
+    LATEST_CATALOG_VERSION,
+    CatalogEntry,
+    definition_of,
+    split_hash,
+)
 from signalops.evaluation.metrics import summarize
 from signalops.evaluation.replay import (
     DEFAULT_TIMING,
@@ -124,12 +132,21 @@ class RunRequest(ContractModel):
     deadline_seconds: int | None = Field(default=None, ge=60, le=24 * 60 * 60)
     # A subset of the split's scenario names; all of them when empty.
     scenarios: tuple[str, ...] = Field(default=(), max_length=50)
+    # The scenario catalog version; scenario names repeat across versions.
+    catalog_version: str = LATEST_CATALOG_VERSION
 
     @model_validator(mode="after")
     def _check(self) -> Self:
         require_unique(self.variants, "variants")
         require_unique(self.scenarios, "scenarios")
+        if self.catalog_version not in CATALOG_VERSIONS:
+            raise ValueError(f"catalog_version must be one of {', '.join(CATALOG_VERSIONS)}")
         return self
+
+
+def catalog_version_of(run: EvaluationRun) -> str:
+    """A run's catalog version; runs queued before version 2 existed used version 1."""
+    return str(run.limits.get("catalog_version", CATALOG_VERSION))
 
 
 class UnknownScenarioError(ValueError):
@@ -161,12 +178,19 @@ def pricing_of(settings: Settings) -> dict[str, Any]:
 
 
 def selected_entries(request: RunRequest) -> list[CatalogEntry]:
-    chosen = [entry for entry in ENTRIES if entry.split is request.split]
+    chosen = [
+        entry
+        for entry in ENTRIES
+        if entry.split is request.split and entry.version == request.catalog_version
+    ]
     if request.scenarios:
         names = {entry.name for entry in chosen}
         unknown = sorted(set(request.scenarios) - names)
         if unknown:
-            raise UnknownScenarioError(f"not in the {request.split} split: {', '.join(unknown)}")
+            raise UnknownScenarioError(
+                f"not in the {request.split} split of catalog v{request.catalog_version}: "
+                f"{', '.join(unknown)}"
+            )
         chosen = [entry for entry in chosen if entry.name in request.scenarios]
     return chosen
 
@@ -181,6 +205,7 @@ async def queue_run(
         "max_steps": request.max_steps or settings.investigation_max_steps,
         "deadline_seconds": request.deadline_seconds or settings.investigation_deadline_seconds,
         "scenarios": [definition.name for definition in definitions],
+        "catalog_version": request.catalog_version,
         "deterministic_trials": 1,
     }
     async with database.transaction() as session:
@@ -290,7 +315,10 @@ class RunExecutor:
             scenarios = list(
                 await session.scalars(
                     select(EvaluationScenario)
-                    .where(EvaluationScenario.name.in_(names))
+                    .where(
+                        EvaluationScenario.name.in_(names),
+                        EvaluationScenario.version == catalog_version_of(run),
+                    )
                     .order_by(EvaluationScenario.name)
                 )
             )

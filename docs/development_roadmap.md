@@ -1,6 +1,6 @@
 # SignalOps development roadmap
 
-Version 1 · 29 October 2026 · Status: phases 1–12 complete (release `v0.1.0`, 9 November 2026); Phase 13 (evaluation harness) planned 19 November 2026, not started
+Version 1 · 29 October 2026 · Status: phases 1–12 complete (release `v0.1.0`, 9 November 2026); Phase 13 (evaluation harness) in progress since 19 November 2026
 
 ## Purpose
 
@@ -25,13 +25,13 @@ PostgreSQL owns evidence, workflow progress, budgets, and the initial knowledge 
 
 | Field | Current value |
 | --- | --- |
-| Active phase | Phase 13 planned (2026-11-19), not started. Phases 1–12 complete; Phase 12 gate passed 2026-11-09, release `v0.1.0` |
-| Active task | None |
-| Last completed task | P12-T03 (Phase 12 gate) |
+| Active phase | Phase 13 in progress (started 2026-11-19). Phases 1–12 complete; Phase 12 gate passed 2026-11-09, release `v0.1.0` |
+| Active task | None (P13-T01 completed; P13-T02 next) |
+| Last completed task | P13-T01 (catalog v2, stage labels, adversarial twins) |
 | Latest verified commit | `d39d240` (validated code of release `v0.1.0`; the tagged commit adds release notes and this ledger) |
-| Validation evidence | P12-T03 (release, against `d39d240`): full suite 1,370 passed, 2 skipped; outage checks 2 passed; browser journey and evaluation review 2 passed; backend and frontend checks, schema check, lockfiles, Compose config pass; credentials review clean ([release notes](releases/v0.1.0.md)). P12-T02: `docs/demo.md` with screenshots from `apps/web/e2e/demo.e2e.ts` (passed on the rebuilt stack); unit and contract 714 passed; seven multi-agent and evaluation integration suites 36 passed; ruff, format, mypy (223 files), frontend lint, typecheck, test (72), link check pass. P12-T01: quick start followed from a clean copy on the default ports (task notes): stack healthy, fault detected, automatic investigation diagnosed with verified citations, worker crash resumed with step reuse, every API example run; `uv run pytest tests/unit tests/contract` 712 passed; ruff, format, mypy (222 files), `docker compose config --quiet`, relative-link and anchor check over README and docs pass. P11-T04: reports `docs/benchmarks/replay-1m.json` and `sustained-100.json` (both reconciled complete); `uv run pytest tests/unit tests/contract` 712 passed; outbox, consumer, normalizer, failure, incident, detection, and investigation integration suites 160 passed; ruff, format, mypy (222 files), `docker compose config --quiet` pass. P11-T05: `SIGNALOPS_INTEGRATION=1 uv run pytest` 1364 passed, 2 skipped (opt-in outage checks); retention and backup/restore suites in the task notes; ruff, format, mypy (221 files) pass; retention dry run on rebuilt Compose at 0019. P11-T03: outage checks passed on rebuilt Compose (task notes); unit and contract 708 passed; gateway, failure, lifecycle, and one-shot integration suites 44 passed; ruff, format, mypy pass. P11-T02: `SIGNALOPS_INTEGRATION=1 uv run pytest` 1356 passed, 2 skipped (opt-in outage checks), 1 unit failure from `.env` variables leaking into a settings test, fixed and rerun (`tests/unit` and `tests/contract` 707 passed with and without the sourced variables); ruff, format, mypy (218 files), `export-schemas --check` pass; Compose boundary and rotation checks in the task notes. No paid model was called |
+| Validation evidence | P13-T01 (working tree, commit in the work log): catalog replay of all 65 entries of both versions (63 of 65 on the first run, the 2 failing entries retuned and rerun green); `uv run pytest` 829 passed; evaluation access, runs, and API integration 6 passed; migration/model comparison 24 passed; ruff, format, mypy (225 files), `export-schemas` regenerated. P12-T03 (release, against `d39d240`): full suite 1,370 passed, 2 skipped; outage checks 2 passed; browser journey and evaluation review 2 passed; backend and frontend checks, schema check, lockfiles, Compose config pass; credentials review clean ([release notes](releases/v0.1.0.md)). P12-T02: `docs/demo.md` with screenshots from `apps/web/e2e/demo.e2e.ts` (passed on the rebuilt stack); unit and contract 714 passed; seven multi-agent and evaluation integration suites 36 passed; ruff, format, mypy (223 files), frontend lint, typecheck, test (72), link check pass. P12-T01: quick start followed from a clean copy on the default ports (task notes): stack healthy, fault detected, automatic investigation diagnosed with verified citations, worker crash resumed with step reuse, every API example run; `uv run pytest tests/unit tests/contract` 712 passed; ruff, format, mypy (222 files), `docker compose config --quiet`, relative-link and anchor check over README and docs pass. P11-T04: reports `docs/benchmarks/replay-1m.json` and `sustained-100.json` (both reconciled complete); `uv run pytest tests/unit tests/contract` 712 passed; outbox, consumer, normalizer, failure, incident, detection, and investigation integration suites 160 passed; ruff, format, mypy (222 files), `docker compose config --quiet` pass. P11-T05: `SIGNALOPS_INTEGRATION=1 uv run pytest` 1364 passed, 2 skipped (opt-in outage checks); retention and backup/restore suites in the task notes; ruff, format, mypy (221 files) pass; retention dry run on rebuilt Compose at 0019. P11-T03: outage checks passed on rebuilt Compose (task notes); unit and contract 708 passed; gateway, failure, lifecycle, and one-shot integration suites 44 passed; ruff, format, mypy pass. P11-T02: `SIGNALOPS_INTEGRATION=1 uv run pytest` 1356 passed, 2 skipped (opt-in outage checks), 1 unit failure from `.env` variables leaking into a settings test, fixed and rerun (`tests/unit` and `tests/contract` 707 passed with and without the sourced variables); ruff, format, mypy (218 files), `export-schemas --check` pass; Compose boundary and rotation checks in the task notes. No paid model was called |
 | Blockers | P13-T08 (paid-model evaluation) needs an explicit request with scope and spend ceilings (Q12); P13-T09 needs P13-T08 and Q14. P13-T01–T07 are unblocked |
-| Next task | P13-T01 (catalog v2, stage labels, adversarial twins). Phase 13 implements release priority 1 with the harness from [eval-harness-prd.md](eval-harness-prd.md). Other priorities after the release: a budgeted paid-model evaluation (needs an explicit request with scope and budget), detection false positives under load, throughput (partition key review, per-transaction batching), restore-time consumer rewind, public-exposure prerequisites ([release notes](releases/v0.1.0.md#next-priorities)) |
+| Next task | P13-T02 (stage scores from stored step outputs). Then T03–T07 on the fake provider; T08 and T09 stay blocked (see Blockers) |
 
 ### Scope and release boundaries
 
@@ -1150,7 +1150,7 @@ Start the React shell in Phase 1 and add API-backed incident views in Phase 5; P
 
 ## Phase 13 Evaluation harness for the agentic pipeline
 
-**Dependencies:** Phase 12. Requirements: [eval-harness-prd.md](eval-harness-prd.md). Decision: [ADR-040](decisions.md#adr-040-the-evaluation-harness-extends-signalopsevaluation-in-layers-with-deterministic-oracles-first) (proposed; accept it when P13-T01 starts, or record the deviation first).
+**Dependencies:** Phase 12. Requirements: [eval-harness-prd.md](eval-harness-prd.md). Decision: [ADR-040](decisions.md#adr-040-the-evaluation-harness-extends-signalopsevaluation-in-layers-with-deterministic-oracles-first) (accepted 2026-11-19 when P13-T01 started).
 
 **Outcome:** Every evaluation run explains where the agentic pipeline is wrong, stage by stage, with intervals on every number; a fake-provider regression gate protects workflow behavior; a paid-model run is bounded by a run-level spend ceiling and, once approved, answers ADR-010's question.
 
@@ -1160,11 +1160,20 @@ Start the React shell in Phase 1 and add API-backed incident views in Phase 5; P
 
 ### P13-T01 Extend the scenario catalog with stage labels and adversarial twins
 
-- [ ] Complete this task.
+- [x] Complete this task. Completed 2026-11-19; see the work log for the commit.
 
 **Implementation:** Catalog version 2 in `evaluation/catalog.py`: at least 5 held-out variants per diagnosable family and at least 35 held-out scenarios (other seeds, windows, intensities, targets), development variants grown in proportion; version 1 stays registered. Add stage labels to `ExpectedOutcome` (evaluator truth): `lead_roles`, `expected_contradiction`, `clean_twin`. Add an `adversarial` family that overlays the `fixtures/adversarial/v1` plants on diagnosable and insufficient-evidence scenarios, each paired with its clean twin in the same split. Regenerate label fixtures under `fixtures/scenarios/v2/`. Add "evaluation harness (in-process, ADR-040)" to the stack lines in `README.md`, `docs/architecture.md`, and `CLAUDE.md`.
 
 **Acceptance:** Every v2 scenario replays to its expected incident count (healthy none, others exactly one on affected services); v1 dataset hashes are unchanged; stage labels and adversarial labels are unreadable by the runtime role (access test extended); no label word or plant marker appears in records except the planted text itself; each adversarial scenario differs from its twin only by planted text.
+
+**Notes (2026-11-19):**
+- Catalog v2: 14 development (the 7 v1 variants plus one more per diagnosable family plus 2 adversarial) and 37 held-out scenarios (5 per diagnosable family, the first repeating v1's parameters; 3 healthy; 4 insufficient-evidence; 5 adversarial). "In proportion" was read as doubling the development split, not scaling it ×5, to keep the in-process regression suite (P13-T07) bounded.
+- Runs pick a catalog with `catalog_version` (default `2`; CLI `--catalog`), stored in `limits.catalog_version`; runs without it read as version 1. Scenario names repeat across versions, so the runner now selects scenarios by name **and** version.
+- Stage labels are fields on `ExpectedOutcome` with `exclude_if` when unset, so v1 definitions serialize exactly as before and stay registered unchanged (v1 held-out split hash `17ce501d…` equals run `7ac381af`'s).
+- Migration `0020_catalog_v2` only widens the `family` CHECK for `adversarial`; stage scores therefore move to `0021` (P13-T02) and the failure stage to `0022` (P13-T03).
+- Adversarial plants are the five **log** plants of `fixtures/adversarial/v1`, embedded in `evaluation/adversarial.py` because the backend image does not ship `fixtures/` (a unit test keeps them equal). The runbook plant is not overlaid: runbooks are seeded per replay scope from the demo catalog. One error log per plant, 3 s after fault start, on the cause's service.
+- `signalops evaluation-catalog --out fixtures/scenarios/v2 [--check]` writes the v2 definitions; `SIGNALOPS_CATALOG_SCENARIOS` narrows the catalog replay test while tuning a variant. `memory-pressure/held-out-3` was retuned once (its first parameters also opened an incident on `bank-gateway`).
+- Validation: `SIGNALOPS_INTEGRATION=1 uv run pytest tests/integration/test_scenario_catalog.py` replays all 65 entries of both versions (first run: 63 of 65 entries passed; the 2 failures were the retuned variant and its adversarial overlay, and both pass after the change); `tests/unit/test_catalog_v2.py` (115 cases) covers counts, v1 hashes, fixtures, stage labels, label words, and twin equality; the access test reads stage and plant labels as the runtime role and is refused.
 
 ### P13-T02 Score workflow stages from stored step outputs
 
@@ -1924,6 +1933,16 @@ Keep these outside the release critical path unless measurements justify promoti
 - Deviations and reasons: none; ADR-040 is proposed and must be accepted (or revised) when P13-T01 starts.
 - Remaining issues: Q12 (paid-run ceilings) blocks P13-T08; Q13 (CI job for the gate) is decided in P13-T07; Q14 (judge model) blocks P13-T09.
 - Next task: P13-T01
+
+### 2026-11-19 — P13-T01
+- Status: completed
+- Commit: see git log for `feat(P13-T01)`
+- Implemented: catalog version 2 (`evaluation/catalog.py`), adversarial overlays (`evaluation/adversarial.py`), stage labels on `ExpectedOutcome`, `adversarial` scenario family and migration `0020_catalog_v2`, `catalog_version` on run requests (API and CLI `--catalog`), `signalops evaluation-catalog`, fixtures `fixtures/scenarios/v2/`; ADR-040 accepted; stack lines in README, architecture, CLAUDE.md; `docs/evaluation.md` catalog v2 section.
+- Validation commands and results: `SIGNALOPS_INTEGRATION=1 uv run pytest tests/integration/test_scenario_catalog.py` (65 entries; 63 on the first run, retuned variant and its overlay rerun green); `uv run pytest` 829 passed, 658 skipped; `SIGNALOPS_INTEGRATION=1 uv run pytest tests/integration/test_evaluation_access.py tests/integration/test_evaluation_runs.py tests/integration/test_evaluation_api.py` 6 passed; `tests/integration/test_evidence_schema.py` 24 passed; ruff, format, mypy (225 files) pass.
+- Evidence or artifact references: `fixtures/scenarios/v2/`, `tests/unit/test_catalog_v2.py`.
+- Deviations and reasons: development split doubled rather than scaled ×5; runbook plant not overlaid; migration numbering shifted (task notes).
+- Remaining issues: none for this task.
+- Next task: P13-T02
 
 ## Work log template
 

@@ -28,6 +28,8 @@ flowchart TD
 
 Agents investigate *selected incidents*. Raw signals never pass through an LLM one by one.
 
+Stack: React and TypeScript, Python and FastAPI, Kafka, PostgreSQL, Redis, Docker Compose, and the evaluation harness (in-process, [ADR-040](decisions.md#adr-040-the-evaluation-harness-extends-signalopsevaluation-in-layers-with-deterministic-oracles-first)), which is part of `signalops.evaluation` and runs in the evaluation worker and CLI, not as a service.
+
 ## Who owns which state
 
 | Store | Owns | Does not own |

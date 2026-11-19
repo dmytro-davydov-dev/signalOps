@@ -3,7 +3,7 @@
 ## Project
 
 SignalOps turns noisy telemetry into evidence-backed software incident diagnoses.
-Stack: React/TypeScript, Python/FastAPI, Kafka, PostgreSQL, Redis, Docker Compose.
+Stack: React/TypeScript, Python/FastAPI, Kafka, PostgreSQL, Redis, Docker Compose, evaluation harness (in-process, ADR-040).
 Use Pydantic contracts, SQLAlchemy repositories, Alembic migrations, and an explicit persisted Python workflow.
 Build a complete working slice before adding infrastructure or more agents.
 

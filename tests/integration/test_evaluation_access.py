@@ -30,6 +30,7 @@ from signalops.contracts.evaluation import (
     SystemVariant,
 )
 from signalops.contracts.workflow import InvestigationStatus
+from signalops.evaluation.catalog import ENTRIES_V2, definition_of
 from signalops.evaluation.scoring import score_case
 from signalops.gateway.fake import FakeProvider
 from signalops.persistence import database as db
@@ -137,10 +138,19 @@ def test_only_the_evaluator_group_has_privileges_on_ground_truth(engine: Engine)
         assert public == 0
 
 
-async def test_the_runtime_login_cannot_read_ground_truth(runtime: db.Database) -> None:
+async def test_the_runtime_login_cannot_read_ground_truth(
+    evaluator: db.Database, runtime: db.Database
+) -> None:
+    # Catalog v2 stage and adversarial labels are stored like the rest of the truth.
+    adversarial = next(entry for entry in ENTRIES_V2 if entry.plants)
+    async with evaluator.transaction() as session:
+        await EvaluationRepository(session).register_scenario(definition_of(adversarial))
     queries = [f"SELECT * FROM evaluation.{table} LIMIT 1" for table in EVALUATION_TABLES]  # noqa: S608
     queries += [
         "SELECT expected_outcome, injection_spec FROM evaluation.scenarios",
+        "SELECT expected_outcome->'lead_roles', expected_outcome->'clean_twin' "
+        "FROM evaluation.scenarios",
+        "SELECT injection_spec->'plants' FROM evaluation.scenarios WHERE family = 'adversarial'",
         "SET ROLE signalops_evaluator",
         "UPDATE alembic_version SET version_num = version_num",
         "CREATE TABLE public.sneaky (id int)",

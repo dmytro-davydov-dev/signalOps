@@ -49,6 +49,13 @@ def test_run_requests_are_bounded() -> None:
         selected_entries(
             RunRequest(label="x", split=ScenarioSplit.HELD_OUT, scenarios=("healthy/dev",))
         )
+    with pytest.raises(ValidationError):
+        RunRequest(label="x", catalog_version="9")
+    # Catalog v2 by default; version 1 stays selectable with its seven held-out variants.
     held_out = selected_entries(RunRequest(label="x"))
-    assert len(held_out) == 7
+    assert len(held_out) == 37
     assert all(entry.split is ScenarioSplit.HELD_OUT for entry in held_out)
+    assert {entry.version for entry in held_out} == {"2"}
+    v1 = selected_entries(RunRequest(label="x", catalog_version="1"))
+    assert len(v1) == 7
+    assert {entry.version for entry in v1} == {"1"}

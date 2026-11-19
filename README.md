@@ -36,6 +36,7 @@ flowchart LR
 | Durable state | PostgreSQL: evidence, incidents, jobs, checkpoints, budgets, graph |
 | Disposable state | Redis: caches, rate limits, UI wake-ups |
 | Runtime | Docker Compose, one backend image with separate process commands |
+| Evaluation | Evaluation harness (in-process, ADR-040): replayed scenarios, deterministic scoring, stage scores, regression gate |
 
 ## Documentation
 

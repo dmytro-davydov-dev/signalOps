@@ -1138,9 +1138,37 @@
             "title": "Affected Services",
             "type": "array"
           },
+          "clean_twin": {
+            "anyOf": [
+              {
+                "maxLength": 128,
+                "minLength": 1,
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Clean Twin"
+          },
           "diagnosable": {
             "title": "Diagnosable",
             "type": "boolean"
+          },
+          "expected_contradiction": {
+            "anyOf": [
+              {
+                "maxLength": 128,
+                "minLength": 1,
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expected Contradiction"
           },
           "failure_type": {
             "anyOf": [
@@ -1168,6 +1196,15 @@
           "incident_expected": {
             "title": "Incident Expected",
             "type": "boolean"
+          },
+          "lead_roles": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/AgentRole"
+            },
+            "maxItems": 3,
+            "title": "Lead Roles",
+            "type": "array"
           },
           "root_cause_service": {
             "anyOf": [
@@ -2946,6 +2983,11 @@
             ],
             "title": "Budget Microusd"
           },
+          "catalog_version": {
+            "default": "2",
+            "title": "Catalog Version",
+            "type": "string"
+          },
           "deadline_seconds": {
             "anyOf": [
               {
@@ -3044,7 +3086,8 @@
           "memory_pressure",
           "healthy_noise",
           "mixed",
-          "insufficient_evidence"
+          "insufficient_evidence",
+          "adversarial"
         ],
         "title": "ScenarioFamily",
         "type": "string"

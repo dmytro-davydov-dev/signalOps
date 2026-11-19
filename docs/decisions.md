@@ -10,7 +10,7 @@ ADR-001 to ADR-010 come from [SignalOps_Implementation_Plan.md](SignalOps_Implem
 | Durable jobs | [ADR-006](#adr-006-durable-jobs-with-leases-and-generation-fencing), [ADR-021](#adr-021-job-leases-use-postgresqls-clock-and-a-row-lock-fence), [ADR-022](#adr-022-the-workflow-is-a-fixed-node-sequence-with-a-fenced-write-per-step), [ADR-023](#adr-023-cancellation-is-a-durable-request-workers-end-the-job), [ADR-024](#adr-024-one-transaction-ends-the-job-and-the-investigation) |
 | Gateway budgets | [ADR-008](#adr-008-in-process-llm-gateway-with-postgresql-budget-reservations), [ADR-025](#adr-025-provider-calls-go-through-one-neutral-interface-and-the-anthropic-sdk-never-retries), [ADR-026](#adr-026-the-gateway-reserves-each-calls-maximum-and-redis-only-meters-the-provider), [ADR-032](#adr-032-specialists-run-as-one-parallel-stage-under-process-wide-slots-and-durable-budget-shares) |
 | Multi-agent workflow | [ADR-007](#adr-007-explicit-persisted-python-workflow-not-an-agent-framework), [ADR-031](#adr-031-workflow-v3-splits-the-agent-into-roles-with-code-built-briefs-and-code-checked-handoffs), [ADR-033](#adr-033-code-records-contradictions-and-the-verifier-gets-at-most-one-follow-up-round), [ADR-036](#adr-036-baselines-run-as-workflows-on-the-same-incident-with-limits-fixed-by-the-run) |
-| Evaluation | [ADR-010](#adr-010-evaluate-against-simpler-baselines-under-equal-constraints), [ADR-034](#adr-034-ground-truth-lives-in-its-own-schema-which-the-runtime-role-cannot-read), [ADR-035](#adr-035-a-replay-is-complete-when-postgresql-shows-its-work-drained-on-simulated-time), [ADR-036](#adr-036-baselines-run-as-workflows-on-the-same-incident-with-limits-fixed-by-the-run), [ADR-040](#adr-040-the-evaluation-harness-extends-signalopsevaluation-in-layers-with-deterministic-oracles-first) (proposed) |
+| Evaluation | [ADR-010](#adr-010-evaluate-against-simpler-baselines-under-equal-constraints), [ADR-034](#adr-034-ground-truth-lives-in-its-own-schema-which-the-runtime-role-cannot-read), [ADR-035](#adr-035-a-replay-is-complete-when-postgresql-shows-its-work-drained-on-simulated-time), [ADR-036](#adr-036-baselines-run-as-workflows-on-the-same-incident-with-limits-fixed-by-the-run), [ADR-040](#adr-040-the-evaluation-harness-extends-signalopsevaluation-in-layers-with-deterministic-oracles-first) |
 
 Format: **Decision**, **Reason**, **Trade-off**, **Revisit when**.
 
@@ -431,7 +431,7 @@ Revision `0015_investigation_outcomes` adds a partial unique index allowing one 
 
 ## ADR-040: The evaluation harness extends `signalops.evaluation` in layers, with deterministic oracles first
 
-*Status: proposed (2026-11-19), not implemented. Requirements: [eval-harness-prd.md](eval-harness-prd.md); tasks: roadmap Phase 13.*
+*Status: accepted (2026-11-19, when P13-T01 started). Requirements: [eval-harness-prd.md](eval-harness-prd.md); tasks: roadmap Phase 13.*
 
 **Context:** The Phase 10 lab scores final outcomes only. Stage outputs (`SpecialistFindings`, `SynthesisOutput`, `VerificationOutput`, each with `Provenance`) are persisted per step but never scored, comparisons carry no intervals, nothing detects a behavior regression, and nothing bounds a paid run's total spend. The first paid evaluation is the top release priority, and its results must be explainable.
 
