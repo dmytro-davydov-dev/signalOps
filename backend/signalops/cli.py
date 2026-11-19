@@ -205,6 +205,15 @@ def build_parser() -> argparse.ArgumentParser:
     )
     evaluate.add_argument("--budget-microusd", type=int, help="equal budget per case")
     evaluate.add_argument(
+        "--max-spend-microusd", type=int, help="run-level spend ceiling (required for paid runs)"
+    )
+    evaluate.add_argument(
+        "--allow-paid", action="store_true", help="allow a non-fake provider (with a ceiling)"
+    )
+    evaluate.add_argument(
+        "--approval-ref", help="the approval this paid run was granted under (stored on the run)"
+    )
+    evaluate.add_argument(
         "--execute", action="store_true", help="execute the run here instead of queueing it"
     )
     evaluate.add_argument(
@@ -218,6 +227,19 @@ def build_parser() -> argparse.ArgumentParser:
     export_run.add_argument(
         "--out-dir", default="docs/evaluation-runs", help="directory (default docs/evaluation-runs)"
     )
+    estimate = commands.add_parser(
+        "evaluation-estimate",
+        help="print a run request's case count and worst-case spend without queueing it",
+    )
+    estimate.add_argument("--split", choices=["development", "held_out"], default="held_out")
+    estimate.add_argument(
+        "--variant", action="append", choices=["deterministic", "single_agent", "multi_agent"]
+    )
+    estimate.add_argument("--trials", type=int, default=3)
+    estimate.add_argument("--scenario", action="append")
+    estimate.add_argument("--catalog", choices=["1", "2"], default="2")
+    estimate.add_argument("--budget-microusd", type=int)
+    estimate.add_argument("--max-spend-microusd", type=int)
     stage = commands.add_parser(
         "evaluation-stage",
         help="run the synthesizer or verifier alone on the stage corpus (evaluator role; "
@@ -768,7 +790,13 @@ def run_evaluation_run(args: argparse.Namespace) -> int:
 
     from signalops.config import get_settings
     from signalops.contracts.evaluation import RunStatus, ScenarioSplit, SystemVariant
-    from signalops.evaluation.runner import RunExecutor, RunRequest, queue_run
+    from signalops.evaluation.runner import (
+        PaidRunRefusedError,
+        RunExecutor,
+        RunRequest,
+        preflight,
+        queue_run,
+    )
     from signalops.logs import configure_logging
     from signalops.persistence.database import Database, create_engine
     from signalops.persistence.seed import DEMO_WORKSPACE_ID
@@ -783,7 +811,15 @@ def run_evaluation_run(args: argparse.Namespace) -> int:
         scenarios=tuple(args.scenario or ()),
         budget_microusd=args.budget_microusd,
         catalog_version=args.catalog,
+        max_spend_microusd=args.max_spend_microusd,
+        allow_paid=args.allow_paid,
+        approval_ref=args.approval_ref,
     )
+    try:
+        preflight(request, settings)
+    except PaidRunRefusedError as error:
+        print(f"refused: {error}", file=sys.stderr)
+        return 2
     evaluator = settings.evaluator_settings()
 
     async def run() -> int:
@@ -858,6 +894,30 @@ def run_evaluation_export(args: argparse.Namespace) -> int:
     (out / f"{name}.md").write_text(summary)
     print(f"wrote {out / name}.json and {out / name}.md")
     return 0
+
+
+def run_evaluation_estimate(args: argparse.Namespace) -> int:
+    import json
+
+    from signalops.config import get_settings
+    from signalops.contracts.evaluation import ScenarioSplit, SystemVariant
+    from signalops.evaluation.runner import RunRequest, estimate
+
+    settings = get_settings()
+    request = RunRequest(
+        label="estimate",
+        split=ScenarioSplit(args.split),
+        variants=tuple(SystemVariant(value) for value in args.variant or SystemVariant),
+        trials=args.trials,
+        scenarios=tuple(args.scenario or ()),
+        budget_microusd=args.budget_microusd,
+        catalog_version=args.catalog,
+        max_spend_microusd=args.max_spend_microusd,
+    )
+    spend = estimate(request, settings)
+    fits = spend.max_spend_microusd is None or spend.worst_case_microusd <= spend.max_spend_microusd
+    print(json.dumps({**vars(spend), "fits_ceiling": fits}, indent=1, sort_keys=True))
+    return 0 if fits else 1
 
 
 def run_evaluation_stage(args: argparse.Namespace) -> int:
@@ -1451,6 +1511,8 @@ def main(argv: list[str] | None = None) -> int:
         return run_evaluation_worker(args)
     if args.command == "evaluation-export":
         return run_evaluation_export(args)
+    if args.command == "evaluation-estimate":
+        return run_evaluation_estimate(args)
     if args.command == "evaluation-stage":
         return run_evaluation_stage(args)
     if args.command == "evaluation-stage-corpus":

@@ -110,6 +110,8 @@ async def run_detail(
     return EvaluationRunDetail(
         **run_summary(run, counts).model_dump(),
         seed=run.seed,
+        max_spend_microusd=run.max_spend_microusd,
+        approval_ref=run.approval_ref,
         workflow_versions=run.workflow_versions,
         prompt_versions=run.prompt_versions,
         model_settings=run.model_config,

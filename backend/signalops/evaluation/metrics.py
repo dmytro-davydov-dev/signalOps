@@ -257,6 +257,11 @@ def variant_summary(
         "model_calls": sum(item.model_calls for item in observed),
         "stages": stage_summary(rows),
         "failure_stages": failure_summary(rows),
+        # Cases the run's spend ceiling stopped before they were requested (P13-T06).
+        "run_budget_stops": sum(
+            row.status == CaseStatus.FAILED and (row.error or "").startswith("run_budget")
+            for row in rows
+        ),
         "intervals": variant_intervals(rows),
         "cost_per_correct_microusd": cost_per_correct(rows),
         "calibration": calibration(rows, bool(run.model_config.get("measures_model_quality"))),
@@ -294,6 +299,21 @@ def summarize(
         "measures_model_quality": run.model_config.get("measures_model_quality"),
         "judge_model_scores": None,
         "report_version": REPORT_VERSION,
+        "spend": {
+            "max_spend_microusd": run.max_spend_microusd,
+            "worst_case_microusd": run.limits.get("worst_case_microusd"),
+            "spent_microusd": sum(
+                ObservedOutcome.model_validate(case.observed_outcome).spent_microusd
+                for case in cases
+                if case.observed_outcome
+            ),
+            "unknown_reserved_microusd": sum(
+                ObservedOutcome.model_validate(case.observed_outcome).unknown_reserved_microusd
+                for case in cases
+                if case.observed_outcome
+            ),
+            "approval_ref": run.approval_ref,
+        },
         "comparisons": comparisons(run, {v: by_variant.get(v, []) for v in run.variants}),
         "reproducibility": reproducibility(run),
     }

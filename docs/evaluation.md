@@ -175,3 +175,13 @@ Measured in P11-T04; results, including the missed sustained target, are in [ben
 ## Cost control
 
 Ordinary development and CI use the fake provider. Paid model evaluations, large replays, and long load tests run only on an explicit request that states their scope and budget.
+
+### Run-level spend ceiling (P13-T06)
+
+Each investigation already has a durable budget (ADR-026). A run adds a ceiling over all of them:
+
+- `evaluation-run --max-spend-microusd M --allow-paid --approval-ref R` (and `max_spend_microusd`, `allow_paid`, `approval_ref` on `POST /v1/evaluation-runs`). With a non-fake provider all three are required, or the request is refused before anything is queued (CLI exit 2, API 422).
+- **Preflight:** worst case = agent cases × trials × `budget_microusd` (the deterministic baseline costs nothing). A worst case above the ceiling is refused with both numbers. A fake run may state a ceiling and gets the same check; it needs none.
+- **During execution:** before requesting each agent investigation, the runner locks the run row and adds up its investigations: spent plus reserved for those that ended (reserved keeps unknown calls' reservations, which are never released) and the whole budget for those still running. If that plus one more budget would pass the ceiling, the case and every later one end `failed` with an error starting `run_budget`, and the run completes with what it has. Because the preflight already bounds the worst case, this is a second line of defence (for a ceiling lowered after queueing, or a resumed run), and the row lock keeps concurrent requests from jointly passing it.
+- The run stores `max_spend_microusd` and `approval_ref` (migration `0024`) and `limits.worst_case_microusd`; metrics add `spend` (ceiling, worst case, spent, unknown reservations, approval reference) and each variant's `run_budget_stops`.
+- `signalops evaluation-estimate [--split S] [--variant V…] [--trials N] [--budget-microusd B] [--max-spend-microusd M]` prints the case count and worst case without queueing anything (exit 1 if it does not fit the ceiling). The catalog v2 held-out split with `v2` and `v3`, 3 trials, and 3 USD per case is 37 × 2 × 3 × 3 USD = 666 USD worst case.

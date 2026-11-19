@@ -118,6 +118,13 @@ class EvaluationRun(Base):
         CheckConstraint(
             "(lease_owner IS NULL) = (lease_expires_at IS NULL)", name="lease_complete"
         ),
+        CheckConstraint(
+            "max_spend_microusd IS NULL OR max_spend_microusd > 0", name="max_spend_positive"
+        ),
+        CheckConstraint(
+            f"approval_ref IS NULL OR {length_between('approval_ref', 1, MAX_KEY_LENGTH)}",
+            name="approval_ref_length",
+        ),
         Index("ix_runs_status_created_at", "status", "created_at"),
         Index("ix_runs_workspace_id_created_at", "workspace_id", "created_at"),
         SCHEMA_ARGS,
@@ -149,6 +156,9 @@ class EvaluationRun(Base):
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     error: Mapped[str | None] = mapped_column(Text)
     metrics: Mapped[dict[str, Any] | None] = mapped_column(JSONB(none_as_null=True))
+    # Run-level spend ceiling and the operator's approval reference (P13-T06).
+    max_spend_microusd: Mapped[int | None] = mapped_column(BigInteger)
+    approval_ref: Mapped[str | None] = mapped_column(Text)
 
 
 class EvaluationReplay(Base):

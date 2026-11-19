@@ -51,6 +51,8 @@ class NewRun:
     model_config: dict[str, Any]
     pricing_config: dict[str, Any]
     limits: dict[str, Any]
+    max_spend_microusd: int | None = None
+    approval_ref: str | None = None
 
 
 class EvaluationRepository:
@@ -105,6 +107,8 @@ class EvaluationRepository:
             model_config=new.model_config,
             pricing_config=new.pricing_config,
             limits=new.limits,
+            max_spend_microusd=new.max_spend_microusd,
+            approval_ref=new.approval_ref,
         )
         self._session.add(run)
         await self._session.flush()

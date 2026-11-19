@@ -27,7 +27,9 @@ from datetime import UTC, datetime, timedelta
 from typing import Any, Final, Self
 
 from pydantic import Field, model_validator
-from sqlalchemy import select
+from sqlalchemy import case as sql_case
+from sqlalchemy import func, select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from signalops.adapters.ingestion import IngestPolicy, IngestSource
 from signalops.agents.deterministic import WORKFLOW_D1
@@ -137,6 +139,10 @@ class RunRequest(ContractModel):
     scenarios: tuple[str, ...] = Field(default=(), max_length=50)
     # The scenario catalog version; scenario names repeat across versions.
     catalog_version: str = LATEST_CATALOG_VERSION
+    # Run-level spend ceiling (P13-T06). A non-fake provider requires all three.
+    max_spend_microusd: int | None = Field(default=None, ge=1, le=10**12)
+    allow_paid: bool = False
+    approval_ref: str | None = Field(default=None, min_length=1, max_length=256)
 
     @model_validator(mode="after")
     def _check(self) -> Self:
@@ -154,6 +160,63 @@ def catalog_version_of(run: EvaluationRun) -> str:
 
 class UnknownScenarioError(ValueError):
     """A requested scenario is not in the catalog for that split."""
+
+
+class PaidRunRefusedError(ValueError):
+    """A run on a paid provider lacks its ceiling or approval, or could exceed the ceiling."""
+
+
+RUN_BUDGET: Final = "run_budget"
+
+
+@dataclass(frozen=True)
+class SpendEstimate:
+    """The most a run can spend: every agent case using its whole per-case budget."""
+
+    scenarios: int
+    agent_variants: int
+    trials: int
+    agent_cases: int
+    budget_microusd: int
+    worst_case_microusd: int
+    max_spend_microusd: int | None
+    paid: bool
+
+
+def estimate(request: RunRequest, settings: Settings) -> SpendEstimate:
+    scenarios = len(selected_entries(request))
+    agents = sum(variant is not SystemVariant.DETERMINISTIC for variant in request.variants)
+    budget = request.budget_microusd or settings.investigation_budget_microusd
+    cases = scenarios * agents * request.trials
+    return SpendEstimate(
+        scenarios=scenarios,
+        agent_variants=agents,
+        trials=request.trials,
+        agent_cases=cases,
+        budget_microusd=budget,
+        worst_case_microusd=cases * budget,
+        max_spend_microusd=request.max_spend_microusd,
+        paid=settings.model_provider != "fake",
+    )
+
+
+def preflight(request: RunRequest, settings: Settings) -> SpendEstimate:
+    """Refuse a paid run without a ceiling and approval, or any run over its ceiling."""
+    spend = estimate(request, settings)
+    if spend.paid and not (
+        request.allow_paid and request.max_spend_microusd and request.approval_ref
+    ):
+        raise PaidRunRefusedError(
+            f"provider {settings.model_provider} is paid: a run needs allow_paid, "
+            "max_spend_microusd, and approval_ref"
+        )
+    ceiling = request.max_spend_microusd
+    if ceiling is not None and spend.worst_case_microusd > ceiling:
+        raise PaidRunRefusedError(
+            f"worst case {spend.worst_case_microusd} microUSD ({spend.agent_cases} agent cases "
+            f"x {spend.budget_microusd}) exceeds the ceiling of {ceiling} microUSD"
+        )
+    return spend
 
 
 def model_config_of(settings: Settings) -> dict[str, Any]:
@@ -202,6 +265,7 @@ async def queue_run(
     database: Database, request: RunRequest, *, workspace_id: uuid.UUID, settings: Settings
 ) -> EvaluationRun:
     """Register the scenarios and store a queued run with everything needed to repeat it."""
+    spend = preflight(request, settings)
     definitions = [definition_of(entry) for entry in selected_entries(request)]
     limits = {
         "budget_microusd": request.budget_microusd or settings.investigation_budget_microusd,
@@ -210,6 +274,7 @@ async def queue_run(
         "scenarios": [definition.name for definition in definitions],
         "catalog_version": request.catalog_version,
         "deterministic_trials": 1,
+        "worst_case_microusd": spend.worst_case_microusd,
     }
     async with database.transaction() as session:
         repository = EvaluationRepository(session)
@@ -229,6 +294,8 @@ async def queue_run(
                 model_config=model_config_of(settings),
                 pricing_config=pricing_of(settings),
                 limits=limits,
+                max_spend_microusd=request.max_spend_microusd,
+                approval_ref=request.approval_ref,
             )
         )
 
@@ -282,6 +349,8 @@ class RunExecutor:
     def __init__(self, context: RunnerContext, owner: str) -> None:
         self._context = context
         self._owner = owner
+        # Runs that refused a case on their ceiling: every later case is refused too.
+        self._budget_stopped: set[uuid.UUID] = set()
 
     @property
     def _db(self) -> Database:
@@ -406,7 +475,14 @@ class RunExecutor:
                 observed = ObservedOutcome()
                 await self._score(case, expected, observed, scope, matched)
                 continue
-            investigation_id = await self._request(run, case, scope, incidents[0])
+            investigation_id = await self.request_investigation(run, case, scope, incidents[0])
+            if investigation_id is None:
+                await self._fail(
+                    case,
+                    f"{RUN_BUDGET}: the next investigation could pass the run's spend ceiling "
+                    f"of {run.max_spend_microusd} microUSD",
+                )
+                continue
             waiting.append((case, investigation_id))
         await self._await(run, scope, expected, incidents, waiting, matched)
 
@@ -451,12 +527,28 @@ class RunExecutor:
             for incident in incidents
         ]
 
-    async def _request(
+    async def request_investigation(
         self, run: EvaluationRun, case: EvaluationCase, scope: EvidenceScope, incident: Incident
-    ) -> uuid.UUID:
+    ) -> uuid.UUID | None:
+        """Request the case's investigation, or None when the run's ceiling cannot fit it."""
         request_key = f"eval:{run.id}:{case.case_key}"
         now = datetime.now(UTC)
+        budget = int(run.limits["budget_microusd"])
         async with self._db.transaction() as session:
+            existing = await session.scalar(
+                select(Investigation.id).where(Investigation.request_key == request_key)
+            )
+            # The deterministic baseline makes no model call, so it costs nothing.
+            costs = SystemVariant(case.variant) is not SystemVariant.DETERMINISTIC
+            if existing is None and costs and run.max_spend_microusd is not None:
+                # The row lock serializes every check of this run's ceiling.
+                await session.execute(
+                    select(EvaluationRun.id).where(EvaluationRun.id == run.id).with_for_update()
+                )
+                committed = await run_commitment(session, run.id)
+                if run.id in self._budget_stopped or committed + budget > run.max_spend_microusd:
+                    self._budget_stopped.add(run.id)
+                    return None
             repository = InvestigationRepository(session)
             created = await repository.create(
                 NewInvestigation(
@@ -464,7 +556,7 @@ class RunExecutor:
                     incident_id=incident.id,
                     request_key=request_key,
                     workflow_version=VARIANT_WORKFLOWS[SystemVariant(case.variant)],
-                    budget_microusd=int(run.limits["budget_microusd"]),
+                    budget_microusd=budget,
                     max_steps=int(run.limits["max_steps"]),
                     created_at=now,
                     deadline_at=now + timedelta(seconds=int(run.limits["deadline_seconds"])),
@@ -553,6 +645,31 @@ class RunExecutor:
                 now=datetime.now(UTC),
                 error=reason,
             )
+
+
+async def run_commitment(session: AsyncSession, run_id: uuid.UUID) -> int:
+    """The most a run's investigations can have cost: spent plus reserved once they end,
+    which keeps unknown calls' reservations, and the whole budget while they run."""
+    terminal = Investigation.status.in_(
+        [status.value for status in TERMINAL_INVESTIGATION_STATUSES]
+    )
+    total = await session.scalar(
+        select(
+            func.coalesce(
+                func.sum(
+                    sql_case(
+                        (terminal, Investigation.spent_microusd + Investigation.reserved_microusd),
+                        (Investigation.workflow_version == WORKFLOW_D1, 0),
+                        else_=Investigation.budget_microusd,
+                    )
+                ),
+                0,
+            )
+        )
+        .join(EvaluationCase, EvaluationCase.investigation_id == Investigation.id)
+        .where(EvaluationCase.run_id == run_id)
+    )
+    return int(total or 0)
 
 
 async def stage_scores_of(

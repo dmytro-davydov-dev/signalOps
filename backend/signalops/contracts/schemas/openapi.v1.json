@@ -943,6 +943,17 @@
       "EvaluationRunDetail": {
         "additionalProperties": false,
         "properties": {
+          "approval_ref": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Approval Ref"
+          },
           "case_counts": {
             "additionalProperties": {
               "type": "integer"
@@ -1002,6 +1013,17 @@
             "additionalProperties": true,
             "title": "Limits",
             "type": "object"
+          },
+          "max_spend_microusd": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Spend Microusd"
           },
           "metrics": {
             "anyOf": [
@@ -3159,6 +3181,24 @@
       "RunRequest": {
         "additionalProperties": false,
         "properties": {
+          "allow_paid": {
+            "default": false,
+            "title": "Allow Paid",
+            "type": "boolean"
+          },
+          "approval_ref": {
+            "anyOf": [
+              {
+                "maxLength": 256,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Approval Ref"
+          },
           "budget_microusd": {
             "anyOf": [
               {
@@ -3195,6 +3235,19 @@
             "minLength": 1,
             "title": "Label",
             "type": "string"
+          },
+          "max_spend_microusd": {
+            "anyOf": [
+              {
+                "maximum": 1000000000000.0,
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Spend Microusd"
           },
           "max_steps": {
             "anyOf": [

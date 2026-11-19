@@ -73,6 +73,9 @@ class EvaluationCaseRow(ContractModel):
 
 class EvaluationRunDetail(EvaluationRunSummary):
     seed: int
+    # Run-level spend ceiling and approval reference (P13-T06); None when not set.
+    max_spend_microusd: int | None = None
+    approval_ref: str | None = None
     workflow_versions: dict[str, Any]
     prompt_versions: dict[str, Any]
     model_settings: dict[str, Any]

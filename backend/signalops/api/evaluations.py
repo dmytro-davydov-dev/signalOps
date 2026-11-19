@@ -31,7 +31,12 @@ from signalops.contracts.evaluation_api import (
 from signalops.contracts.workflow import StepStatus
 from signalops.dependencies import Resources
 from signalops.evaluation.export import case_row, run_detail, run_summary
-from signalops.evaluation.runner import RunRequest, UnknownScenarioError, queue_run
+from signalops.evaluation.runner import (
+    PaidRunRefusedError,
+    RunRequest,
+    UnknownScenarioError,
+    queue_run,
+)
 from signalops.evaluation.stage_views import cited_by, stage_outputs
 from signalops.persistence.database import Database
 from signalops.persistence.models import (
@@ -81,7 +86,7 @@ async def start_run(
     settings: Settings = request.app.state.settings
     try:
         run = await queue_run(database, body, workspace_id=workspace_id, settings=settings)
-    except UnknownScenarioError as error:
+    except (UnknownScenarioError, PaidRunRefusedError) as error:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, str(error)) from error
     return run_summary(run, {})
 
