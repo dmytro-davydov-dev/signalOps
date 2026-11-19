@@ -75,6 +75,7 @@ from signalops.evaluation.replay import (
     seed_runbooks,
 )
 from signalops.evaluation.scoring import match_detection, score_case
+from signalops.evaluation.stages import StageOutputError, load_stage_inputs, score_stages
 from signalops.gateway.pricing import PRICES, PRICING_VERSION
 from signalops.persistence.database import Database
 from signalops.persistence.models import (
@@ -487,7 +488,7 @@ class RunExecutor:
             for case, investigation_id in list(pending.items()):
                 observed = await observe(self._db, scope, incidents, investigation_id)
                 if observed.investigation_status in TERMINAL_INVESTIGATION_STATUSES:
-                    await self._score(case, expected, observed)
+                    await self._score(case, expected, observed, scope)
                     del pending[case]
             if not pending:
                 return
@@ -498,15 +499,23 @@ class RunExecutor:
             await asyncio.sleep(self._context.poll_interval.total_seconds())
 
     async def _score(
-        self, case: EvaluationCase, expected: ExpectedOutcome, observed: ObservedOutcome
+        self,
+        case: EvaluationCase,
+        expected: ExpectedOutcome,
+        observed: ObservedOutcome,
+        scope: EvidenceScope | None = None,
     ) -> None:
         scores = score_case(expected, observed)
+        stages = None
+        if scope is not None and observed.investigation_id is not None:
+            stages = await stage_scores_of(self._db, scope, expected, observed.investigation_id)
         async with self._db.transaction() as session:
             await EvaluationRepository(session).finish_case(
                 case.id,
                 status=CaseStatus.SCORED,
                 observed=observed.model_dump(mode="json"),
                 scores=scores.model_dump(mode="json"),
+                stage_scores=stages,
                 now=datetime.now(UTC),
             )
 
@@ -520,6 +529,28 @@ class RunExecutor:
                 now=datetime.now(UTC),
                 error=reason,
             )
+
+
+async def stage_scores_of(
+    database: Database,
+    scope: EvidenceScope,
+    expected: ExpectedOutcome,
+    investigation_id: uuid.UUID,
+) -> dict[str, Any] | None:
+    """A case's stage scores from its stored steps, or None for a workflow without stages.
+
+    A stored step that no longer validates is logged and leaves the stages unscored; the
+    outcome score stands, and the report counts the case as missing stage scores.
+    """
+    try:
+        inputs = await load_stage_inputs(database, scope, investigation_id)
+        stages = score_stages(expected, inputs)
+    except StageOutputError:
+        logger.exception(
+            "stage outputs did not validate", extra={"investigation_id": str(investigation_id)}
+        )
+        return None
+    return None if stages is None else stages.model_dump(mode="json")
 
 
 async def observe(

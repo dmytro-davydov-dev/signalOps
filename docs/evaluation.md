@@ -73,6 +73,25 @@ Scores compare stored outcomes with deterministic labels (`evaluation/scoring.py
 
 Recovery correctness and data quality are covered by the reliability tests and the evidence quality summary, not by this report.
 
+### Stage scores (P13-T02)
+
+After a case is scored, the runner reads the investigation's completed steps through the evaluator connection and stores `evaluation.cases.stage_scores` (`evaluation/stages.py`, contract `StageScores`, version `stage-scores/v1`). No model is called: the inputs are stored step outputs, the stored diagnosis, the workspace's service names, and the cited signals' source event IDs. The deterministic variant has no stages (`null`). A stored step that no longer validates leaves the case without stage scores, counted as `cases_without_stage_scores`.
+
+Each variant's `metrics.variants.<variant>.stages` aggregates them; every rate carries its numerator and denominator.
+
+| Metric | Definition |
+| --- | --- |
+| `specialist_lead_recall` (`_strict`) | Diagnosable `v3` cases where some specialist finding names the true service (and failure type), over diagnosable `v3` cases |
+| `lead_role_recall` | Same, counting only roles in the case's `lead_roles` |
+| `per_role.<role>` | That role's lead recall, and its evidence precision: cited signals that are fault evidence over cited signals |
+| `synthesis_lead_retention` | Cases where some specialist named the true cause and the leading hypothesis is it, over cases where some specialist named it |
+| `synthesis_invariant_violations` | Leading-hypothesis citations outside the specialists' citations, or a supporting role with no findings. Code enforces both (ADR-031), so any count is a harness defect |
+| `contradiction_recall` | Mixed scenarios whose diagnosis lists a contradiction naming, or citing a signal of, the labelled competing service |
+| `verifier_matrix` | First verification against the lead's correctness: correct or wrong lead × accepted, rejected, or follow-up requested |
+| `follow_up` | Rounds run, and whether the verifier's decision went wrong→right or right→wrong between the first and final verification (a follow-up request counts as not accepting) |
+| `limit_endings`, `abstentions_with_limit` | Role endings by `ended_by` among `budget_share`, `turn_limit`, `repair_limit`, `refused`, `no_turns`, and the share of abstentions in which any role hit one. A single agent's ending is read back from its abstention reason |
+| `single_agent` | `v2` proposals naming the true cause (or abstaining where there is none), and whether `conclude` kept, corrected, or dropped them |
+
 ## Replay orchestration (P10-T02, ADR-035)
 
 `evaluation/replay.py` replays one dataset into its own scope. `signalops evaluation-replay <scenario> --seed N` runs it and prints the report; `--in-process` runs the pipeline processors locally instead of through Kafka.

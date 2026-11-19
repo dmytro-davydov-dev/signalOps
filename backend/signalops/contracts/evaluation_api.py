@@ -22,6 +22,7 @@ from signalops.contracts.evaluation import (
     ScenarioSplit,
     SystemVariant,
 )
+from signalops.contracts.evaluation_stages import StageScores
 
 
 class EvaluationRunSummary(ContractModel):
@@ -59,6 +60,8 @@ class EvaluationCaseRow(ContractModel):
     expected: ExpectedOutcome
     observed: ObservedOutcome | None
     scores: CaseScores | None
+    # Per-stage scores from the stored steps (P13-T02); None for `d1` and older cases.
+    stage_scores: StageScores | None = None
     error: str | None
 
 

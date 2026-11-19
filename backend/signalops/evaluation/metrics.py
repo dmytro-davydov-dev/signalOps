@@ -19,6 +19,13 @@ from collections.abc import Sequence
 from typing import Any
 
 from signalops.contracts.evaluation import CaseScores, CaseStatus, DetectionScore, ObservedOutcome
+from signalops.contracts.evaluation_stages import (
+    Conclusion,
+    FollowUpEffect,
+    StageScores,
+    VerdictCell,
+)
+from signalops.contracts.roles import SPECIALIST_ROLES
 from signalops.persistence.models import (
     EvaluationAudit,
     EvaluationCase,
@@ -38,6 +45,98 @@ def _quantile(values: Sequence[float], q: float) -> float | None:
     # Nearest rank, so a reported p95 is a latency that actually happened.
     rank = max(1, -(-len(ordered) * q // 1))
     return round(ordered[int(rank) - 1], 3)
+
+
+def ratio(numerator: int, denominator: int) -> dict[str, Any]:
+    """A rate with the counts it comes from."""
+    return {
+        "numerator": numerator,
+        "denominator": denominator,
+        "rate": _rate(numerator, denominator),
+    }
+
+
+def stage_summary(rows: Sequence[EvaluationCase]) -> dict[str, Any]:
+    """Stage metrics of one variant's cases (P13-T02); see `evaluation/stages.py`."""
+    stages = [StageScores.model_validate(row.stage_scores) for row in rows if row.stage_scores]
+    v3 = [stage for stage in stages if stage.workflow_version == "v3"]
+    v2 = [stage for stage in stages if stage.workflow_version == "v2"]
+    diagnosable = [stage for stage in v3 if stage.lead_found is not None]
+    per_role: dict[str, Any] = {}
+    for role in SPECIALIST_ROLES:
+        played = [
+            (stage, specialist)
+            for stage in diagnosable
+            for specialist in stage.specialists
+            if specialist.role is role
+        ]
+        cited = [
+            specialist
+            for stage in v3
+            for specialist in stage.specialists
+            if specialist.role is role
+        ]
+        per_role[role.value] = {
+            "lead_recall": ratio(sum(s.named_service for _, s in played), len(played)),
+            "lead_recall_strict": ratio(sum(s.named_cause for _, s in played), len(played)),
+            "evidence_precision": ratio(
+                sum(s.cited_supported for s in cited), sum(s.cited for s in cited)
+            ),
+        }
+    retained = [stage for stage in v3 if stage.lead_retained is not None]
+    contradictions = [stage for stage in v3 if stage.contradiction_listed is not None]
+    cells = [stage.verdict_cell for stage in v3 if stage.verdict_cell is not None]
+    effects = [stage.follow_up_effect for stage in v3 if stage.follow_up_effect is not None]
+    abstentions = [
+        (row, stage)
+        for row in rows
+        if row.stage_scores and row.scores and row.scores.get("abstained")
+        for stage in [StageScores.model_validate(row.stage_scores)]
+    ]
+    endings: dict[str, int] = defaultdict(int)
+    for stage in stages:
+        for ending in stage.limit_endings:
+            endings[ending.ended_by.value] += 1
+    proposals = [stage for stage in v2 if stage.proposal_correct is not None]
+    conclusions = [stage.conclusion for stage in v2 if stage.conclusion is not None]
+    return {
+        "cases_with_stage_scores": len(stages),
+        "cases_without_stage_scores": sum(
+            1 for row in rows if row.investigation_id is not None and not row.stage_scores
+        ),
+        "specialist_lead_recall": ratio(
+            sum(bool(s.lead_found) for s in diagnosable), len(diagnosable)
+        ),
+        "specialist_lead_recall_strict": ratio(
+            sum(bool(s.lead_found_strict) for s in diagnosable), len(diagnosable)
+        ),
+        "lead_role_recall": ratio(
+            sum(bool(s.lead_role_found) for s in diagnosable), len(diagnosable)
+        ),
+        "per_role": per_role if v3 else {},
+        "synthesis_lead_retention": ratio(
+            sum(bool(s.lead_retained) for s in retained), len(retained)
+        ),
+        "synthesis_invariant_violations": sum(len(s.synthesis_violations) for s in v3),
+        "contradiction_recall": ratio(
+            sum(bool(s.contradiction_listed) for s in contradictions), len(contradictions)
+        ),
+        "verifier_matrix": {cell.value: cells.count(cell) for cell in VerdictCell},
+        "follow_up": {
+            "rounds": sum(s.follow_up_ran for s in v3),
+            **{effect.value: effects.count(effect) for effect in FollowUpEffect},
+        },
+        "limit_endings": dict(sorted(endings.items())),
+        "abstentions_with_limit": ratio(
+            sum(stage.limit_hit for _, stage in abstentions), len(abstentions)
+        ),
+        "single_agent": {
+            "proposal_correct": ratio(
+                sum(bool(s.proposal_correct) for s in proposals), len(proposals)
+            ),
+            "conclusions": {item.value: conclusions.count(item) for item in Conclusion},
+        },
+    }
 
 
 def detection_summary(replays: Sequence[EvaluationReplay]) -> dict[str, Any]:
@@ -132,6 +231,7 @@ def variant_summary(
         "cost_microusd_mean": round(statistics.fmean(costs)) if costs else None,
         "unknown_reserved_microusd": sum(item.unknown_reserved_microusd for item in observed),
         "model_calls": sum(item.model_calls for item in observed),
+        "stages": stage_summary(rows),
     }
 
 

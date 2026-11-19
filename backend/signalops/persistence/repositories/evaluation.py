@@ -276,6 +276,7 @@ class EvaluationRepository:
         scores: dict[str, Any] | None,
         now: datetime,
         error: str | None = None,
+        stage_scores: dict[str, Any] | None = None,
     ) -> None:
         await self._session.execute(
             update(EvaluationCase)
@@ -284,6 +285,7 @@ class EvaluationRepository:
                 status=status,
                 observed_outcome=observed,
                 scores=scores,
+                stage_scores=stage_scores,
                 error=error,
                 completed_at=now,
             )

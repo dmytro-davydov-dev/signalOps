@@ -190,6 +190,7 @@ class EvaluationCase(Base):
         CheckConstraint(json_object("expected_outcome"), name="expected_outcome_object"),
         CheckConstraint(_optional_object("observed_outcome"), name="observed_outcome_object"),
         CheckConstraint(_optional_object("scores"), name="scores_object"),
+        CheckConstraint(_optional_object("stage_scores"), name="stage_scores_object"),
         CheckConstraint(_error_length(), name="error_length"),
         CheckConstraint(
             "(status IN ('scored', 'failed')) = (completed_at IS NOT NULL)",
@@ -216,6 +217,8 @@ class EvaluationCase(Base):
     expected_outcome: Mapped[dict[str, Any]] = mapped_column(JSONB)
     observed_outcome: Mapped[dict[str, Any] | None] = mapped_column(JSONB(none_as_null=True))
     scores: Mapped[dict[str, Any] | None] = mapped_column(JSONB(none_as_null=True))
+    # Scores of each workflow stage from the stored steps (P13-T02); None for `d1`.
+    stage_scores: Mapped[dict[str, Any] | None] = mapped_column(JSONB(none_as_null=True))
     error: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = created_at()
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

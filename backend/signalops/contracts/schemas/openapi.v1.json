@@ -1,6 +1,19 @@
 {
   "components": {
     "schemas": {
+      "AgentEnding": {
+        "enum": [
+          "submitted",
+          "no_turns",
+          "turn_limit",
+          "repair_limit",
+          "refused",
+          "budget_share",
+          "skipped"
+        ],
+        "title": "AgentEnding",
+        "type": "string"
+      },
       "AgentRole": {
         "enum": [
           "investigator",
@@ -273,6 +286,17 @@
         ],
         "title": "CitedSignal",
         "type": "object"
+      },
+      "Conclusion": {
+        "description": "What the single agent's `conclude` did with its proposal.",
+        "enum": [
+          "kept",
+          "corrected",
+          "dropped",
+          "abstained"
+        ],
+        "title": "Conclusion",
+        "type": "string"
       },
       "Contradiction": {
         "additionalProperties": false,
@@ -665,6 +689,16 @@
           "split": {
             "$ref": "#/components/schemas/ScenarioSplit"
           },
+          "stage_scores": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/StageScores"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "status": {
             "$ref": "#/components/schemas/CaseStatus"
           },
@@ -779,6 +813,16 @@
           },
           "split": {
             "$ref": "#/components/schemas/ScenarioSplit"
+          },
+          "stage_scores": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/StageScores"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "status": {
             "$ref": "#/components/schemas/CaseStatus"
@@ -1259,6 +1303,15 @@
         ],
         "title": "FaultWindow",
         "type": "object"
+      },
+      "FollowUpEffect": {
+        "enum": [
+          "wrong_to_right",
+          "right_to_wrong",
+          "unchanged"
+        ],
+        "title": "FollowUpEffect",
+        "type": "string"
       },
       "GraphRelation": {
         "enum": [
@@ -2919,6 +2972,31 @@
         "title": "ReadinessResponse",
         "type": "object"
       },
+      "RoleEnding": {
+        "additionalProperties": false,
+        "properties": {
+          "ended_by": {
+            "$ref": "#/components/schemas/AgentEnding"
+          },
+          "role": {
+            "$ref": "#/components/schemas/AgentRole"
+          },
+          "step_key": {
+            "maxLength": 128,
+            "minLength": 1,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]*$",
+            "title": "Step Key",
+            "type": "string"
+          }
+        },
+        "required": [
+          "step_key",
+          "role",
+          "ended_by"
+        ],
+        "title": "RoleEnding",
+        "type": "object"
+      },
       "RootCause": {
         "additionalProperties": false,
         "properties": {
@@ -3297,6 +3375,341 @@
         "title": "SourceQuality",
         "type": "object"
       },
+      "SpecialistStage": {
+        "additionalProperties": false,
+        "properties": {
+          "cited": {
+            "minimum": 0.0,
+            "title": "Cited",
+            "type": "integer"
+          },
+          "cited_supported": {
+            "minimum": 0.0,
+            "title": "Cited Supported",
+            "type": "integer"
+          },
+          "ended_by": {
+            "$ref": "#/components/schemas/AgentEnding"
+          },
+          "findings": {
+            "minimum": 0.0,
+            "title": "Findings",
+            "type": "integer"
+          },
+          "named_cause": {
+            "title": "Named Cause",
+            "type": "boolean"
+          },
+          "named_service": {
+            "title": "Named Service",
+            "type": "boolean"
+          },
+          "role": {
+            "$ref": "#/components/schemas/AgentRole"
+          }
+        },
+        "required": [
+          "role",
+          "ended_by",
+          "findings",
+          "named_service",
+          "named_cause",
+          "cited",
+          "cited_supported"
+        ],
+        "title": "SpecialistStage",
+        "type": "object"
+      },
+      "StageScores": {
+        "additionalProperties": false,
+        "properties": {
+          "conclusion": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Conclusion"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "contradiction_listed": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Contradiction Listed"
+          },
+          "diagnosable": {
+            "title": "Diagnosable",
+            "type": "boolean"
+          },
+          "endings": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/RoleEnding"
+            },
+            "maxItems": 20,
+            "title": "Endings",
+            "type": "array"
+          },
+          "expected_contradiction": {
+            "anyOf": [
+              {
+                "maxLength": 128,
+                "minLength": 1,
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expected Contradiction"
+          },
+          "final_verdict": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Verdict"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "first_verdict": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Verdict"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "follow_up_effect": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/FollowUpEffect"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "follow_up_ran": {
+            "default": false,
+            "title": "Follow Up Ran",
+            "type": "boolean"
+          },
+          "lead_found": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lead Found"
+          },
+          "lead_found_strict": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lead Found Strict"
+          },
+          "lead_retained": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lead Retained"
+          },
+          "lead_role_found": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lead Role Found"
+          },
+          "leading_correct": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Leading Correct"
+          },
+          "leading_failure_type": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "pattern": "^[a-z][a-z0-9_]*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Leading Failure Type"
+          },
+          "leading_service": {
+            "anyOf": [
+              {
+                "maxLength": 128,
+                "minLength": 1,
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Leading Service"
+          },
+          "proposal_correct": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Proposal Correct"
+          },
+          "proposal_failure_type": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "pattern": "^[a-z][a-z0-9_]*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Proposal Failure Type"
+          },
+          "proposal_service": {
+            "anyOf": [
+              {
+                "maxLength": 128,
+                "minLength": 1,
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Proposal Service"
+          },
+          "proposal_service_correct": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Proposal Service Correct"
+          },
+          "proposal_status": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DiagnosisStatus"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "specialists": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/SpecialistStage"
+            },
+            "maxItems": 3,
+            "title": "Specialists",
+            "type": "array"
+          },
+          "synthesis_status": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DiagnosisStatus"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "synthesis_violations": {
+            "default": [],
+            "items": {
+              "maxLength": 500,
+              "minLength": 1,
+              "type": "string"
+            },
+            "maxItems": 20,
+            "title": "Synthesis Violations",
+            "type": "array"
+          },
+          "verdict_cell": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/VerdictCell"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "version": {
+            "default": "stage-scores/v1",
+            "maxLength": 64,
+            "minLength": 1,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]*$",
+            "title": "Version",
+            "type": "string"
+          },
+          "workflow_version": {
+            "maxLength": 64,
+            "minLength": 1,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]*$",
+            "title": "Workflow Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "workflow_version",
+          "diagnosable"
+        ],
+        "title": "StageScores",
+        "type": "object"
+      },
       "StepFailed": {
         "additionalProperties": false,
         "properties": {
@@ -3649,6 +4062,28 @@
         ],
         "title": "ValidationError",
         "type": "object"
+      },
+      "Verdict": {
+        "enum": [
+          "supported",
+          "unsupported",
+          "needs_follow_up"
+        ],
+        "title": "Verdict",
+        "type": "string"
+      },
+      "VerdictCell": {
+        "description": "The first verification against whether the leading hypothesis is the true cause.",
+        "enum": [
+          "correct_accepted",
+          "correct_rejected",
+          "correct_follow_up",
+          "wrong_accepted",
+          "wrong_rejected",
+          "wrong_follow_up"
+        ],
+        "title": "VerdictCell",
+        "type": "string"
       },
       "signalops__contracts__investigations__TraceEvidence": {
         "additionalProperties": false,

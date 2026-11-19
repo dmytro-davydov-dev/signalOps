@@ -29,6 +29,7 @@ from signalops.contracts.evaluation_api import (
     EvaluationRunList,
     EvaluationRunSummary,
 )
+from signalops.contracts.evaluation_stages import StageScores
 from signalops.dependencies import Resources
 from signalops.evaluation.runner import RunRequest, UnknownScenarioError, queue_run
 from signalops.persistence.database import Database
@@ -99,6 +100,9 @@ def _row(
             else ObservedOutcome.model_validate(case.observed_outcome)
         ),
         "scores": None if case.scores is None else CaseScores.model_validate(case.scores),
+        "stage_scores": (
+            None if case.stage_scores is None else StageScores.model_validate(case.stage_scores)
+        ),
         "error": case.error,
     }
 
