@@ -23,6 +23,7 @@ from signalops.contracts.evaluation import (
     ScenarioSplit,
     SystemVariant,
 )
+from signalops.contracts.evaluation_stages import Attribution
 from signalops.persistence.models import (
     EvaluationAudit,
     EvaluationCase,
@@ -277,6 +278,7 @@ class EvaluationRepository:
         now: datetime,
         error: str | None = None,
         stage_scores: dict[str, Any] | None = None,
+        attribution: Attribution | None = None,
     ) -> None:
         await self._session.execute(
             update(EvaluationCase)
@@ -286,6 +288,9 @@ class EvaluationRepository:
                 observed_outcome=observed,
                 scores=scores,
                 stage_scores=stage_scores,
+                failure_stage=None if attribution is None else attribution.stage.value,
+                failure_origin=None if attribution is None else attribution.origin,
+                limit_hit=None if attribution is None else attribution.limit_hit,
                 error=error,
                 completed_at=now,
             )

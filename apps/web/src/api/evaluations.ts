@@ -67,6 +67,35 @@ export interface CaseScores {
   latency_seconds: number | null;
 }
 
+/** First failing stages (P13-T03), in the order they are checked. */
+export const FAILURE_STAGES = [
+  "harness_failure",
+  "detection_miss",
+  "no_lead",
+  "lead_lost_in_synthesis",
+  "verifier_false_reject",
+  "verifier_false_accept",
+  "conclude_dropped",
+  "wrong_failure_type",
+  "false_diagnosis_on_underdetermined",
+  "rule_error",
+  "unattributed",
+] as const;
+
+export const FAILURE_STAGE_LABELS: Record<string, string> = {
+  harness_failure: "Harness failure",
+  detection_miss: "Detection missed the fault",
+  no_lead: "No specialist found the cause",
+  lead_lost_in_synthesis: "Lead lost in synthesis",
+  verifier_false_reject: "Verifier rejected the true cause",
+  verifier_false_accept: "Verifier accepted a wrong cause",
+  conclude_dropped: "Conclusion dropped an accepted cause",
+  wrong_failure_type: "Right service, wrong failure type",
+  false_diagnosis_on_underdetermined: "Diagnosed where abstaining was correct",
+  rule_error: "Baseline rule was wrong",
+  unattributed: "Unattributed (no stage scores)",
+};
+
 export interface EvaluationCaseRow {
   id: string;
   case_key: string;
@@ -83,6 +112,11 @@ export interface EvaluationCaseRow {
   expected: ExpectedOutcome;
   observed: ObservedOutcome | null;
   scores: CaseScores | null;
+  /** Loosely typed; see docs/evaluation.md (stage scores). Absent on older servers. */
+  stage_scores?: Record<string, unknown> | null;
+  failure_stage?: string | null;
+  failure_origin?: string | null;
+  limit_hit?: boolean | null;
   error: string | null;
 }
 
@@ -119,10 +153,34 @@ export interface AuditView {
   created_at: string;
 }
 
+export interface StageClaim {
+  claim: string;
+  service_name: string | null;
+  failure_type: string | null;
+  confidence: number | null;
+  evidence_signal_ids: string[];
+  supporting_roles: string[];
+}
+
+export interface StageOutputView {
+  step_key: string;
+  role: string;
+  ended_by: string | null;
+  status: string | null;
+  findings: StageClaim[];
+  leading: StageClaim | null;
+  verdict: string | null;
+  citation_checks: { signal_id: string; supports: boolean }[];
+  missing_evidence: string[];
+  note: string | null;
+}
+
 export interface EvaluationCaseDetail extends EvaluationCaseRow {
   replay_report: Record<string, unknown> | null;
   citations: CitedSignal[];
   audits: AuditView[];
+  stage_outputs?: StageOutputView[];
+  stage_signals?: CitedSignal[];
 }
 
 export interface AuditInput {
@@ -135,6 +193,8 @@ export interface AuditInput {
 const isNullableBoolean = (value: unknown) => value === null || typeof value === "boolean";
 const isCounts = (value: unknown) => isRecord(value) && Object.values(value).every(isNumber);
 const isNullableRecord = (value: unknown) => value === null || isRecord(value);
+const optional = (check: (value: unknown) => boolean) => (value: unknown) =>
+  value === undefined || check(value);
 
 const summaryChecks = {
   id: isString,
@@ -201,6 +261,10 @@ const caseChecks = {
   expected: isExpected,
   observed: (value: unknown) => value === null || isObserved(value),
   scores: (value: unknown) => value === null || isScores(value),
+  stage_scores: optional(isNullableRecord),
+  failure_stage: optional(isNullableString),
+  failure_origin: optional(isNullableString),
+  limit_hit: optional(isNullableBoolean),
   error: isNullableString,
 };
 const isCaseRow = matches(caseChecks);
@@ -236,11 +300,35 @@ const isAudit = matches({
   created_at: isString,
 });
 
+const isClaim = matches({
+  claim: isString,
+  service_name: isNullableString,
+  failure_type: isNullableString,
+  confidence: isNullableNumber,
+  evidence_signal_ids: isListOf(isString),
+  supporting_roles: isListOf(isString),
+});
+
+const isStageOutput = matches({
+  step_key: isString,
+  role: isString,
+  ended_by: isNullableString,
+  status: isNullableString,
+  findings: isListOf(isClaim),
+  leading: (value: unknown) => value === null || isClaim(value),
+  verdict: isNullableString,
+  citation_checks: isListOf(matches({ signal_id: isString, supports: isBoolean })),
+  missing_evidence: isListOf(isString),
+  note: isNullableString,
+});
+
 const isCaseDetail = matches({
   ...caseChecks,
   replay_report: isNullableRecord,
   citations: isListOf(isCited),
   audits: isListOf(isAudit),
+  stage_outputs: optional(isListOf(isStageOutput)),
+  stage_signals: optional(isListOf(isCited)),
 });
 
 const isRunList = matches({ items: isListOf(isSummary) });

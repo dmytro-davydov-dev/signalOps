@@ -57,6 +57,31 @@ class Conclusion(StrEnum):
     ABSTAINED = "abstained"
 
 
+class FailureStage(StrEnum):
+    """The first stage that failed in an incorrect case (P13-T03), checked in this order."""
+
+    HARNESS_FAILURE = "harness_failure"
+    DETECTION_MISS = "detection_miss"
+    NO_LEAD = "no_lead"
+    LEAD_LOST_IN_SYNTHESIS = "lead_lost_in_synthesis"
+    VERIFIER_FALSE_REJECT = "verifier_false_reject"
+    VERIFIER_FALSE_ACCEPT = "verifier_false_accept"
+    CONCLUDE_DROPPED = "conclude_dropped"
+    WRONG_FAILURE_TYPE = "wrong_failure_type"
+    FALSE_DIAGNOSIS_ON_UNDERDETERMINED = "false_diagnosis_on_underdetermined"
+    RULE_ERROR = "rule_error"
+    # An agent case whose stage scores are missing: no stage can be named honestly.
+    UNATTRIBUTED = "unattributed"
+
+
+class Attribution(ContractModel):
+    stage: FailureStage
+    # The step that first asserted a cause, for a false diagnosis on underdetermined evidence.
+    origin: Name | None = None
+    # Some role ended on a limit; orthogonal to the stage.
+    limit_hit: bool = False
+
+
 class RoleEnding(ContractModel):
     step_key: Name
     role: AgentRole

@@ -92,6 +92,26 @@ Each variant's `metrics.variants.<variant>.stages` aggregates them; every rate c
 | `limit_endings`, `abstentions_with_limit` | Role endings by `ended_by` among `budget_share`, `turn_limit`, `repair_limit`, `refused`, `no_turns`, and the share of abstentions in which any role hit one. A single agent's ending is read back from its abstention reason |
 | `single_agent` | `v2` proposals naming the true cause (or abstaining where there is none), and whether `conclude` kept, corrected, or dropped them |
 
+### Failure attribution (P13-T03)
+
+Every incorrect case gets one `failure_stage` (`evaluation/attribution.py`), stored on `evaluation.cases` with `failure_origin` and `limit_hit` (migration `0022`). The checks run in this order and the first match wins:
+
+| Stage | When |
+| --- | --- |
+| `harness_failure` | The harness produced no outcome |
+| `detection_miss` | No incident matched the fault, the investigated incident is not the matched one, or an incident opened on healthy traffic |
+| `no_lead` | No specialist (`v3`) or proposal (`v2`) named the true service |
+| `lead_lost_in_synthesis` | A specialist named the true service (or cause) and the leading hypothesis did not |
+| `verifier_false_reject` | The lead was the true cause and the final verification did not accept it |
+| `verifier_false_accept` | The lead was wrong and verification accepted it |
+| `conclude_dropped` | A correct, accepted lead (or `v2` proposal) ended in an abstention |
+| `wrong_failure_type` | Right service, wrong failure type |
+| `false_diagnosis_on_underdetermined` | A cause asserted where abstaining was correct; `failure_origin` names the step that asserted it |
+| `rule_error` | Any other error of the deterministic baseline |
+| `unattributed` | An agent case without stage scores; no stage is guessed |
+
+"First failing stage" is a convention: later stages may also have failed, and the case page shows every stored stage (findings, leading hypothesis, verdict, citation checks) with each cited signal labelled and linked to the investigation's evidence. `limit_hit` is orthogonal: some role ended on a limit, a refusal, or no turns. `metrics.variants.<variant>.failure_stages` counts incorrect cases by stage (`by_stage` sums to `incorrect`) and those with a limit hit; the run page shows the breakdown per variant.
+
 ## Replay orchestration (P10-T02, ADR-035)
 
 `evaluation/replay.py` replays one dataset into its own scope. `signalops evaluation-replay <scenario> --seed N` runs it and prints the report; `--in-process` runs the pipeline processors locally instead of through Kafka.

@@ -622,6 +622,27 @@
           "expected": {
             "$ref": "#/components/schemas/ExpectedOutcome"
           },
+          "failure_origin": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Failure Origin"
+          },
+          "failure_stage": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/FailureStage"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "family": {
             "$ref": "#/components/schemas/ScenarioFamily"
           },
@@ -641,6 +662,17 @@
               }
             ],
             "title": "Investigation Id"
+          },
+          "limit_hit": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Limit Hit"
           },
           "observed": {
             "anyOf": [
@@ -689,6 +721,14 @@
           "split": {
             "$ref": "#/components/schemas/ScenarioSplit"
           },
+          "stage_outputs": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/StageOutputView"
+            },
+            "title": "Stage Outputs",
+            "type": "array"
+          },
           "stage_scores": {
             "anyOf": [
               {
@@ -698,6 +738,14 @@
                 "type": "null"
               }
             ]
+          },
+          "stage_signals": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/CitedSignal"
+            },
+            "title": "Stage Signals",
+            "type": "array"
           },
           "status": {
             "$ref": "#/components/schemas/CaseStatus"
@@ -759,6 +807,27 @@
           "expected": {
             "$ref": "#/components/schemas/ExpectedOutcome"
           },
+          "failure_origin": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Failure Origin"
+          },
+          "failure_stage": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/FailureStage"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "family": {
             "$ref": "#/components/schemas/ScenarioFamily"
           },
@@ -778,6 +847,17 @@
               }
             ],
             "title": "Investigation Id"
+          },
+          "limit_hit": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Limit Hit"
           },
           "observed": {
             "anyOf": [
@@ -1282,6 +1362,24 @@
         ],
         "title": "ExpectedOutcome",
         "type": "object"
+      },
+      "FailureStage": {
+        "description": "The first stage that failed in an incorrect case (P13-T03), checked in this order.",
+        "enum": [
+          "harness_failure",
+          "detection_miss",
+          "no_lead",
+          "lead_lost_in_synthesis",
+          "verifier_false_reject",
+          "verifier_false_accept",
+          "conclude_dropped",
+          "wrong_failure_type",
+          "false_diagnosis_on_underdetermined",
+          "rule_error",
+          "unattributed"
+        ],
+        "title": "FailureStage",
+        "type": "string"
       },
       "FaultWindow": {
         "additionalProperties": false,
@@ -3418,6 +3516,189 @@
           "cited_supported"
         ],
         "title": "SpecialistStage",
+        "type": "object"
+      },
+      "StageCitationCheck": {
+        "additionalProperties": false,
+        "properties": {
+          "signal_id": {
+            "format": "uuid",
+            "title": "Signal Id",
+            "type": "string"
+          },
+          "supports": {
+            "title": "Supports",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "signal_id",
+          "supports"
+        ],
+        "title": "StageCitationCheck",
+        "type": "object"
+      },
+      "StageClaim": {
+        "additionalProperties": false,
+        "description": "A finding, hypothesis, or proposal as a stage stored it, with services named.",
+        "properties": {
+          "claim": {
+            "title": "Claim",
+            "type": "string"
+          },
+          "confidence": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Confidence"
+          },
+          "evidence_signal_ids": {
+            "default": [],
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "title": "Evidence Signal Ids",
+            "type": "array"
+          },
+          "failure_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Failure Type"
+          },
+          "service_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Service Name"
+          },
+          "supporting_roles": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/AgentRole"
+            },
+            "title": "Supporting Roles",
+            "type": "array"
+          }
+        },
+        "required": [
+          "claim",
+          "service_name",
+          "failure_type",
+          "confidence"
+        ],
+        "title": "StageClaim",
+        "type": "object"
+      },
+      "StageOutputView": {
+        "additionalProperties": false,
+        "description": "One stored workflow step of a case, for reading next to its stage scores.",
+        "properties": {
+          "citation_checks": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/StageCitationCheck"
+            },
+            "title": "Citation Checks",
+            "type": "array"
+          },
+          "ended_by": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AgentEnding"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "findings": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/StageClaim"
+            },
+            "title": "Findings",
+            "type": "array"
+          },
+          "leading": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/StageClaim"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "missing_evidence": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Missing Evidence",
+            "type": "array"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
+          "role": {
+            "$ref": "#/components/schemas/AgentRole"
+          },
+          "status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status"
+          },
+          "step_key": {
+            "title": "Step Key",
+            "type": "string"
+          },
+          "verdict": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Verdict"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "step_key",
+          "role"
+        ],
+        "title": "StageOutputView",
         "type": "object"
       },
       "StageScores": {

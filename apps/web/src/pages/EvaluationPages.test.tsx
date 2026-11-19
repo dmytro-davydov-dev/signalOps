@@ -104,6 +104,12 @@ const variantMetrics = (accuracy: number) => ({
   harness_failures: 0,
 });
 
+const failureStages = (incorrect: number, stage?: string) => ({
+  incorrect,
+  by_stage: stage === undefined ? {} : { [stage]: incorrect },
+  limit_hit: 0,
+});
+
 const detail = {
   ...summary,
   seed: 0,
@@ -113,7 +119,10 @@ const detail = {
   pricing_config: {},
   limits: { budget_microusd: 3000000, max_steps: 40, deadline_seconds: 600 },
   metrics: {
-    variants: { deterministic: variantMetrics(0), multi_agent: variantMetrics(1) },
+    variants: {
+      deterministic: { ...variantMetrics(0), failure_stages: failureStages(1, "rule_error") },
+      multi_agent: { ...variantMetrics(1), failure_stages: failureStages(0) },
+    },
     detection: {
       replays_scored: 1,
       true_positives: 1,
@@ -126,8 +135,73 @@ const detail = {
     },
   },
   cases: [
-    caseRow(CASE, "deterministic", "payment", false),
+    { ...caseRow(CASE, "deterministic", "payment", false), failure_stage: "rule_error" },
     caseRow(GOOD_CASE, "multi_agent", "bank-gateway", true),
+  ],
+};
+
+const multiCase = {
+  ...caseRow(GOOD_CASE, "multi_agent", "payment", false),
+  failure_stage: "lead_lost_in_synthesis",
+  failure_origin: null,
+  limit_hit: false,
+  stage_scores: { lead_found: true, lead_retained: false },
+  replay_report: { status: "completed" },
+  citations: [],
+  audits: [],
+  stage_signals: [
+    {
+      signal_id: SIGNAL,
+      source_event_id: "bank-gateway-span-1",
+      service_name: "bank-gateway",
+      kind: "trace",
+      severity: "error",
+      occurred_at: "2026-10-16T10:35:00Z",
+      message: "trace POST /charge status=error duration_ms=2004",
+      fault_evidence: true,
+    },
+  ],
+  stage_outputs: [
+    {
+      step_key: "telemetry",
+      role: "telemetry_investigator",
+      ended_by: "submitted",
+      status: null,
+      findings: [
+        {
+          claim: "Failing calls end at this service.",
+          service_name: "bank-gateway",
+          failure_type: "downstream_timeout",
+          confidence: 0.7,
+          evidence_signal_ids: [SIGNAL],
+          supporting_roles: [],
+        },
+      ],
+      leading: null,
+      verdict: null,
+      citation_checks: [],
+      missing_evidence: [],
+      note: null,
+    },
+    {
+      step_key: "synthesize",
+      role: "synthesizer",
+      ended_by: "submitted",
+      status: "diagnosed",
+      findings: [],
+      leading: {
+        claim: "A deployment shortly before the window.",
+        service_name: "payment",
+        failure_type: "deployment_regression",
+        confidence: 0.3,
+        evidence_signal_ids: [],
+        supporting_roles: ["deployment_investigator"],
+      },
+      verdict: null,
+      citation_checks: [],
+      missing_evidence: [],
+      note: null,
+    },
   ],
 };
 
@@ -180,6 +254,12 @@ describe("evaluation pages", () => {
     expect(within(comparison).getByRole("row", { name: /Deterministic rule/ })).toHaveTextContent("0%");
     expect(screen.getByText(/Precision 100%, recall 100%/)).toBeInTheDocument();
 
+    const breakdown = screen.getByRole("table", { name: "First failing stage by variant" });
+    expect(within(breakdown).getByRole("row", { name: /Baseline rule was wrong/ })).toHaveTextContent(
+      "10",
+    );
+    expect(within(breakdown).queryByRole("row", { name: /No specialist/ })).toBeNull();
+
     await userEvent.click(screen.getByLabelText("Only incorrect and failed cases"));
     const links = screen.getAllByRole("link", { name: "downstream-timeout/held-out" });
     expect(links).toHaveLength(1);
@@ -224,5 +304,61 @@ describe("evaluation pages", () => {
     await userEvent.type(screen.getByLabelText("Auditor name"), "reviewer");
     await userEvent.click(doesNot);
     expect(audit).toHaveBeenCalledOnce();
+  });
+
+  it("says when no case is incorrect, and reads older runs without a breakdown", async () => {
+    const allCorrect = {
+      ...detail,
+      metrics: {
+        ...detail.metrics,
+        variants: {
+          deterministic: { ...variantMetrics(1), failure_stages: failureStages(0) },
+          multi_agent: { ...variantMetrics(1), failure_stages: failureStages(0) },
+        },
+      },
+      cases: [caseRow(GOOD_CASE, "multi_agent", "bank-gateway", true)],
+    };
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(fetchByPath({ [`/v1/evaluation-runs/${RUN}`]: () => jsonResponse(allCorrect) })),
+    );
+    renderRoute(`/evaluations/${RUN}`);
+    expect(await screen.findByText("No incorrect cases to attribute.")).toBeInTheDocument();
+  });
+
+  it("shows a case's first failing stage and each stage linked to its evidence", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        fetchByPath({
+          [`/v1/evaluation-runs/${RUN}/cases/${GOOD_CASE}`]: () => jsonResponse(multiCase),
+        }),
+      ),
+    );
+    renderRoute(`/evaluations/${RUN}/cases/${GOOD_CASE}`);
+
+    expect(await screen.findByText("Lead lost in synthesis")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Telemetry specialist" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Synthesis" })).toBeInTheDocument();
+    expect(screen.getByText(/A deployment shortly before the window/)).toBeInTheDocument();
+    const link = screen.getByRole("link", { name: "bank-gateway trace (fault evidence)" });
+    expect(link).toHaveAttribute(
+      "href",
+      `/investigations/${INVESTIGATION}?replay_scope=${encodeURIComponent(SCOPE)}#signal-${SIGNAL}`,
+    );
+  });
+
+  it("says when a case has no stored stages", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        fetchByPath({
+          [`/v1/evaluation-runs/${RUN}/cases/${CASE}`]: () =>
+            jsonResponse({ ...caseDetail, stage_outputs: [], stage_signals: [] }),
+        }),
+      ),
+    );
+    renderRoute(`/evaluations/${RUN}/cases/${CASE}`);
+    expect(await screen.findByText("No stored stage outputs for this case.")).toBeInTheDocument();
   });
 });

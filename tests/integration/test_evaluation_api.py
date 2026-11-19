@@ -117,8 +117,26 @@ async def test_a_reviewer_reads_results_and_drills_into_a_failed_case(
             assert case["expected"]["root_cause_service"] == "bank-gateway"
             assert case["expected"]["supporting_event_ids"] == []
         assert cases["multi_agent"]["scores"]["outcome_correct"] is True
+        assert cases["multi_agent"]["failure_stage"] is None
         failed = cases["deterministic"]
         assert failed["scores"]["outcome_correct"] is False
+        # The baseline's error is its rule's (P13-T03), counted in the breakdown.
+        assert (failed["failure_stage"], failed["limit_hit"]) == ("rule_error", False)
+        breakdown = detail["metrics"]["variants"]["deterministic"]["failure_stages"]
+        assert breakdown["incorrect"] == 1
+        assert breakdown["by_stage"]["rule_error"] == 1
+
+        # A multi-agent case shows each stored stage, with every cited signal labelled.
+        staged = client.get(
+            f"/v1/evaluation-runs/{run_id}/cases/{cases['multi_agent']['id']}", headers=_headers()
+        ).json()
+        outputs = {output["step_key"]: output for output in staged["stage_outputs"]}
+        assert {"telemetry", "deployment", "dependency", "synthesize", "verify"} <= set(outputs)
+        assert outputs["synthesize"]["leading"]["service_name"] == "bank-gateway"
+        assert outputs["verify"]["verdict"] == "supported"
+        labelled = {signal["signal_id"] for signal in staged["stage_signals"]}
+        assert set(outputs["synthesize"]["leading"]["evidence_signal_ids"]) <= labelled
+        assert staged["stage_scores"]["lead_retained"] is True
 
         drill = client.get(
             f"/v1/evaluation-runs/{run_id}/cases/{failed['id']}", headers=_headers()

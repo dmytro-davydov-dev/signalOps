@@ -54,8 +54,10 @@ from signalops.contracts.evaluation import (
     ScenarioSplit,
     SystemVariant,
 )
+from signalops.contracts.evaluation_stages import Attribution, FailureStage, StageScores
 from signalops.contracts.workflow import TERMINAL_INVESTIGATION_STATUSES
 from signalops.detection.detector import DetectionPolicy
+from signalops.evaluation.attribution import attribute
 from signalops.evaluation.catalog import (
     CATALOG_VERSION,
     CATALOG_VERSIONS,
@@ -345,8 +347,10 @@ class RunExecutor:
             replay_row.status = report.status
         expected = ExpectedOutcome.model_validate(scenario.expected_outcome)
         incidents = await self._incidents(scope)
+        matched: uuid.UUID | None = None
         if replay_row.status == ReplayStatus.COMPLETED:
             detection = match_detection(expected, await self._incident_refs(incidents))
+            matched = detection.matched_incident_id
             async with self._db.transaction() as session:
                 await EvaluationRepository(session).record_detection(
                     replay_row.id, detection.model_dump(mode="json")
@@ -373,11 +377,11 @@ class RunExecutor:
         for case in cases:
             if not incidents:
                 observed = ObservedOutcome()
-                await self._score(case, expected, observed)
+                await self._score(case, expected, observed, scope, matched)
                 continue
             investigation_id = await self._request(run, case, scope, incidents[0])
             waiting.append((case, investigation_id))
-        await self._await(run, scope, expected, incidents, waiting)
+        await self._await(run, scope, expected, incidents, waiting, matched)
 
     async def _replay(
         self, scope: EvidenceScope, row: EvaluationReplay, records: Sequence[Any]
@@ -479,6 +483,7 @@ class RunExecutor:
         expected: ExpectedOutcome,
         incidents: list[Incident],
         waiting: list[tuple[EvaluationCase, uuid.UUID]],
+        matched: uuid.UUID | None,
     ) -> None:
         limit = timedelta(seconds=int(run.limits["deadline_seconds"]))
         deadline = time.monotonic() + (limit + self._context.investigation_grace).total_seconds()
@@ -488,7 +493,7 @@ class RunExecutor:
             for case, investigation_id in list(pending.items()):
                 observed = await observe(self._db, scope, incidents, investigation_id)
                 if observed.investigation_status in TERMINAL_INVESTIGATION_STATUSES:
-                    await self._score(case, expected, observed, scope)
+                    await self._score(case, expected, observed, scope, matched)
                     del pending[case]
             if not pending:
                 return
@@ -503,12 +508,22 @@ class RunExecutor:
         case: EvaluationCase,
         expected: ExpectedOutcome,
         observed: ObservedOutcome,
-        scope: EvidenceScope | None = None,
+        scope: EvidenceScope,
+        matched: uuid.UUID | None,
     ) -> None:
         scores = score_case(expected, observed)
         stages = None
-        if scope is not None and observed.investigation_id is not None:
+        if observed.investigation_id is not None:
             stages = await stage_scores_of(self._db, scope, expected, observed.investigation_id)
+        attribution = attribute(
+            variant=SystemVariant(case.variant),
+            status=CaseStatus.SCORED,
+            expected=expected,
+            observed=observed,
+            scores=scores,
+            stages=None if stages is None else StageScores.model_validate(stages),
+            matched_incident_id=matched,
+        )
         async with self._db.transaction() as session:
             await EvaluationRepository(session).finish_case(
                 case.id,
@@ -516,6 +531,7 @@ class RunExecutor:
                 observed=observed.model_dump(mode="json"),
                 scores=scores.model_dump(mode="json"),
                 stage_scores=stages,
+                attribution=attribution,
                 now=datetime.now(UTC),
             )
 
@@ -526,6 +542,7 @@ class RunExecutor:
                 status=CaseStatus.FAILED,
                 observed=None,
                 scores=None,
+                attribution=Attribution(stage=FailureStage.HARNESS_FAILURE),
                 now=datetime.now(UTC),
                 error=reason,
             )

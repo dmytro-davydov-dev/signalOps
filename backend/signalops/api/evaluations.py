@@ -7,6 +7,7 @@ the request handler. A run belongs to the operator token's workspace.
 """
 
 import uuid
+from collections.abc import Sequence
 from typing import Annotated, Any
 
 from fastapi import APIRouter, HTTPException, Path, Query, Request, status
@@ -28,12 +29,16 @@ from signalops.contracts.evaluation_api import (
     EvaluationRunDetail,
     EvaluationRunList,
     EvaluationRunSummary,
+    StageOutputView,
 )
 from signalops.contracts.evaluation_stages import StageScores
+from signalops.contracts.workflow import StepStatus
 from signalops.dependencies import Resources
 from signalops.evaluation.runner import RunRequest, UnknownScenarioError, queue_run
+from signalops.evaluation.stage_views import cited_by, stage_outputs
 from signalops.persistence.database import Database
 from signalops.persistence.models import (
+    AgentStep,
     EvaluationAudit,
     EvaluationCase,
     EvaluationReplay,
@@ -103,6 +108,9 @@ def _row(
         "stage_scores": (
             None if case.stage_scores is None else StageScores.model_validate(case.stage_scores)
         ),
+        "failure_stage": case.failure_stage,
+        "failure_origin": case.failure_origin,
+        "limit_hit": case.limit_hit,
         "error": case.error,
     }
 
@@ -199,6 +207,27 @@ async def _case_detail(
         observed: ObservedOutcome | None = row["observed"]
         cited = observed.cited_signal_ids if observed is not None else ()
         supporting = set(scenario.expected_outcome.get("supporting_event_ids", []))
+        views: tuple[StageOutputView, ...] = ()
+        if case.investigation_id is not None:
+            steps = await session.scalars(
+                select(AgentStep).where(
+                    AgentStep.investigation_id == case.investigation_id,
+                    AgentStep.status == StepStatus.COMPLETED,
+                )
+            )
+            names = dict(
+                (
+                    await session.execute(
+                        select(Service.id, Service.name).where(
+                            Service.workspace_id == run.workspace_id
+                        )
+                    )
+                ).all()
+            )
+            views = stage_outputs(
+                {step.step_key: step.output for step in steps if step.output is not None}, names
+            )
+        staged = cited_by(views)
         signals = {
             signal.id: (signal, name)
             for signal, name in (
@@ -208,7 +237,7 @@ async def _case_detail(
                     .where(
                         Signal.workspace_id == run.workspace_id,
                         Signal.replay_scope == replay.replay_scope,
-                        Signal.id.in_(cited),
+                        Signal.id.in_([*cited, *staged]),
                     )
                 )
             ).all()
@@ -220,26 +249,31 @@ async def _case_detail(
                 .order_by(EvaluationAudit.created_at)
             )
         )
-    citations = tuple(
-        CitedSignal(
-            signal_id=signal.id,
-            source_event_id=signal.source_event_id,
-            service_name=name,
-            kind=signal.kind,
-            severity=signal.severity,
-            occurred_at=signal.occurred_at,
-            message=signal.message[:MESSAGE_EXCERPT],
-            fault_evidence=signal.source_event_id in supporting,
+
+    def labelled(ids: Sequence[uuid.UUID]) -> tuple[CitedSignal, ...]:
+        return tuple(
+            CitedSignal(
+                signal_id=signal.id,
+                source_event_id=signal.source_event_id,
+                service_name=name,
+                kind=signal.kind,
+                severity=signal.severity,
+                occurred_at=signal.occurred_at,
+                message=signal.message[:MESSAGE_EXCERPT],
+                fault_evidence=signal.source_event_id in supporting,
+            )
+            for signal_id in ids
+            if signal_id in signals
+            for signal, name in (signals[signal_id],)
         )
-        for signal_id in cited
-        if signal_id in signals
-        for signal, name in (signals[signal_id],)
-    )
+
     return EvaluationCaseDetail(
         **row,
         replay_report=replay.report,
-        citations=citations,
+        citations=labelled(cited),
         audits=tuple(_audit_view(audit) for audit in audits),
+        stage_outputs=views,
+        stage_signals=labelled(staged),
     )
 
 

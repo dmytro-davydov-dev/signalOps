@@ -140,12 +140,30 @@ async def test_a_development_run_stores_stage_scores_without_model_calls(
         stages = StageScores.model_validate(case.stage_scores)
         assert stages.workflow_version == {"single_agent": "v2", "multi_agent": "v3"}[case.variant]
         assert stages.synthesis_violations == ()
+    assert run.metrics is not None
     by_key = {case.case_key: StageScores.model_validate(case.stage_scores) for case in cases}
     mixed = by_key["mixed-timeout-deploy/dev@2/multi_agent/1"]
     assert (mixed.expected_contradiction, mixed.contradiction_listed) == ("checkout", True)
     assert by_key["downstream-timeout/dev@2/multi_agent/1"].lead_retained is True
     assert by_key["downstream-timeout/dev@2/single_agent/1"].proposal_correct is True
-    assert run.metrics is not None
+    # Every incorrect case has exactly one failing stage, every correct one none (P13-T03).
+    stages_of = {case.case_key: case.failure_stage for case in cases}
+    for case in cases:
+        correct = bool(case.scores and case.scores["outcome_correct"])
+        assert (case.failure_stage is None) == correct, case.case_key
+        assert (case.limit_hit is None) == correct, case.case_key
+    assert stages_of["deployment-regression/dev@2/multi_agent/1"] == "lead_lost_in_synthesis"
+    assert stages_of["unexplained-errors/dev@2/multi_agent/1"] == "verifier_false_accept"
+    assert (
+        stages_of["unexplained-errors/dev@2/single_agent/1"] == "false_diagnosis_on_underdetermined"
+    )
+    for variant in ("single_agent", "multi_agent"):
+        breakdown = run.metrics["variants"][variant]["failure_stages"]
+        incorrect = len(
+            [c for c in cases if c.variant == variant and not (c.scores or {})["outcome_correct"]]
+        )
+        assert breakdown["incorrect"] == incorrect
+        assert sum(breakdown["by_stage"].values()) == incorrect
     multi = run.metrics["variants"]["multi_agent"]["stages"]
     assert multi["cases_with_stage_scores"] == len(DEV)
     assert multi["specialist_lead_recall"]["denominator"] == 3

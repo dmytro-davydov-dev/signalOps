@@ -2,6 +2,8 @@ import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { Link, useParams } from "react-router";
 import {
+  FAILURE_STAGE_LABELS,
+  FAILURE_STAGES,
   fetchEvaluationRun,
   metric,
   VARIANT_LABELS,
@@ -74,6 +76,7 @@ function RunView() {
       ) : (
         <>
           <Comparison run={run} />
+          <FailureBreakdown run={run} />
           <Detection metrics={run.metrics} />
         </>
       )}
@@ -176,6 +179,64 @@ function Comparison({ run }: { run: EvaluationRunDetail }) {
   );
 }
 
+function FailureBreakdown({ run }: { run: EvaluationRunDetail }) {
+  const variants = run.metrics?.variants;
+  const count = (variant: string, ...path: string[]) =>
+    metric(variants, variant, "failure_stages", ...path);
+  const reported = run.variants.filter((variant) => count(variant, "incorrect") !== undefined);
+  if (reported.length === 0) return null;
+  const stages = FAILURE_STAGES.filter((stage) =>
+    reported.some((variant) => (count(variant, "by_stage", stage) ?? 0) > 0),
+  );
+  return (
+    <>
+      <h2>Where incorrect cases failed</h2>
+      {stages.length === 0 ? (
+        <p className="state" role="status">
+          No incorrect cases to attribute.
+        </p>
+      ) : (
+        <div className="scroll-x">
+          <table aria-label="First failing stage by variant">
+            <thead>
+              <tr>
+                <th scope="col">First failing stage</th>
+                {reported.map((variant) => (
+                  <th scope="col" key={variant}>
+                    {VARIANT_LABELS[variant] ?? variant}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {stages.map((stage) => (
+                <tr key={stage}>
+                  <th scope="row">{FAILURE_STAGE_LABELS[stage] ?? stage}</th>
+                  {reported.map((variant) => (
+                    <td key={variant}>{count(variant, "by_stage", stage) ?? 0}</td>
+                  ))}
+                </tr>
+              ))}
+              <tr>
+                <th scope="row">Incorrect in all (of which a role hit a limit)</th>
+                {reported.map((variant) => (
+                  <td key={variant}>
+                    {count(variant, "incorrect") ?? 0} ({count(variant, "limit_hit") ?? 0})
+                  </td>
+                ))}
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      )}
+      <p className="hint">
+        Each incorrect case counts once, at the first stage that failed; later stages may also have
+        failed. Open a case to see every stage.
+      </p>
+    </>
+  );
+}
+
 function Detection({ metrics }: { metrics: Record<string, unknown> }) {
   const at = (key: string) => metric(metrics, "detection", key);
   return (
@@ -245,6 +306,7 @@ function Cases({ run }: { run: EvaluationRunDetail }) {
                 <th scope="col">Expected</th>
                 <th scope="col">Observed</th>
                 <th scope="col">Result</th>
+                <th scope="col">First failing stage</th>
               </tr>
             </thead>
             <tbody>
@@ -267,6 +329,11 @@ function Cases({ run }: { run: EvaluationRunDetail }) {
                     ) : (
                       <span className="badge badge-failed">incorrect</span>
                     )}
+                  </td>
+                  <td>
+                    {row.failure_stage
+                      ? (FAILURE_STAGE_LABELS[row.failure_stage] ?? row.failure_stage)
+                      : "—"}
                   </td>
                 </tr>
               ))}

@@ -21,6 +21,7 @@ from typing import Any
 from signalops.contracts.evaluation import CaseScores, CaseStatus, DetectionScore, ObservedOutcome
 from signalops.contracts.evaluation_stages import (
     Conclusion,
+    FailureStage,
     FollowUpEffect,
     StageScores,
     VerdictCell,
@@ -139,6 +140,24 @@ def stage_summary(rows: Sequence[EvaluationCase]) -> dict[str, Any]:
     }
 
 
+def failure_summary(rows: Sequence[EvaluationCase]) -> dict[str, Any]:
+    """Incorrect cases by first failing stage (P13-T03); the counts sum to `incorrect`."""
+    incorrect = [
+        row
+        for row in rows
+        if row.status == CaseStatus.FAILED
+        or (row.status == CaseStatus.SCORED and not (row.scores or {}).get("outcome_correct"))
+    ]
+    counts = {stage.value: 0 for stage in FailureStage}
+    for row in incorrect:
+        counts[row.failure_stage or FailureStage.UNATTRIBUTED.value] += 1
+    return {
+        "incorrect": len(incorrect),
+        "by_stage": counts,
+        "limit_hit": sum(bool(row.limit_hit) for row in incorrect),
+    }
+
+
 def detection_summary(replays: Sequence[EvaluationReplay]) -> dict[str, Any]:
     scores = [
         DetectionScore.model_validate(row.report["detection"])
@@ -232,6 +251,7 @@ def variant_summary(
         "unknown_reserved_microusd": sum(item.unknown_reserved_microusd for item in observed),
         "model_calls": sum(item.model_calls for item in observed),
         "stages": stage_summary(rows),
+        "failure_stages": failure_summary(rows),
     }
 
 

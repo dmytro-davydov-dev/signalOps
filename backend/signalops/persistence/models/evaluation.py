@@ -38,6 +38,7 @@ from signalops.contracts.evaluation import (
     ScenarioSplit,
     SystemVariant,
 )
+from signalops.contracts.evaluation_stages import FailureStage
 from signalops.persistence.base import Base
 from signalops.persistence.models.common import (
     created_at,
@@ -191,6 +192,17 @@ class EvaluationCase(Base):
         CheckConstraint(_optional_object("observed_outcome"), name="observed_outcome_object"),
         CheckConstraint(_optional_object("scores"), name="scores_object"),
         CheckConstraint(_optional_object("stage_scores"), name="stage_scores_object"),
+        CheckConstraint(
+            f"failure_stage IS NULL OR {one_of('failure_stage', FailureStage)}",
+            name="failure_stage",
+        ),
+        CheckConstraint(
+            f"failure_origin IS NULL OR {length_between('failure_origin', 1, MAX_NAME_LENGTH)}",
+            name="failure_origin_length",
+        ),
+        CheckConstraint(
+            "(failure_stage IS NULL) = (limit_hit IS NULL)", name="failure_stage_limit_hit"
+        ),
         CheckConstraint(_error_length(), name="error_length"),
         CheckConstraint(
             "(status IN ('scored', 'failed')) = (completed_at IS NOT NULL)",
@@ -219,6 +231,11 @@ class EvaluationCase(Base):
     scores: Mapped[dict[str, Any] | None] = mapped_column(JSONB(none_as_null=True))
     # Scores of each workflow stage from the stored steps (P13-T02); None for `d1`.
     stage_scores: Mapped[dict[str, Any] | None] = mapped_column(JSONB(none_as_null=True))
+    # The first failing stage of an incorrect case (P13-T03); None when correct or pending.
+    failure_stage: Mapped[str | None] = mapped_column(Text)
+    failure_origin: Mapped[str | None] = mapped_column(Text)
+    # Some role ended on a limit; set together with failure_stage.
+    limit_hit: Mapped[bool | None] = mapped_column(Boolean)
     error: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = created_at()
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

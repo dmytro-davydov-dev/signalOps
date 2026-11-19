@@ -3,11 +3,14 @@ import { useState } from "react";
 import { Link, useParams } from "react-router";
 import { describeError } from "../api/describeError";
 import {
+  FAILURE_STAGE_LABELS,
   fetchEvaluationCase,
   recordAudit,
   VARIANT_LABELS,
   type CitedSignal,
   type EvaluationCaseDetail,
+  type StageClaim,
+  type StageOutputView,
 } from "../api/evaluations";
 import { formatMicroUsd, formatTime } from "../api/format";
 import { ErrorState } from "../components/ErrorState";
@@ -51,6 +54,7 @@ function CaseView() {
         <p className="hint">Synthetic scenario ({detail.family.replaceAll("_", " ")}).</p>
       )}
       <Outcomes detail={detail} />
+      <Stages detail={detail} />
       <Citations runId={runId} detail={detail} />
     </section>
   );
@@ -95,6 +99,16 @@ function Outcomes({ detail }: { detail: EvaluationCaseDetail }) {
           </dd>
         </>
       )}
+      {detail.failure_stage && (
+        <>
+          <dt>First failing stage</dt>
+          <dd>
+            {FAILURE_STAGE_LABELS[detail.failure_stage] ?? detail.failure_stage}
+            {detail.failure_origin && ` (first asserted at ${detail.failure_origin})`}
+            {detail.limit_hit && " · a role ended on a limit"}
+          </dd>
+        </>
+      )}
       {observed !== null && observed.investigation_id !== null && (
         <>
           <dt>Cost</dt>
@@ -110,6 +124,139 @@ function Outcomes({ detail }: { detail: EvaluationCaseDetail }) {
         </>
       )}
     </dl>
+  );
+}
+
+const STEP_LABELS: Record<string, string> = {
+  investigate: "Single agent",
+  telemetry: "Telemetry specialist",
+  deployment: "Deployment specialist",
+  dependency: "Dependency specialist",
+  synthesize: "Synthesis",
+  verify: "Verification",
+  follow_up: "Follow-up round",
+  reverify: "Final verification",
+};
+
+function Stages({ detail }: { detail: EvaluationCaseDetail }) {
+  const outputs = detail.stage_outputs ?? [];
+  if (detail.investigation_id === null) return null;
+  const signals = new Map((detail.stage_signals ?? []).map((item) => [item.signal_id, item]));
+  const evidence = `/investigations/${detail.investigation_id}?replay_scope=${encodeURIComponent(detail.replay_scope)}`;
+  return (
+    <>
+      <h2>Stages</h2>
+      {outputs.length === 0 ? (
+        <p className="state" role="status">
+          No stored stage outputs for this case.
+        </p>
+      ) : (
+        <ol className="stages">
+          {outputs.map((output) => (
+            <StageItem key={output.step_key} output={output} signals={signals} evidence={evidence} />
+          ))}
+        </ol>
+      )}
+    </>
+  );
+}
+
+function StageItem({
+  output,
+  signals,
+  evidence,
+}: {
+  output: StageOutputView;
+  signals: Map<string, CitedSignal>;
+  evidence: string;
+}) {
+  return (
+    <li>
+      <h3>{STEP_LABELS[output.step_key] ?? output.step_key}</h3>
+      <p className="hint">
+        {output.ended_by && `Ended: ${output.ended_by.replaceAll("_", " ")}`}
+        {output.status && ` · ${output.status.replaceAll("_", " ")}`}
+        {output.verdict && ` · verdict ${output.verdict.replaceAll("_", " ")}`}
+        {output.note && ` · ${output.note}`}
+      </p>
+      {output.leading !== null && (
+        <p>
+          Leading: <Claim claim={output.leading} signals={signals} evidence={evidence} />
+        </p>
+      )}
+      {output.findings.length > 0 && (
+        <ul>
+          {output.findings.map((claim, index) => (
+            <li key={index}>
+              <Claim claim={claim} signals={signals} evidence={evidence} />
+            </li>
+          ))}
+        </ul>
+      )}
+      {output.citation_checks.length > 0 && (
+        <p>
+          {output.citation_checks.filter((check) => check.supports).length} of{" "}
+          {output.citation_checks.length} cited signals judged supporting:{" "}
+          {output.citation_checks.map((check) => (
+            <SignalLink
+              key={check.signal_id}
+              id={check.signal_id}
+              signals={signals}
+              evidence={evidence}
+              mark={check.supports ? "✓" : "✗"}
+            />
+          ))}
+        </p>
+      )}
+      {output.missing_evidence.length > 0 && (
+        <p className="hint">Missing: {output.missing_evidence.join("; ")}</p>
+      )}
+    </li>
+  );
+}
+
+function Claim({
+  claim,
+  signals,
+  evidence,
+}: {
+  claim: StageClaim;
+  signals: Map<string, CitedSignal>;
+  evidence: string;
+}) {
+  return (
+    <>
+      <strong>
+        {claim.service_name ?? "no service"}
+        {claim.failure_type && ` · ${claim.failure_type}`}
+      </strong>
+      {claim.confidence !== null && ` (confidence ${claim.confidence.toFixed(2)})`} — {claim.claim}{" "}
+      {claim.evidence_signal_ids.map((id) => (
+        <SignalLink key={id} id={id} signals={signals} evidence={evidence} />
+      ))}
+    </>
+  );
+}
+
+function SignalLink({
+  id,
+  signals,
+  evidence,
+  mark = "",
+}: {
+  id: string;
+  signals: Map<string, CitedSignal>;
+  evidence: string;
+  mark?: string;
+}) {
+  const signal = signals.get(id);
+  const label = signal
+    ? `${mark}${signal.service_name ?? "unresolved"} ${signal.kind}${signal.fault_evidence ? " (fault evidence)" : ""}`
+    : `${mark}unreadable signal`;
+  return (
+    <Link className="badge" to={`${evidence}#signal-${id}`} title={signal?.message ?? id}>
+      {label}
+    </Link>
   );
 }
 
