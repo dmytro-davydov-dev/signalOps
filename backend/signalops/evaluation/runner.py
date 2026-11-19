@@ -247,6 +247,33 @@ class RunnerContext:
     investigation_grace: timedelta = timedelta(minutes=2)
 
 
+async def replay_into(
+    context: RunnerContext, scope: EvidenceScope, replay_id: uuid.UUID, records: Sequence[Any]
+) -> ReplayReport:
+    """Seed the demo runbooks into a replay scope and replay records into it."""
+    services = {service.name: service.id for service in DEMO_SERVICES}
+    await seed_runbooks(
+        context.database,
+        scope,
+        [(runbook, [services[name] for name in names]) for runbook, names in DEMO_RUNBOOKS],
+    )
+    transport = context.transport_for(scope)
+    try:
+        return await replay(
+            context.database,
+            records,
+            replay_run_id=replay_id,
+            workspace_id=scope.workspace_id,
+            sources=context.sources,
+            transport=transport,
+            ingest_policy=context.ingest_policy,
+            detection_policy=context.detection_policy,
+            timing=context.replay_timing,
+        )
+    finally:
+        transport.close()
+
+
 class LeaseLost(Exception):
     """Another runner took the run."""
 
@@ -386,27 +413,7 @@ class RunExecutor:
     async def _replay(
         self, scope: EvidenceScope, row: EvaluationReplay, records: Sequence[Any]
     ) -> ReplayReport:
-        services = {service.name: service.id for service in DEMO_SERVICES}
-        await seed_runbooks(
-            self._db,
-            scope,
-            [(runbook, [services[name] for name in names]) for runbook, names in DEMO_RUNBOOKS],
-        )
-        transport = self._context.transport_for(scope)
-        try:
-            report = await replay(
-                self._db,
-                records,
-                replay_run_id=row.id,
-                workspace_id=scope.workspace_id,
-                sources=self._context.sources,
-                transport=transport,
-                ingest_policy=self._context.ingest_policy,
-                detection_policy=self._context.detection_policy,
-                timing=self._context.replay_timing,
-            )
-        finally:
-            transport.close()
+        report = await replay_into(self._context, scope, row.id, records)
         async with self._db.transaction() as session:
             await EvaluationRepository(session).finish_replay(
                 row.id,

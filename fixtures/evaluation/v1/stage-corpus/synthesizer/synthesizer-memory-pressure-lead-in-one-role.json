@@ -1,0 +1,107 @@
+{
+  "version": "1",
+  "key": "synthesizer-memory-pressure-lead-in-one-role",
+  "role": "synthesizer",
+  "defect": "lead_in_one_role",
+  "source": "memory-pressure/dev",
+  "source_version": "2",
+  "brief": {
+    "incident": {
+      "incident_id": "e0fce8da-1a4d-4662-bf2e-ac86ed5a5d33",
+      "title": "High error rate on payment (demo)",
+      "detected_at": "2026-10-16T10:35:30Z",
+      "evidence_cutoff_at": "2026-10-16T10:35:30Z",
+      "window_start": "2026-10-16T10:34:00Z"
+    },
+    "services": [
+      {
+        "service_id": "57988918-06d9-4f40-82a2-48ed0c9c0adf",
+        "name": "bank-gateway"
+      },
+      {
+        "service_id": "dc2bf08d-6c3c-44ea-855a-d7d42eeefb36",
+        "name": "checkout"
+      },
+      {
+        "service_id": "72a0b9e1-770e-4b5c-8b54-f518c82d942a",
+        "name": "inventory"
+      },
+      {
+        "service_id": "0c4f6b1e-3a8d-4e27-9b5c-6d2a1f8e7c30",
+        "name": "orders-db"
+      },
+      {
+        "service_id": "5f3e2d1c-0b9a-4876-9543-210fedcba987",
+        "name": "payment"
+      }
+    ],
+    "reports": [
+      {
+        "role": "telemetry_investigator",
+        "ended_by": "submitted",
+        "report": {
+          "findings": [
+            {
+              "claim": "Records from this service show the failure.",
+              "service_id": "5f3e2d1c-0b9a-4876-9543-210fedcba987",
+              "failure_type": "memory_pressure",
+              "confidence": 0.7,
+              "uncertainty": "Built for the component corpus from replayed records.",
+              "evidence_signal_ids": [
+                "0a589ca0-dd05-5d9f-b75e-ad3735364faf",
+                "bba6fb59-4d2e-5248-8465-b16e5c5f168b",
+                "937cb8e7-b16d-59cd-91bf-afa6b8c6cb2d",
+                "ef0b62b2-a132-548a-a00b-fe89e08ee906",
+                "8953e1d9-6308-55ba-bbef-510a2793b707"
+              ],
+              "references": []
+            }
+          ],
+          "missing_evidence": [],
+          "limitations": []
+        }
+      },
+      {
+        "role": "deployment_investigator",
+        "ended_by": "submitted",
+        "report": {
+          "findings": [],
+          "missing_evidence": [
+            "Nothing relevant was found"
+          ],
+          "limitations": []
+        }
+      },
+      {
+        "role": "dependency_investigator",
+        "ended_by": "submitted",
+        "report": {
+          "findings": [
+            {
+              "claim": "Structure only.",
+              "service_id": null,
+              "failure_type": null,
+              "confidence": 0.5,
+              "uncertainty": "Built for the component corpus from replayed records.",
+              "evidence_signal_ids": [
+                "276ed822-410f-51e2-acbb-08d9e1696b68"
+              ],
+              "references": []
+            }
+          ],
+          "missing_evidence": [],
+          "limitations": []
+        }
+      }
+    ]
+  },
+  "expected": {
+    "kind": "leading",
+    "verdict": null,
+    "citation_supports": {},
+    "leading_service": "payment",
+    "leading_failure_type": "memory_pressure",
+    "contradiction_service": null,
+    "contradiction_signal_ids": []
+  }
+}

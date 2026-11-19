@@ -547,9 +547,66 @@ def detect_conflicts(
     return tuple(conflicts[:MAX_CONTRADICTIONS])
 
 
+def synthesis_brief(brief: IncidentBrief, findings: Sequence[SpecialistFindings]) -> SynthesisBrief:
+    """What the synthesizer reads: the specialists' reports, not their evidence or tools."""
+    return SynthesisBrief(
+        incident=facts_of(brief),
+        services=brief.services,
+        reports=tuple(
+            RoleReport(role=f.role, ended_by=f.provenance.ended_by, report=f.report)
+            for f in findings
+        ),
+    )
+
+
+def findings_of(brief: SynthesisBrief) -> tuple[SpecialistFindings, ...]:
+    """The reports in a synthesis brief as the findings the synthesis check compares with."""
+    return tuple(
+        SpecialistFindings(
+            role=item.role,
+            report=item.report,
+            provenance=Provenance(role=item.role, prompt_version="brief", ended_by=item.ended_by),
+        )
+        for item in brief.reports
+    )
+
+
+async def run_synthesizer(
+    context: NodeContext,
+    brief: SynthesisBrief,
+    findings: Sequence[SpecialistFindings],
+    turns: int,
+) -> tuple[SynthesisReport | None, AgentEnding, int]:
+    """The synthesizer's loop on a brief, with the handoff checks of ADR-031."""
+    runtime = _runtime(context)
+    workspace_id = context.run.scope.workspace_id
+
+    async def check(synthesis: SynthesisReport, _reads: Reads) -> str | None:
+        if problem := check_synthesis(synthesis, findings):
+            return problem
+        services = {h.service_id for h in synthesis.hypotheses}
+        if unknown := await _unknown_services(context.database, workspace_id, services):
+            return f"{unknown} of hypotheses.service_id are not services in this workspace."
+        return None
+
+    task = RoleTask(
+        prompt_version=SYNTHESIZER_PROMPT_VERSION,
+        system=SYNTHESIZER_PROMPT,
+        brief=brief.model_dump_json(),
+        tools=(),
+        submit=SYNTHESIS_SUBMIT,
+        output=SynthesisReport,
+        check=check,
+        invalid_prefix="Invalid synthesis",
+    )
+    result = await AgentLoop(runtime, context.lease, context.step_key, _scope(context), task).run(
+        turns
+    )
+    return result.output, result.ended_by, result.turns
+
+
 async def synthesize(context: NodeContext) -> SynthesisOutput:
     runtime = _runtime(context)
-    run = context.run
     brief = context.output(LOAD_INCIDENT)
     findings = specialist_findings(context)
     names = {service.service_id: service.name for service in brief.services}
@@ -568,48 +625,18 @@ async def synthesize(context: NodeContext) -> SynthesisOutput:
             ),
             detected_contradictions=detected,
         )
-
-    async def check(synthesis: SynthesisReport, _reads: Reads) -> str | None:
-        if problem := check_synthesis(synthesis, findings):
-            return problem
-        services = {h.service_id for h in synthesis.hypotheses}
-        if unknown := await _unknown_services(context.database, run.scope.workspace_id, services):
-            return f"{unknown} of hypotheses.service_id are not services in this workspace."
-        return None
-
-    task = RoleTask(
-        prompt_version=SYNTHESIZER_PROMPT_VERSION,
-        system=SYNTHESIZER_PROMPT,
-        brief=SynthesisBrief(
-            incident=facts_of(brief),
-            services=brief.services,
-            reports=tuple(
-                RoleReport(role=f.role, ended_by=f.provenance.ended_by, report=f.report)
-                for f in findings
-            ),
-        ).model_dump_json(),
-        tools=(),
-        submit=SYNTHESIS_SUBMIT,
-        output=SynthesisReport,
-        check=check,
-        invalid_prefix="Invalid synthesis",
+    output, ended_by, turns = await run_synthesizer(
+        context, synthesis_brief(brief, findings), findings, context.output(PLAN).synthesis_turns
     )
-    result = await AgentLoop(runtime, context.lease, context.step_key, _scope(context), task).run(
-        context.output(PLAN).synthesis_turns
-    )
-    report = result.output or SynthesisReport(
+    report = output or SynthesisReport(
         status=DiagnosisStatus.INSUFFICIENT_EVIDENCE,
         summary="The findings were not synthesized.",
-        missing_evidence=_capped((ROLE_ENDINGS[result.ended_by], *missing)),
+        missing_evidence=_capped((ROLE_ENDINGS[ended_by], *missing)),
     )
     return SynthesisOutput(
         report=report,
         provenance=_provenance(
-            AgentRole.SYNTHESIZER,
-            SYNTHESIZER_PROMPT_VERSION,
-            runtime,
-            result.ended_by,
-            result.turns,
+            AgentRole.SYNTHESIZER, SYNTHESIZER_PROMPT_VERSION, runtime, ended_by, turns
         ),
         detected_contradictions=detected,
     )
@@ -736,6 +763,73 @@ async def _follow_up_room(context: NodeContext, runtime: AgentRuntime) -> bool:
     )
 
 
+async def verification_brief(
+    database: Database,
+    scope: ToolScope,
+    redactor: TextRedactor,
+    brief: IncidentBrief,
+    synthesis: SynthesisOutput,
+    citations: tuple[uuid.UUID, ...],
+    *,
+    follow_up_allowed: bool,
+    follow_up: SpecialistFindings | None,
+) -> VerificationBrief:
+    """What the verifier reads: the synthesis, its contradictions, and the cited signals
+    read again from PostgreSQL within scope and cutoff, redacted."""
+    packet, unreadable = await cited_signals(database, scope, redactor, citations)
+    return VerificationBrief(
+        incident=facts_of(brief),
+        services=brief.services,
+        synthesis=synthesis.report,
+        contradictions=synthesis.contradictions(),
+        cited=packet,
+        unreadable_signal_ids=unreadable,
+        follow_up_allowed=follow_up_allowed,
+        follow_up=follow_up,
+    )
+
+
+def verified_citations(brief: VerificationBrief) -> tuple[uuid.UUID, ...]:
+    """The citations a verification brief asks to judge, in the order code listed them."""
+    shown = tuple(cited.signal_id for cited in brief.cited)
+    return tuple(dict.fromkeys((*shown, *brief.unreadable_signal_ids)))
+
+
+async def run_verification_role(
+    context: NodeContext, brief: VerificationBrief, citations: tuple[uuid.UUID, ...], turns: int
+) -> VerificationOutput:
+    """The verifier's loop on a brief: it must judge exactly the given citations."""
+    runtime = _runtime(context)
+    unreadable = brief.unreadable_signal_ids
+
+    async def check(verification: VerificationReport, _reads: Reads) -> str | None:
+        return check_verification(
+            verification, citations, unreadable, follow_up_allowed=brief.follow_up_allowed
+        )
+
+    task = RoleTask(
+        prompt_version=VERIFIER_PROMPT_VERSION,
+        system=VERIFIER_PROMPT,
+        brief=brief.model_dump_json(),
+        tools=(),
+        submit=VERIFICATION_SUBMIT,
+        output=VerificationReport,
+        check=check,
+        invalid_prefix="Invalid verification",
+    )
+    result = await AgentLoop(runtime, context.lease, context.step_key, _scope(context), task).run(
+        turns
+    )
+    report = result.output or unsupported((ROLE_ENDINGS[result.ended_by],))
+    return VerificationOutput(
+        report=report,
+        provenance=_provenance(
+            AgentRole.VERIFIER, VERIFIER_PROMPT_VERSION, runtime, result.ended_by, result.turns
+        ),
+        follow_up_allowed=brief.follow_up_allowed,
+    )
+
+
 async def run_verifier(
     context: NodeContext,
     *,
@@ -744,47 +838,18 @@ async def run_verifier(
     follow_up: SpecialistFindings | None,
 ) -> VerificationOutput:
     runtime = _runtime(context)
-    synthesis_output = context.output(SYNTHESIZE)
-    scope = _scope(context)
-    packet, unreadable = await cited_signals(
-        context.database, scope, runtime.tools.redactor, citations
-    )
-    brief = context.output(LOAD_INCIDENT)
-
-    async def check(verification: VerificationReport, _reads: Reads) -> str | None:
-        return check_verification(
-            verification, citations, unreadable, follow_up_allowed=follow_up_allowed
-        )
-
-    task = RoleTask(
-        prompt_version=VERIFIER_PROMPT_VERSION,
-        system=VERIFIER_PROMPT,
-        brief=VerificationBrief(
-            incident=facts_of(brief),
-            services=brief.services,
-            synthesis=synthesis_output.report,
-            contradictions=synthesis_output.contradictions(),
-            cited=packet,
-            unreadable_signal_ids=unreadable,
-            follow_up_allowed=follow_up_allowed,
-            follow_up=follow_up,
-        ).model_dump_json(),
-        tools=(),
-        submit=VERIFICATION_SUBMIT,
-        output=VerificationReport,
-        check=check,
-        invalid_prefix="Invalid verification",
-    )
-    result = await AgentLoop(runtime, context.lease, context.step_key, scope, task).run(
-        context.output(PLAN).verification_turns
-    )
-    report = result.output or unsupported((ROLE_ENDINGS[result.ended_by],))
-    return VerificationOutput(
-        report=report,
-        provenance=_provenance(
-            AgentRole.VERIFIER, VERIFIER_PROMPT_VERSION, runtime, result.ended_by, result.turns
-        ),
+    brief = await verification_brief(
+        context.database,
+        _scope(context),
+        runtime.tools.redactor,
+        context.output(LOAD_INCIDENT),
+        context.output(SYNTHESIZE),
+        citations,
         follow_up_allowed=follow_up_allowed,
+        follow_up=follow_up,
+    )
+    return await run_verification_role(
+        context, brief, citations, context.output(PLAN).verification_turns
     )
 
 

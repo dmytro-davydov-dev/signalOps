@@ -1,0 +1,121 @@
+{
+  "version": "1",
+  "key": "verifier-memory-pressure-none",
+  "role": "verifier",
+  "defect": "none",
+  "source": "memory-pressure/dev",
+  "source_version": "2",
+  "brief": {
+    "incident": {
+      "incident_id": "e0fce8da-1a4d-4662-bf2e-ac86ed5a5d33",
+      "title": "High error rate on payment (demo)",
+      "detected_at": "2026-10-16T10:35:30Z",
+      "evidence_cutoff_at": "2026-10-16T10:35:30Z",
+      "window_start": "2026-10-16T10:34:00Z"
+    },
+    "services": [
+      {
+        "service_id": "57988918-06d9-4f40-82a2-48ed0c9c0adf",
+        "name": "bank-gateway"
+      },
+      {
+        "service_id": "dc2bf08d-6c3c-44ea-855a-d7d42eeefb36",
+        "name": "checkout"
+      },
+      {
+        "service_id": "72a0b9e1-770e-4b5c-8b54-f518c82d942a",
+        "name": "inventory"
+      },
+      {
+        "service_id": "0c4f6b1e-3a8d-4e27-9b5c-6d2a1f8e7c30",
+        "name": "orders-db"
+      },
+      {
+        "service_id": "5f3e2d1c-0b9a-4876-9543-210fedcba987",
+        "name": "payment"
+      }
+    ],
+    "synthesis": {
+      "status": "diagnosed",
+      "summary": "One leading hypothesis to verify.",
+      "hypotheses": [
+        {
+          "service_id": "5f3e2d1c-0b9a-4876-9543-210fedcba987",
+          "failure_type": "memory_pressure",
+          "confidence": 0.7,
+          "evidence_signal_ids": [
+            "0a589ca0-dd05-5d9f-b75e-ad3735364faf",
+            "bba6fb59-4d2e-5248-8465-b16e5c5f168b",
+            "937cb8e7-b16d-59cd-91bf-afa6b8c6cb2d",
+            "ef0b62b2-a132-548a-a00b-fe89e08ee906",
+            "8953e1d9-6308-55ba-bbef-510a2793b707"
+          ],
+          "supporting_roles": [
+            "telemetry_investigator"
+          ],
+          "assessment": "The leading cause, as the corpus plants it."
+        }
+      ],
+      "contradictions": [],
+      "suggested_actions": [],
+      "limitations": [],
+      "missing_evidence": []
+    },
+    "contradictions": [],
+    "cited": [
+      {
+        "signal_id": "0a589ca0-dd05-5d9f-b75e-ad3735364faf",
+        "kind": "trace",
+        "service_id": "5f3e2d1c-0b9a-4876-9543-210fedcba987",
+        "occurred_at": "2026-10-16T10:34:02.776000Z",
+        "text": "trace POST /v1/charges status=ok duration_ms=1064 error_spans=0 downstream=[bank-gateway]"
+      },
+      {
+        "signal_id": "bba6fb59-4d2e-5248-8465-b16e5c5f168b",
+        "kind": "log",
+        "service_id": "5f3e2d1c-0b9a-4876-9543-210fedcba987",
+        "occurred_at": "2026-10-16T10:34:02.776000Z",
+        "text": "log warning: GC pause of 878 ms"
+      },
+      {
+        "signal_id": "937cb8e7-b16d-59cd-91bf-afa6b8c6cb2d",
+        "kind": "log",
+        "service_id": "5f3e2d1c-0b9a-4876-9543-210fedcba987",
+        "occurred_at": "2026-10-16T10:34:04.750000Z",
+        "text": "log error: java.lang.OutOfMemoryError: Java heap space"
+      },
+      {
+        "signal_id": "ef0b62b2-a132-548a-a00b-fe89e08ee906",
+        "kind": "trace",
+        "service_id": "5f3e2d1c-0b9a-4876-9543-210fedcba987",
+        "occurred_at": "2026-10-16T10:34:04.750000Z",
+        "text": "trace POST /v1/charges status=error duration_ms=1368 error_spans=2 downstream=[bank-gateway]"
+      },
+      {
+        "signal_id": "8953e1d9-6308-55ba-bbef-510a2793b707",
+        "kind": "log",
+        "service_id": "5f3e2d1c-0b9a-4876-9543-210fedcba987",
+        "occurred_at": "2026-10-16T10:34:06.940000Z",
+        "text": "log error: java.lang.OutOfMemoryError: Java heap space"
+      }
+    ],
+    "unreadable_signal_ids": [],
+    "follow_up_allowed": false,
+    "follow_up": null
+  },
+  "expected": {
+    "kind": "verdict",
+    "verdict": "supported",
+    "citation_supports": {
+      "0a589ca0-dd05-5d9f-b75e-ad3735364faf": true,
+      "bba6fb59-4d2e-5248-8465-b16e5c5f168b": true,
+      "937cb8e7-b16d-59cd-91bf-afa6b8c6cb2d": true,
+      "ef0b62b2-a132-548a-a00b-fe89e08ee906": true,
+      "8953e1d9-6308-55ba-bbef-510a2793b707": true
+    },
+    "leading_service": null,
+    "leading_failure_type": null,
+    "contradiction_service": null,
+    "contradiction_signal_ids": []
+  }
+}

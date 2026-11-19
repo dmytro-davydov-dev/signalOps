@@ -1,0 +1,121 @@
+{
+  "version": "1",
+  "key": "verifier-memory-pressure-non-fault-citations",
+  "role": "verifier",
+  "defect": "non_fault_citations",
+  "source": "memory-pressure/dev",
+  "source_version": "2",
+  "brief": {
+    "incident": {
+      "incident_id": "e0fce8da-1a4d-4662-bf2e-ac86ed5a5d33",
+      "title": "High error rate on payment (demo)",
+      "detected_at": "2026-10-16T10:35:30Z",
+      "evidence_cutoff_at": "2026-10-16T10:35:30Z",
+      "window_start": "2026-10-16T10:34:00Z"
+    },
+    "services": [
+      {
+        "service_id": "57988918-06d9-4f40-82a2-48ed0c9c0adf",
+        "name": "bank-gateway"
+      },
+      {
+        "service_id": "dc2bf08d-6c3c-44ea-855a-d7d42eeefb36",
+        "name": "checkout"
+      },
+      {
+        "service_id": "72a0b9e1-770e-4b5c-8b54-f518c82d942a",
+        "name": "inventory"
+      },
+      {
+        "service_id": "0c4f6b1e-3a8d-4e27-9b5c-6d2a1f8e7c30",
+        "name": "orders-db"
+      },
+      {
+        "service_id": "5f3e2d1c-0b9a-4876-9543-210fedcba987",
+        "name": "payment"
+      }
+    ],
+    "synthesis": {
+      "status": "diagnosed",
+      "summary": "One leading hypothesis to verify.",
+      "hypotheses": [
+        {
+          "service_id": "5f3e2d1c-0b9a-4876-9543-210fedcba987",
+          "failure_type": "memory_pressure",
+          "confidence": 0.7,
+          "evidence_signal_ids": [
+            "aae96df4-9464-5064-b889-7a00cdac4ea4",
+            "e16824fa-9363-51a1-8acc-081dea81e701",
+            "ae881d9c-b80a-5599-a102-22ddfdfdaac8",
+            "86ec9fad-8b95-5d9c-8ff9-2fc2d9d71e08",
+            "65580d3f-3a09-5c5b-b09a-941657071a82"
+          ],
+          "supporting_roles": [
+            "telemetry_investigator"
+          ],
+          "assessment": "The leading cause, as the corpus plants it."
+        }
+      ],
+      "contradictions": [],
+      "suggested_actions": [],
+      "limitations": [],
+      "missing_evidence": []
+    },
+    "contradictions": [],
+    "cited": [
+      {
+        "signal_id": "aae96df4-9464-5064-b889-7a00cdac4ea4",
+        "kind": "log",
+        "service_id": "5f3e2d1c-0b9a-4876-9543-210fedcba987",
+        "occurred_at": "2026-10-16T10:32:00.277000Z",
+        "text": "log error: upstream bank-gateway call timed out after 2000 ms"
+      },
+      {
+        "signal_id": "e16824fa-9363-51a1-8acc-081dea81e701",
+        "kind": "trace",
+        "service_id": "5f3e2d1c-0b9a-4876-9543-210fedcba987",
+        "occurred_at": "2026-10-16T10:32:00.277000Z",
+        "text": "trace POST /v1/charges status=error duration_ms=2028 error_spans=2 downstream=[bank-gateway]"
+      },
+      {
+        "signal_id": "ae881d9c-b80a-5599-a102-22ddfdfdaac8",
+        "kind": "log",
+        "service_id": "5f3e2d1c-0b9a-4876-9543-210fedcba987",
+        "occurred_at": "2026-10-16T10:32:12.271000Z",
+        "text": "log warning: GC pause of 218 ms"
+      },
+      {
+        "signal_id": "86ec9fad-8b95-5d9c-8ff9-2fc2d9d71e08",
+        "kind": "log",
+        "service_id": "5f3e2d1c-0b9a-4876-9543-210fedcba987",
+        "occurred_at": "2026-10-16T10:32:46.669000Z",
+        "text": "log warning: GC pause of 99 ms"
+      },
+      {
+        "signal_id": "65580d3f-3a09-5c5b-b09a-941657071a82",
+        "kind": "log",
+        "service_id": "5f3e2d1c-0b9a-4876-9543-210fedcba987",
+        "occurred_at": "2026-10-16T10:33:46.477000Z",
+        "text": "log warning: GC pause of 96 ms"
+      }
+    ],
+    "unreadable_signal_ids": [],
+    "follow_up_allowed": false,
+    "follow_up": null
+  },
+  "expected": {
+    "kind": "verdict",
+    "verdict": "unsupported",
+    "citation_supports": {
+      "aae96df4-9464-5064-b889-7a00cdac4ea4": false,
+      "e16824fa-9363-51a1-8acc-081dea81e701": false,
+      "ae881d9c-b80a-5599-a102-22ddfdfdaac8": false,
+      "86ec9fad-8b95-5d9c-8ff9-2fc2d9d71e08": false,
+      "65580d3f-3a09-5c5b-b09a-941657071a82": false
+    },
+    "leading_service": null,
+    "leading_failure_type": null,
+    "contradiction_service": null,
+    "contradiction_signal_ids": []
+  }
+}

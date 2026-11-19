@@ -1,0 +1,121 @@
+{
+  "version": "1",
+  "key": "verifier-downstream-timeout-other-service-citations",
+  "role": "verifier",
+  "defect": "other_service_citations",
+  "source": "downstream-timeout/dev",
+  "source_version": "2",
+  "brief": {
+    "incident": {
+      "incident_id": "8b04746d-1723-48eb-8f5e-bbd5bb76f260",
+      "title": "High error rate on payment (demo)",
+      "detected_at": "2026-10-16T10:35:30Z",
+      "evidence_cutoff_at": "2026-10-16T10:35:30Z",
+      "window_start": "2026-10-16T10:34:00Z"
+    },
+    "services": [
+      {
+        "service_id": "57988918-06d9-4f40-82a2-48ed0c9c0adf",
+        "name": "bank-gateway"
+      },
+      {
+        "service_id": "dc2bf08d-6c3c-44ea-855a-d7d42eeefb36",
+        "name": "checkout"
+      },
+      {
+        "service_id": "72a0b9e1-770e-4b5c-8b54-f518c82d942a",
+        "name": "inventory"
+      },
+      {
+        "service_id": "0c4f6b1e-3a8d-4e27-9b5c-6d2a1f8e7c30",
+        "name": "orders-db"
+      },
+      {
+        "service_id": "5f3e2d1c-0b9a-4876-9543-210fedcba987",
+        "name": "payment"
+      }
+    ],
+    "synthesis": {
+      "status": "diagnosed",
+      "summary": "One leading hypothesis to verify.",
+      "hypotheses": [
+        {
+          "service_id": "57988918-06d9-4f40-82a2-48ed0c9c0adf",
+          "failure_type": "downstream_timeout",
+          "confidence": 0.7,
+          "evidence_signal_ids": [
+            "0dec0e76-5cb1-5da1-ba96-f236fe6501e9",
+            "89dfbacc-9e0d-5cc1-a3cd-0ae269b503e0",
+            "d4a83f1c-3bf0-54d5-8d13-5ff6d479b56a",
+            "c40dca31-964c-5d86-bfcb-1c4ed622b823",
+            "af070f35-9540-52d4-a8a2-97bd375bd800"
+          ],
+          "supporting_roles": [
+            "telemetry_investigator"
+          ],
+          "assessment": "The leading cause, as the corpus plants it."
+        }
+      ],
+      "contradictions": [],
+      "suggested_actions": [],
+      "limitations": [],
+      "missing_evidence": []
+    },
+    "contradictions": [],
+    "cited": [
+      {
+        "signal_id": "0dec0e76-5cb1-5da1-ba96-f236fe6501e9",
+        "kind": "log",
+        "service_id": "72a0b9e1-770e-4b5c-8b54-f518c82d942a",
+        "occurred_at": "2026-10-16T10:30:14.098000Z",
+        "text": "log warning: stock cache hit ratio below 80%"
+      },
+      {
+        "signal_id": "89dfbacc-9e0d-5cc1-a3cd-0ae269b503e0",
+        "kind": "trace",
+        "service_id": "72a0b9e1-770e-4b5c-8b54-f518c82d942a",
+        "occurred_at": "2026-10-16T10:30:24.915000Z",
+        "text": "trace GET /stock/{sku} status=error duration_ms=41 error_spans=2 downstream=[]"
+      },
+      {
+        "signal_id": "d4a83f1c-3bf0-54d5-8d13-5ff6d479b56a",
+        "kind": "log",
+        "service_id": "72a0b9e1-770e-4b5c-8b54-f518c82d942a",
+        "occurred_at": "2026-10-16T10:30:24.915000Z",
+        "text": "log error: sku lookup failed: not found"
+      },
+      {
+        "signal_id": "c40dca31-964c-5d86-bfcb-1c4ed622b823",
+        "kind": "log",
+        "service_id": "72a0b9e1-770e-4b5c-8b54-f518c82d942a",
+        "occurred_at": "2026-10-16T10:32:04.309000Z",
+        "text": "log warning: stock cache hit ratio below 80%"
+      },
+      {
+        "signal_id": "af070f35-9540-52d4-a8a2-97bd375bd800",
+        "kind": "log",
+        "service_id": "0c4f6b1e-3a8d-4e27-9b5c-6d2a1f8e7c30",
+        "occurred_at": "2026-10-16T10:34:14.844000Z",
+        "text": "log warning: slow query: duration 206 ms exceeds 150 ms threshold"
+      }
+    ],
+    "unreadable_signal_ids": [],
+    "follow_up_allowed": false,
+    "follow_up": null
+  },
+  "expected": {
+    "kind": "verdict",
+    "verdict": "unsupported",
+    "citation_supports": {
+      "0dec0e76-5cb1-5da1-ba96-f236fe6501e9": false,
+      "89dfbacc-9e0d-5cc1-a3cd-0ae269b503e0": false,
+      "d4a83f1c-3bf0-54d5-8d13-5ff6d479b56a": false,
+      "c40dca31-964c-5d86-bfcb-1c4ed622b823": false,
+      "af070f35-9540-52d4-a8a2-97bd375bd800": false
+    },
+    "leading_service": null,
+    "leading_failure_type": null,
+    "contradiction_service": null,
+    "contradiction_signal_ids": []
+  }
+}

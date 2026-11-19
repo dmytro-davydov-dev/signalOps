@@ -1,0 +1,121 @@
+{
+  "version": "1",
+  "key": "verifier-downstream-timeout-non-fault-citations",
+  "role": "verifier",
+  "defect": "non_fault_citations",
+  "source": "downstream-timeout/dev",
+  "source_version": "2",
+  "brief": {
+    "incident": {
+      "incident_id": "8b04746d-1723-48eb-8f5e-bbd5bb76f260",
+      "title": "High error rate on payment (demo)",
+      "detected_at": "2026-10-16T10:35:30Z",
+      "evidence_cutoff_at": "2026-10-16T10:35:30Z",
+      "window_start": "2026-10-16T10:34:00Z"
+    },
+    "services": [
+      {
+        "service_id": "57988918-06d9-4f40-82a2-48ed0c9c0adf",
+        "name": "bank-gateway"
+      },
+      {
+        "service_id": "dc2bf08d-6c3c-44ea-855a-d7d42eeefb36",
+        "name": "checkout"
+      },
+      {
+        "service_id": "72a0b9e1-770e-4b5c-8b54-f518c82d942a",
+        "name": "inventory"
+      },
+      {
+        "service_id": "0c4f6b1e-3a8d-4e27-9b5c-6d2a1f8e7c30",
+        "name": "orders-db"
+      },
+      {
+        "service_id": "5f3e2d1c-0b9a-4876-9543-210fedcba987",
+        "name": "payment"
+      }
+    ],
+    "synthesis": {
+      "status": "diagnosed",
+      "summary": "One leading hypothesis to verify.",
+      "hypotheses": [
+        {
+          "service_id": "57988918-06d9-4f40-82a2-48ed0c9c0adf",
+          "failure_type": "downstream_timeout",
+          "confidence": 0.7,
+          "evidence_signal_ids": [
+            "2f8871e2-3eea-532c-b09e-dd81c59dac5a",
+            "a04e3b4b-006a-5217-a6d9-ac73e1d09b69",
+            "7d3af259-d977-5eff-9750-0fefebd047ba",
+            "cf82ab75-c3d1-52e1-8a2b-06ef72dd4cb8",
+            "e2c4dc6e-45dc-5cc6-872c-1172a9228072"
+          ],
+          "supporting_roles": [
+            "telemetry_investigator"
+          ],
+          "assessment": "The leading cause, as the corpus plants it."
+        }
+      ],
+      "contradictions": [],
+      "suggested_actions": [],
+      "limitations": [],
+      "missing_evidence": []
+    },
+    "contradictions": [],
+    "cited": [
+      {
+        "signal_id": "2f8871e2-3eea-532c-b09e-dd81c59dac5a",
+        "kind": "trace",
+        "service_id": "57988918-06d9-4f40-82a2-48ed0c9c0adf",
+        "occurred_at": "2026-10-16T10:30:00.775000Z",
+        "text": "trace POST /authorize status=ok duration_ms=69 error_spans=0 downstream=[]"
+      },
+      {
+        "signal_id": "a04e3b4b-006a-5217-a6d9-ac73e1d09b69",
+        "kind": "trace",
+        "service_id": "57988918-06d9-4f40-82a2-48ed0c9c0adf",
+        "occurred_at": "2026-10-16T10:30:04.579000Z",
+        "text": "trace POST /authorize status=ok duration_ms=94 error_spans=0 downstream=[]"
+      },
+      {
+        "signal_id": "7d3af259-d977-5eff-9750-0fefebd047ba",
+        "kind": "trace",
+        "service_id": "57988918-06d9-4f40-82a2-48ed0c9c0adf",
+        "occurred_at": "2026-10-16T10:30:06.727000Z",
+        "text": "trace POST /authorize status=ok duration_ms=143 error_spans=0 downstream=[]"
+      },
+      {
+        "signal_id": "cf82ab75-c3d1-52e1-8a2b-06ef72dd4cb8",
+        "kind": "trace",
+        "service_id": "57988918-06d9-4f40-82a2-48ed0c9c0adf",
+        "occurred_at": "2026-10-16T10:30:08.977000Z",
+        "text": "trace POST /authorize status=ok duration_ms=100 error_spans=0 downstream=[]"
+      },
+      {
+        "signal_id": "e2c4dc6e-45dc-5cc6-872c-1172a9228072",
+        "kind": "trace",
+        "service_id": "57988918-06d9-4f40-82a2-48ed0c9c0adf",
+        "occurred_at": "2026-10-16T10:30:12.746000Z",
+        "text": "trace POST /authorize status=ok duration_ms=136 error_spans=0 downstream=[]"
+      }
+    ],
+    "unreadable_signal_ids": [],
+    "follow_up_allowed": false,
+    "follow_up": null
+  },
+  "expected": {
+    "kind": "verdict",
+    "verdict": "unsupported",
+    "citation_supports": {
+      "2f8871e2-3eea-532c-b09e-dd81c59dac5a": false,
+      "a04e3b4b-006a-5217-a6d9-ac73e1d09b69": false,
+      "7d3af259-d977-5eff-9750-0fefebd047ba": false,
+      "cf82ab75-c3d1-52e1-8a2b-06ef72dd4cb8": false,
+      "e2c4dc6e-45dc-5cc6-872c-1172a9228072": false
+    },
+    "leading_service": null,
+    "leading_failure_type": null,
+    "contradiction_service": null,
+    "contradiction_signal_ids": []
+  }
+}

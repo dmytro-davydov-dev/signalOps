@@ -218,6 +218,27 @@ def build_parser() -> argparse.ArgumentParser:
     export_run.add_argument(
         "--out-dir", default="docs/evaluation-runs", help="directory (default docs/evaluation-runs)"
     )
+    stage = commands.add_parser(
+        "evaluation-stage",
+        help="run the synthesizer or verifier alone on the stage corpus (evaluator role; "
+        "investigation workers run the cases)",
+    )
+    stage.add_argument("--role", required=True, choices=["synthesizer", "verifier"])
+    stage.add_argument("--corpus", default="v1", choices=["v1"], help="stage corpus version")
+    stage.add_argument("--trials", type=int, default=1, help="trials per case (default 1)")
+    stage.add_argument("--budget-microusd", type=int, help="budget per case")
+    stage.add_argument(
+        "--corpus-root", default=".", help="repository root holding fixtures/ (default .)"
+    )
+    corpus = commands.add_parser(
+        "evaluation-stage-corpus",
+        help="replay source scenarios in process and write the stage corpus with planted defects",
+    )
+    corpus.add_argument(
+        "--out",
+        default="fixtures/evaluation/v1/stage-corpus",
+        help="directory (default fixtures/evaluation/v1/stage-corpus)",
+    )
     catalog = commands.add_parser(
         "evaluation-catalog",
         help="write each catalog scenario's definition and labels as fixture files",
@@ -839,6 +860,90 @@ def run_evaluation_export(args: argparse.Namespace) -> int:
     return 0
 
 
+def run_evaluation_stage(args: argparse.Namespace) -> int:
+    import asyncio
+    import json
+    from pathlib import Path
+
+    from signalops.config import get_settings
+    from signalops.contracts.evaluation_components import ComponentRole
+    from signalops.evaluation.components import (
+        ComponentLimits,
+        corpus_dir,
+        load_corpus,
+        run_components,
+    )
+    from signalops.evaluation.runner import model_config_of
+    from signalops.logs import configure_logging
+    from signalops.persistence.database import Database, create_engine
+    from signalops.persistence.models import EvaluationStageRun
+    from signalops.persistence.seed import DEMO_WORKSPACE_ID
+
+    settings = get_settings()
+    configure_logging(settings.log_level)
+    role = ComponentRole(args.role)
+    cases, digest = load_corpus(corpus_dir(Path(args.corpus_root), args.corpus[1:]), role)
+    limits = ComponentLimits(args.budget_microusd or settings.investigation_budget_microusd)
+
+    async def run() -> dict[str, object] | None:
+        engine = create_engine(settings.evaluator_settings())
+        try:
+            database = Database.from_engine(engine)
+            run_id = await run_components(
+                database,
+                workspace_id=DEMO_WORKSPACE_ID,
+                role=role,
+                cases=cases,
+                corpus_hash=digest,
+                trials=args.trials,
+                model_config=model_config_of(settings),
+                limits=limits,
+            )
+            async with database.transaction() as session:
+                stored = await session.get_one(EvaluationStageRun, run_id)
+                print(f"component run {run_id}: {stored.status}")
+                return stored.metrics
+        finally:
+            await engine.dispose()
+
+    metrics = asyncio.run(run())
+    print(json.dumps(metrics, indent=1, sort_keys=True))
+    return 0
+
+
+def run_evaluation_stage_corpus(args: argparse.Namespace) -> int:
+    import asyncio
+    from pathlib import Path
+
+    from signalops.agents.tools import TextRedactor
+    from signalops.config import get_settings
+    from signalops.evaluation.components import build_corpus, corpus_files
+    from signalops.logs import configure_logging
+    from signalops.persistence.database import Database, create_engine
+    from signalops.persistence.seed import DEMO_WORKSPACE_ID
+
+    settings = get_settings()
+    configure_logging(settings.log_level)
+
+    async def build() -> dict[str, str]:
+        engine = create_engine(settings)
+        try:
+            database = Database.from_engine(engine)
+            context = _runner_context(settings, database, in_process=True)
+            redactor = TextRedactor(tuple(settings.ingest_redact_fields))
+            return corpus_files(await build_corpus(context, DEMO_WORKSPACE_ID, redactor))
+        finally:
+            await engine.dispose()
+
+    files = asyncio.run(build())
+    out = Path(args.out)
+    for name, text in files.items():
+        (out / name).parent.mkdir(parents=True, exist_ok=True)
+        (out / name).write_text(text)
+    print(f"wrote {len(files)} corpus cases under {out}")
+    return 0
+
+
 def run_evaluation_catalog(args: argparse.Namespace) -> int:
     from pathlib import Path
 
@@ -1346,6 +1451,10 @@ def main(argv: list[str] | None = None) -> int:
         return run_evaluation_worker(args)
     if args.command == "evaluation-export":
         return run_evaluation_export(args)
+    if args.command == "evaluation-stage":
+        return run_evaluation_stage(args)
+    if args.command == "evaluation-stage-corpus":
+        return run_evaluation_stage_corpus(args)
     if args.command == "evaluation-catalog":
         return run_evaluation_catalog(args)
     if args.command == "demo-shop":

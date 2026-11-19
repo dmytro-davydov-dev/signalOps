@@ -11,6 +11,8 @@ from signalops.persistence.models.evaluation import (
     EvaluationReplay,
     EvaluationRun,
     EvaluationScenario,
+    EvaluationStageCase,
+    EvaluationStageRun,
 )
 from signalops.persistence.models.evidence import (
     Deployment,
@@ -47,6 +49,8 @@ __all__ = [
     "EvaluationReplay",
     "EvaluationRun",
     "EvaluationScenario",
+    "EvaluationStageCase",
+    "EvaluationStageRun",
     "GraphEdge",
     "GraphNode",
     "IdempotencyKey",

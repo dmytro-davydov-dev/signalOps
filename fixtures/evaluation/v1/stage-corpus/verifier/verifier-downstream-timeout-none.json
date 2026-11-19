@@ -1,0 +1,121 @@
+{
+  "version": "1",
+  "key": "verifier-downstream-timeout-none",
+  "role": "verifier",
+  "defect": "none",
+  "source": "downstream-timeout/dev",
+  "source_version": "2",
+  "brief": {
+    "incident": {
+      "incident_id": "8b04746d-1723-48eb-8f5e-bbd5bb76f260",
+      "title": "High error rate on payment (demo)",
+      "detected_at": "2026-10-16T10:35:30Z",
+      "evidence_cutoff_at": "2026-10-16T10:35:30Z",
+      "window_start": "2026-10-16T10:34:00Z"
+    },
+    "services": [
+      {
+        "service_id": "57988918-06d9-4f40-82a2-48ed0c9c0adf",
+        "name": "bank-gateway"
+      },
+      {
+        "service_id": "dc2bf08d-6c3c-44ea-855a-d7d42eeefb36",
+        "name": "checkout"
+      },
+      {
+        "service_id": "72a0b9e1-770e-4b5c-8b54-f518c82d942a",
+        "name": "inventory"
+      },
+      {
+        "service_id": "0c4f6b1e-3a8d-4e27-9b5c-6d2a1f8e7c30",
+        "name": "orders-db"
+      },
+      {
+        "service_id": "5f3e2d1c-0b9a-4876-9543-210fedcba987",
+        "name": "payment"
+      }
+    ],
+    "synthesis": {
+      "status": "diagnosed",
+      "summary": "One leading hypothesis to verify.",
+      "hypotheses": [
+        {
+          "service_id": "57988918-06d9-4f40-82a2-48ed0c9c0adf",
+          "failure_type": "downstream_timeout",
+          "confidence": 0.7,
+          "evidence_signal_ids": [
+            "c1d8443b-0136-5ae9-b108-ca84363b702c",
+            "087efc12-af95-5d4d-b3d1-a8cc1f1ca8a1",
+            "c21b0ac7-d670-557b-9b8c-bcb200a543b8",
+            "6c2a814b-3492-5e8d-9ded-e5aa12681f81",
+            "1a0df773-e7d7-5159-9232-72c46ac01fcf"
+          ],
+          "supporting_roles": [
+            "telemetry_investigator"
+          ],
+          "assessment": "The leading cause, as the corpus plants it."
+        }
+      ],
+      "contradictions": [],
+      "suggested_actions": [],
+      "limitations": [],
+      "missing_evidence": []
+    },
+    "contradictions": [],
+    "cited": [
+      {
+        "signal_id": "c1d8443b-0136-5ae9-b108-ca84363b702c",
+        "kind": "trace",
+        "service_id": "57988918-06d9-4f40-82a2-48ed0c9c0adf",
+        "occurred_at": "2026-10-16T10:34:05.638000Z",
+        "text": "trace POST /authorize status=ok duration_ms=3926 error_spans=0 downstream=[]"
+      },
+      {
+        "signal_id": "087efc12-af95-5d4d-b3d1-a8cc1f1ca8a1",
+        "kind": "trace",
+        "service_id": "57988918-06d9-4f40-82a2-48ed0c9c0adf",
+        "occurred_at": "2026-10-16T10:34:08.583000Z",
+        "text": "trace POST /authorize status=ok duration_ms=2658 error_spans=0 downstream=[]"
+      },
+      {
+        "signal_id": "c21b0ac7-d670-557b-9b8c-bcb200a543b8",
+        "kind": "trace",
+        "service_id": "57988918-06d9-4f40-82a2-48ed0c9c0adf",
+        "occurred_at": "2026-10-16T10:34:09.620000Z",
+        "text": "trace POST /authorize status=ok duration_ms=983 error_spans=0 downstream=[]"
+      },
+      {
+        "signal_id": "6c2a814b-3492-5e8d-9ded-e5aa12681f81",
+        "kind": "trace",
+        "service_id": "57988918-06d9-4f40-82a2-48ed0c9c0adf",
+        "occurred_at": "2026-10-16T10:34:15.592000Z",
+        "text": "trace POST /authorize status=ok duration_ms=2571 error_spans=0 downstream=[]"
+      },
+      {
+        "signal_id": "1a0df773-e7d7-5159-9232-72c46ac01fcf",
+        "kind": "trace",
+        "service_id": "57988918-06d9-4f40-82a2-48ed0c9c0adf",
+        "occurred_at": "2026-10-16T10:34:17.769000Z",
+        "text": "trace POST /authorize status=ok duration_ms=2922 error_spans=0 downstream=[]"
+      }
+    ],
+    "unreadable_signal_ids": [],
+    "follow_up_allowed": false,
+    "follow_up": null
+  },
+  "expected": {
+    "kind": "verdict",
+    "verdict": "supported",
+    "citation_supports": {
+      "c1d8443b-0136-5ae9-b108-ca84363b702c": true,
+      "087efc12-af95-5d4d-b3d1-a8cc1f1ca8a1": true,
+      "c21b0ac7-d670-557b-9b8c-bcb200a543b8": true,
+      "6c2a814b-3492-5e8d-9ded-e5aa12681f81": true,
+      "1a0df773-e7d7-5159-9232-72c46ac01fcf": true
+    },
+    "leading_service": null,
+    "leading_failure_type": null,
+    "contradiction_service": null,
+    "contradiction_signal_ids": []
+  }
+}

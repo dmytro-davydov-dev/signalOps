@@ -1,0 +1,121 @@
+{
+  "version": "1",
+  "key": "verifier-pool-exhaustion-none",
+  "role": "verifier",
+  "defect": "none",
+  "source": "pool-exhaustion/dev",
+  "source_version": "2",
+  "brief": {
+    "incident": {
+      "incident_id": "42272fb0-3c11-4212-bea7-b28102ffb23a",
+      "title": "High error rate on payment (demo)",
+      "detected_at": "2026-10-16T10:35:30Z",
+      "evidence_cutoff_at": "2026-10-16T10:35:30Z",
+      "window_start": "2026-10-16T10:34:00Z"
+    },
+    "services": [
+      {
+        "service_id": "57988918-06d9-4f40-82a2-48ed0c9c0adf",
+        "name": "bank-gateway"
+      },
+      {
+        "service_id": "dc2bf08d-6c3c-44ea-855a-d7d42eeefb36",
+        "name": "checkout"
+      },
+      {
+        "service_id": "72a0b9e1-770e-4b5c-8b54-f518c82d942a",
+        "name": "inventory"
+      },
+      {
+        "service_id": "0c4f6b1e-3a8d-4e27-9b5c-6d2a1f8e7c30",
+        "name": "orders-db"
+      },
+      {
+        "service_id": "5f3e2d1c-0b9a-4876-9543-210fedcba987",
+        "name": "payment"
+      }
+    ],
+    "synthesis": {
+      "status": "diagnosed",
+      "summary": "One leading hypothesis to verify.",
+      "hypotheses": [
+        {
+          "service_id": "5f3e2d1c-0b9a-4876-9543-210fedcba987",
+          "failure_type": "connection_pool_exhaustion",
+          "confidence": 0.7,
+          "evidence_signal_ids": [
+            "fdc87748-068a-5319-9669-513096410f30",
+            "fdf2676c-9bb7-56be-938a-891b7a5f2349",
+            "55a9b8f5-5861-5d03-b81b-8c15afce736e",
+            "a6bcc04a-642e-5a07-a7b1-2625a1d199f2",
+            "2f8f8825-49e0-5d18-b140-5dc8ae347a15"
+          ],
+          "supporting_roles": [
+            "telemetry_investigator"
+          ],
+          "assessment": "The leading cause, as the corpus plants it."
+        }
+      ],
+      "contradictions": [],
+      "suggested_actions": [],
+      "limitations": [],
+      "missing_evidence": []
+    },
+    "contradictions": [],
+    "cited": [
+      {
+        "signal_id": "fdc87748-068a-5319-9669-513096410f30",
+        "kind": "trace",
+        "service_id": "5f3e2d1c-0b9a-4876-9543-210fedcba987",
+        "occurred_at": "2026-10-16T10:34:02.729000Z",
+        "text": "trace POST /v1/charges status=error duration_ms=1019 error_spans=2 downstream=[]"
+      },
+      {
+        "signal_id": "fdf2676c-9bb7-56be-938a-891b7a5f2349",
+        "kind": "log",
+        "service_id": "5f3e2d1c-0b9a-4876-9543-210fedcba987",
+        "occurred_at": "2026-10-16T10:34:02.729000Z",
+        "text": "log error: connection pool exhausted: no connection available within 1000 ms (50 of 50 in use)"
+      },
+      {
+        "signal_id": "55a9b8f5-5861-5d03-b81b-8c15afce736e",
+        "kind": "trace",
+        "service_id": "5f3e2d1c-0b9a-4876-9543-210fedcba987",
+        "occurred_at": "2026-10-16T10:34:08.245000Z",
+        "text": "trace POST /v1/charges status=error duration_ms=1007 error_spans=2 downstream=[]"
+      },
+      {
+        "signal_id": "a6bcc04a-642e-5a07-a7b1-2625a1d199f2",
+        "kind": "log",
+        "service_id": "5f3e2d1c-0b9a-4876-9543-210fedcba987",
+        "occurred_at": "2026-10-16T10:34:08.245000Z",
+        "text": "log error: connection pool exhausted: no connection available within 1000 ms (50 of 50 in use)"
+      },
+      {
+        "signal_id": "2f8f8825-49e0-5d18-b140-5dc8ae347a15",
+        "kind": "trace",
+        "service_id": "5f3e2d1c-0b9a-4876-9543-210fedcba987",
+        "occurred_at": "2026-10-16T10:34:15.027000Z",
+        "text": "trace POST /v1/charges status=error duration_ms=1018 error_spans=2 downstream=[]"
+      }
+    ],
+    "unreadable_signal_ids": [],
+    "follow_up_allowed": false,
+    "follow_up": null
+  },
+  "expected": {
+    "kind": "verdict",
+    "verdict": "supported",
+    "citation_supports": {
+      "fdc87748-068a-5319-9669-513096410f30": true,
+      "fdf2676c-9bb7-56be-938a-891b7a5f2349": true,
+      "55a9b8f5-5861-5d03-b81b-8c15afce736e": true,
+      "a6bcc04a-642e-5a07-a7b1-2625a1d199f2": true,
+      "2f8f8825-49e0-5d18-b140-5dc8ae347a15": true
+    },
+    "leading_service": null,
+    "leading_failure_type": null,
+    "contradiction_service": null,
+    "contradiction_signal_ids": []
+  }
+}

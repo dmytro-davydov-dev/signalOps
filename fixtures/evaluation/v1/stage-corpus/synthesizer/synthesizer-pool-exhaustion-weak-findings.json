@@ -1,0 +1,114 @@
+{
+  "version": "1",
+  "key": "synthesizer-pool-exhaustion-weak-findings",
+  "role": "synthesizer",
+  "defect": "weak_findings",
+  "source": "pool-exhaustion/dev",
+  "source_version": "2",
+  "brief": {
+    "incident": {
+      "incident_id": "42272fb0-3c11-4212-bea7-b28102ffb23a",
+      "title": "High error rate on payment (demo)",
+      "detected_at": "2026-10-16T10:35:30Z",
+      "evidence_cutoff_at": "2026-10-16T10:35:30Z",
+      "window_start": "2026-10-16T10:34:00Z"
+    },
+    "services": [
+      {
+        "service_id": "57988918-06d9-4f40-82a2-48ed0c9c0adf",
+        "name": "bank-gateway"
+      },
+      {
+        "service_id": "dc2bf08d-6c3c-44ea-855a-d7d42eeefb36",
+        "name": "checkout"
+      },
+      {
+        "service_id": "72a0b9e1-770e-4b5c-8b54-f518c82d942a",
+        "name": "inventory"
+      },
+      {
+        "service_id": "0c4f6b1e-3a8d-4e27-9b5c-6d2a1f8e7c30",
+        "name": "orders-db"
+      },
+      {
+        "service_id": "5f3e2d1c-0b9a-4876-9543-210fedcba987",
+        "name": "payment"
+      }
+    ],
+    "reports": [
+      {
+        "role": "telemetry_investigator",
+        "ended_by": "submitted",
+        "report": {
+          "findings": [
+            {
+              "claim": "Records from this service show the failure.",
+              "service_id": "5f3e2d1c-0b9a-4876-9543-210fedcba987",
+              "failure_type": "elevated_errors",
+              "confidence": 0.2,
+              "uncertainty": "Built for the component corpus from replayed records.",
+              "evidence_signal_ids": [
+                "8ad747bb-409a-5d71-83dd-6f1ad7089bbd",
+                "3dd1467e-5d8b-5c49-8908-76ec6bad3fdb"
+              ],
+              "references": []
+            }
+          ],
+          "missing_evidence": [],
+          "limitations": []
+        }
+      },
+      {
+        "role": "deployment_investigator",
+        "ended_by": "submitted",
+        "report": {
+          "findings": [
+            {
+              "claim": "Records from this service show the failure.",
+              "service_id": "72a0b9e1-770e-4b5c-8b54-f518c82d942a",
+              "failure_type": "deployment_regression",
+              "confidence": 0.2,
+              "uncertainty": "Built for the component corpus from replayed records.",
+              "evidence_signal_ids": [
+                "9b9c2786-6307-5b86-8b13-cd95115c431b"
+              ],
+              "references": []
+            }
+          ],
+          "missing_evidence": [],
+          "limitations": []
+        }
+      },
+      {
+        "role": "dependency_investigator",
+        "ended_by": "submitted",
+        "report": {
+          "findings": [
+            {
+              "claim": "Structure only.",
+              "service_id": null,
+              "failure_type": null,
+              "confidence": 0.5,
+              "uncertainty": "Built for the component corpus from replayed records.",
+              "evidence_signal_ids": [
+                "8626108b-bb83-5c39-a620-a60e8cc8eb16"
+              ],
+              "references": []
+            }
+          ],
+          "missing_evidence": [],
+          "limitations": []
+        }
+      }
+    ]
+  },
+  "expected": {
+    "kind": "abstention",
+    "verdict": null,
+    "citation_supports": {},
+    "leading_service": null,
+    "leading_failure_type": null,
+    "contradiction_service": null,
+    "contradiction_signal_ids": []
+  }
+}

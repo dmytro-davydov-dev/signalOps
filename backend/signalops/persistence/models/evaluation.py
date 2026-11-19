@@ -263,3 +263,83 @@ class EvaluationAudit(Base):
     auditor: Mapped[str] = mapped_column(Text)
     note: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = created_at()
+
+
+class EvaluationStageRun(Base):
+    """One component evaluation: a role run on a versioned corpus of frozen briefs (P13-T04)."""
+
+    __tablename__ = "stage_runs"
+    __table_args__ = (
+        CheckConstraint("role IN ('synthesizer', 'verifier')", name="role"),
+        CheckConstraint(nonempty("corpus_version"), name="corpus_version_nonempty"),
+        CheckConstraint("corpus_hash ~ '^[0-9a-f]{64}$'", name="corpus_hash_sha256"),
+        CheckConstraint("trials BETWEEN 1 AND 20", name="trials_range"),
+        CheckConstraint(one_of("status", RunStatus), name="status"),
+        CheckConstraint(json_object("model_config"), name="model_config_object"),
+        CheckConstraint(json_object("limits"), name="limits_object"),
+        CheckConstraint(_optional_object("metrics"), name="metrics_object"),
+        CheckConstraint(_error_length(), name="error_length"),
+        CheckConstraint(
+            "(status IN ('completed', 'failed')) = (completed_at IS NOT NULL)",
+            name="completed_at_status",
+        ),
+        Index("ix_stage_runs_workspace_id_created_at", "workspace_id", "created_at"),
+        SCHEMA_ARGS,
+    )
+
+    id: Mapped[uuid.UUID] = uuid_pk()
+    workspace_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("workspaces.id"))
+    role: Mapped[str] = mapped_column(Text)
+    corpus_version: Mapped[str] = mapped_column(Text)
+    # SHA-256 over the corpus files, so a changed corpus is never mistaken for this one.
+    corpus_hash: Mapped[str] = mapped_column(Text)
+    trials: Mapped[int] = mapped_column(Integer)
+    status: Mapped[str] = mapped_column(
+        Text, default=RunStatus.RUNNING, server_default=RunStatus.RUNNING
+    )
+    model_config: Mapped[dict[str, Any]] = mapped_column(JSONB)
+    limits: Mapped[dict[str, Any]] = mapped_column(JSONB)
+    metrics: Mapped[dict[str, Any] | None] = mapped_column(JSONB(none_as_null=True))
+    error: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = created_at()
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class EvaluationStageCase(Base):
+    """One corpus case and trial: its holder investigation, the role's output, and scores."""
+
+    __tablename__ = "stage_cases"
+    __table_args__ = (
+        UniqueConstraint("stage_run_id", "case_key", "trial"),
+        CheckConstraint(length_between("case_key", 1, MAX_KEY_LENGTH), name="case_key_length"),
+        CheckConstraint(nonempty("defect"), name="defect_nonempty"),
+        CheckConstraint("trial >= 1", name="trial_positive"),
+        CheckConstraint(one_of("status", CaseStatus), name="status"),
+        CheckConstraint(json_object("expected"), name="expected_object"),
+        CheckConstraint(_optional_object("output"), name="output_object"),
+        CheckConstraint(_optional_object("scores"), name="scores_object"),
+        CheckConstraint(_error_length(), name="error_length"),
+        CheckConstraint(
+            "(status IN ('scored', 'failed')) = (completed_at IS NOT NULL)",
+            name="completed_at_status",
+        ),
+        Index("ix_stage_cases_investigation_id", "investigation_id"),
+        SCHEMA_ARGS,
+    )
+
+    id: Mapped[uuid.UUID] = uuid_pk()
+    stage_run_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("evaluation.stage_runs.id"))
+    case_key: Mapped[str] = mapped_column(Text)
+    defect: Mapped[str] = mapped_column(Text)
+    trial: Mapped[int] = mapped_column(Integer)
+    status: Mapped[str] = mapped_column(
+        Text, default=CaseStatus.PENDING, server_default=CaseStatus.PENDING
+    )
+    investigation_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("investigations.id"))
+    expected: Mapped[dict[str, Any]] = mapped_column(JSONB)
+    output: Mapped[dict[str, Any] | None] = mapped_column(JSONB(none_as_null=True))
+    scores: Mapped[dict[str, Any] | None] = mapped_column(JSONB(none_as_null=True))
+    investigation_status: Mapped[str | None] = mapped_column(Text)
+    error: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = created_at()
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

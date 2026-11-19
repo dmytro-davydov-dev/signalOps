@@ -47,7 +47,7 @@ from tests.integration.test_investigator import row_of, run_once
 
 pytestmark = pytest.mark.integration
 
-EVALUATION_TABLES = ("scenarios", "runs", "replays", "cases", "audits")
+EVALUATION_TABLES = ("scenarios", "runs", "replays", "cases", "audits", "stage_runs", "stage_cases")
 HASH = "0" * 64
 
 

@@ -112,6 +112,27 @@ Every incorrect case gets one `failure_stage` (`evaluation/attribution.py`), sto
 
 "First failing stage" is a convention: later stages may also have failed, and the case page shows every stored stage (findings, leading hypothesis, verdict, citation checks) with each cited signal labelled and linked to the investigation's evidence. `limit_hit` is orthogonal: some role ended on a limit, a refusal, or no turns. `metrics.variants.<variant>.failure_stages` counts incorrect cases by stage (`by_stage` sums to `incorrect`) and those with a limit hit; the run page shows the breakdown per variant.
 
+## Component evaluations (P13-T04)
+
+The synthesizer and the verifier are evaluated alone on frozen briefs with planted defects, so a role's behaviour is measured apart from upstream noise (`evaluation/components.py`, `agents/components.py`).
+
+**Corpus** `fixtures/evaluation/v1/stage-corpus/<role>/*.json`, 18 cases built from three replayed catalog v2 scenarios (`downstream-timeout/dev`, `pool-exhaustion/dev`, `memory-pressure/dev`) by `signalops evaluation-stage-corpus` (in-process replay into fresh scopes). Briefs are built by the workflow's own code (`synthesis_brief`, `verification_brief`, which reads the cited signals back from PostgreSQL, redacted) and validate as the role's input contract; each case's expected handling sits beside the brief, never in it.
+
+| Role | Defect | Expected |
+| --- | --- | --- |
+| Verifier | `none`: the true cause citing fault records of its service | `supported`; each citation supports |
+| Verifier | `non_fault_citations`: records of the cause's service that the fault did not produce | `unsupported`; no citation supports |
+| Verifier | `other_service_citations`: records of services the fault never touched | `unsupported`; no citation supports |
+| Synthesizer | `lead_in_one_role`: only the telemetry role found the cause | The true cause leads |
+| Synthesizer | `roles_in_conflict`: the deployment role names another service at 0.6 confidence | A contradiction naming or citing that service |
+| Synthesizer | `weak_findings`: only 0.2-confidence findings | Abstention |
+
+Fault records of other affected services are not used as a defect: they are symptoms that name the cause (for example payment logging a bank-gateway timeout).
+
+**Runs.** `signalops evaluation-stage --role verifier|synthesizer --corpus v1 [--trials N] [--budget-microusd B]`, from the repository root, with the evaluator connection; ordinary investigation workers execute the cases. Each case and trial is a holder investigation (workflow `s1-verifier` or `s1-synthesizer`) on a holder incident in its own `replay:<uuid>` scope. The evaluator writes the brief as the investigation's first completed step; the worker runs the role step through `AgentLoop`, the gateway, and the same handoff checks as `v3`, so reservations, accounting, deadlines, and limits apply unchanged. A case whose budget cannot fit a call ends `budget_exceeded` and is recorded as failed without touching the others. Results are stored in `evaluation.stage_runs` and `evaluation.stage_cases` (migration `0023`, evaluator-only).
+
+**Scores** (each with a Wilson interval): verifier verdict accuracy, false accept rate (defect cases accepted), false reject rate (clean cases not accepted), per-citation agreement; synthesizer leading-cause accuracy, contradiction recall, abstention correctness; and correctness per defect. On the fake provider, `measures_model_quality: false`: the fake verifier judges citations by service, so it accepts any of the cause's own records, and the numbers show plumbing only.
+
 ## Statistics and report v2 (P13-T05)
 
 `evaluation/statistics.py` (standard library only) and `evaluation/report.py` add to every run's metrics, without changing a v1 field (`report_version: evaluation-report/v2`):

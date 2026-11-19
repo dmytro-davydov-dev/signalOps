@@ -62,6 +62,8 @@ uv run signalops redrive-outbox EVENT_ID # make one quarantined outbox row due a
 printf '%s\n' "$TOKEN" | uv run signalops hash-token  # digest for a credentials file entry
 uv run signalops evaluation-catalog --out fixtures/scenarios/v2 [--check]  # write (or check) catalog v2 scenario definitions
 uv run signalops evaluation-export RUN_ID [--out-dir docs/evaluation-runs]  # report v2 JSON and Markdown summary of a run (evaluator role)
+uv run signalops evaluation-stage --role verifier|synthesizer [--trials N]  # component evaluation on the stage corpus; workers run the cases (evaluator role)
+uv run signalops evaluation-stage-corpus  # rebuild fixtures/evaluation/v1/stage-corpus from in-process replays (bump the corpus version for a change)
 uv run signalops retention [--apply] [--scope S]  # report (or apply) retention cleanup; see docs/retention.md
 uv run signalops benchmark replay|sustained --out FILE  # throughput run against Compose; see docs/benchmarks.md
 uv run signalops operations-snapshot     # print job queues, leases, outbox age, unknown model calls, and Kafka lag as JSON

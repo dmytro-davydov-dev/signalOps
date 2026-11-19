@@ -42,6 +42,7 @@ from typing import Any, Final
 from pydantic import ValidationError
 
 from signalops.agents.briefs import LOAD_INCIDENT
+from signalops.agents.components import COMPONENT_WORKFLOWS
 from signalops.agents.deterministic import DETERMINISTIC, WORKFLOW_D1
 from signalops.agents.findings import verify_findings
 from signalops.agents.investigator import AgentRuntime, investigate_incident
@@ -176,6 +177,8 @@ WORKFLOWS: Final[Mapping[str, Workflow]] = {
     WORKFLOW_V3: Workflow(WORKFLOW_V3, V3_NODES, CONCLUDE_VERIFIED),
     # The no-model baseline evaluation compares the agents with (P10-T04).
     WORKFLOW_D1: DETERMINISTIC,
+    # One role on a frozen brief, for component evaluation (P13-T04).
+    **COMPONENT_WORKFLOWS,
 }
 
 
