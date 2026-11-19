@@ -10,6 +10,7 @@ ADR-001 to ADR-010 come from [SignalOps_Implementation_Plan.md](SignalOps_Implem
 | Durable jobs | [ADR-006](#adr-006-durable-jobs-with-leases-and-generation-fencing), [ADR-021](#adr-021-job-leases-use-postgresqls-clock-and-a-row-lock-fence), [ADR-022](#adr-022-the-workflow-is-a-fixed-node-sequence-with-a-fenced-write-per-step), [ADR-023](#adr-023-cancellation-is-a-durable-request-workers-end-the-job), [ADR-024](#adr-024-one-transaction-ends-the-job-and-the-investigation) |
 | Gateway budgets | [ADR-008](#adr-008-in-process-llm-gateway-with-postgresql-budget-reservations), [ADR-025](#adr-025-provider-calls-go-through-one-neutral-interface-and-the-anthropic-sdk-never-retries), [ADR-026](#adr-026-the-gateway-reserves-each-calls-maximum-and-redis-only-meters-the-provider), [ADR-032](#adr-032-specialists-run-as-one-parallel-stage-under-process-wide-slots-and-durable-budget-shares) |
 | Multi-agent workflow | [ADR-007](#adr-007-explicit-persisted-python-workflow-not-an-agent-framework), [ADR-031](#adr-031-workflow-v3-splits-the-agent-into-roles-with-code-built-briefs-and-code-checked-handoffs), [ADR-033](#adr-033-code-records-contradictions-and-the-verifier-gets-at-most-one-follow-up-round), [ADR-036](#adr-036-baselines-run-as-workflows-on-the-same-incident-with-limits-fixed-by-the-run) |
+| Evaluation | [ADR-010](#adr-010-evaluate-against-simpler-baselines-under-equal-constraints), [ADR-034](#adr-034-ground-truth-lives-in-its-own-schema-which-the-runtime-role-cannot-read), [ADR-035](#adr-035-a-replay-is-complete-when-postgresql-shows-its-work-drained-on-simulated-time), [ADR-036](#adr-036-baselines-run-as-workflows-on-the-same-incident-with-limits-fixed-by-the-run), [ADR-040](#adr-040-the-evaluation-harness-extends-signalopsevaluation-in-layers-with-deterministic-oracles-first) (proposed) |
 
 Format: **Decision**, **Reason**, **Trade-off**, **Revisit when**.
 
@@ -428,6 +429,34 @@ Revision `0015_investigation_outcomes` adds a partial unique index allowing one 
 
 **Revisit when:** Cited evidence grows large enough to matter, incidents need expiry, or point-in-time recovery is required (WAL archiving).
 
+## ADR-040: The evaluation harness extends `signalops.evaluation` in layers, with deterministic oracles first
+
+*Status: proposed (2026-11-19), not implemented. Requirements: [eval-harness-prd.md](eval-harness-prd.md); tasks: roadmap Phase 13.*
+
+**Context:** The Phase 10 lab scores final outcomes only. Stage outputs (`SpecialistFindings`, `SynthesisOutput`, `VerificationOutput`, each with `Provenance`) are persisted per step but never scored, comparisons carry no intervals, nothing detects a behavior regression, and nothing bounds a paid run's total spend. The first paid evaluation is the top release priority, and its results must be explainable.
+
+**Decision:**
+- The evaluation harness is part of the backend codebase, an extension of `signalops.evaluation` run by the existing `evaluation-worker` and CLI. No external evaluation framework, no hosted evaluation service, no new process.
+- It evaluates in three layers. **Outcome** (exists): the replayed end-to-end case against its labels. **Trajectory**: stage scores and one first failing stage per incorrect case, computed offline from the case's stored steps through the evaluator connection, with no model call. **Component**: one role (synthesizer or verifier) run through the real `AgentLoop` and gateway on frozen briefs with planted defects, each case under a holder investigation in its own evaluation replay scope so budgets, accounting, and limits apply unchanged.
+- Oracles are deterministic first: generator labels (extended with stage labels: lead roles, expected contradiction, clean twin), code invariants of the handoff checks, and planted defects. Human audits stay the semantic check. A judge model is off by default; if enabled (Q14) its scores are stored and shown apart, never in outcome or stage metrics, and reported only alongside measured agreement with human audits.
+- Statistics are implemented with the standard library: Wilson intervals, a seeded cluster bootstrap over scenarios for paired variant differences, exact McNemar for single-trial pairs, Brier score and reliability bins for confidence.
+- Spend is bounded per run as well as per investigation: a paid provider requires a ceiling, the worst case (cases × trials × per-investigation budget) must fit it before queueing, and the runner stops requesting investigations when the run's spent plus reserved spend would pass it.
+- A committed fake-provider baseline and `evaluation-compare` form the regression gate: invariants on any provider, exact equality on the fake provider, tolerances on a real one.
+- Stage labels, stage scores, failure stages, and component cases live in the `evaluation` schema, so ADR-034's grant boundary covers them without change.
+
+**Alternatives considered:**
+- **EleutherAI `lm-evaluation-harness`**: benchmarks a language model on fixed prompt tasks. The system under test here is a durable workflow behind Kafka, PostgreSQL jobs, tools, and a budgeted gateway; the harness has no place to put that.
+- **Inspect AI**: datasets, solvers, scorers, and a log viewer suited to agent evaluation, but its solver drives model calls through its own model layer. Using it here would either bypass the gateway's reservations, prompt versions, and accounting (ADR-008, ADR-026) or shrink it to a runner that submits investigations and polls, duplicating the existing runner, its lease, and its isolation roles, and adding a dependency tree for a log viewer.
+- **promptfoo**: prompt and provider matrix testing configured in YAML on Node.js. It tests prompts, not a persisted multi-stage workflow, and would put Node tooling on the backend evaluation path.
+- **DeepEval, Ragas, and similar metric libraries**: their headline metrics are judge-model scores, which P10-T05 bars from ground truth. The deterministic parts are small enough to write.
+- **Hosted platforms (LangSmith, Braintrust, Langfuse)**: send prompts, evidence, and outputs off the host and add an external service; the project keeps evaluation data local and adds services only with a concrete requirement.
+
+**Reason:** The stored step outputs already contain everything trajectory scoring needs, and the labels already exist, so stage correctness and failure attribution cost no model calls and run on every fake-provider run. Keeping the harness inside the codebase reuses replay isolation, equal limits, the evaluator role, the gateway's accounting, and the results UI, which any framework would have to be wired around. Deterministic oracles make a regression gate possible; a judge model would make the gate itself noisy and paid. A run ceiling built on existing per-investigation reservations bounds the worst case without new accounting.
+
+**Trade-off:** Statistics, report formats, and the stage-corpus tooling are project code to maintain, and there is no off-the-shelf viewer beyond the results UI. Labels are coarse: "fault evidence" is any record the fault produced, so evidence and verifier citation metrics measure agreement with the generator, not semantic support. First-failing-stage attribution is a convention that hides later failures in the same case, mitigated by showing every stage score. The fake-provider baseline must be regenerated, with a reviewed diff, whenever fake roles change. The run ceiling refuses runs by worst case, so a run that would really cost a tenth of its ceiling still needs a ceiling sized for the worst case or a lower per-investigation budget.
+
+**Revisit when:** a second runtime or team needs to evaluate the same pipeline (a framework's shared tooling starts to pay), human audit volume supports measuring judge-model agreement (Q14), scenarios with several incidents are added, or sample sizes needed for decisions exceed what local replay can run.
+
 ## Open questions
 
 | # | Question | Decide by |
@@ -443,3 +472,6 @@ Revision `0015_investigation_outcomes` adds a partial unique index allowing one 
 | Q9 | ~~Operator authentication mechanism before public exposure~~ **Resolved (P11-T02):** hashed, named, expiring credentials in a reloadable file, disjoint from source credentials; public exposure needs an authenticating proxy or OIDC first (ADR-038) | P11-T02 |
 | Q10 | ~~Whether the OpenTelemetry Demo fits local resources, or a smaller synthetic app suffices~~ **Resolved (P10-T03):** a small real instrumented app (`demo/shop.py`, Compose `demo-shop`) | P10-T03 |
 | Q11 | ~~Planning files live in `docs/`, but `CLAUDE.md` expects them at the repository root. Move them, or update `CLAUDE.md`?~~ **Resolved (Phase 8 gate):** the files stay in `docs/`; `CLAUDE.md` points at `docs/development_roadmap.md` and `docs/SignalOps_Implementation_Plan.md` | Before P01-T01 |
+| Q12 | Spend ceilings and per-investigation budget for the paid development smoke run and the paid held-out run (worst-case model in [eval-harness-prd.md §9](eval-harness-prd.md#9-paid-run-budget-model)) | Before P13-T08 |
+| Q13 | Add a CI job with a PostgreSQL service so the evaluation regression gate runs on every push, or keep it a local integration check | P13-T07 |
+| Q14 | Enable a judge model for claim-level support, given the human audit volume needed to measure its agreement | After P13-T08 |

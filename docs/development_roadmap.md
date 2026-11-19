@@ -1,6 +1,6 @@
 # SignalOps development roadmap
 
-Version 1 · 29 October 2026 · Status: all twelve phases complete (release `v0.1.0`, 9 November 2026)
+Version 1 · 29 October 2026 · Status: phases 1–12 complete (release `v0.1.0`, 9 November 2026); Phase 13 (evaluation harness) planned 19 November 2026, not started
 
 ## Purpose
 
@@ -25,13 +25,13 @@ PostgreSQL owns evidence, workflow progress, budgets, and the initial knowledge 
 
 | Field | Current value |
 | --- | --- |
-| Active phase | None: all twelve phases complete; Phase 12 gate passed 2026-11-09, release `v0.1.0` |
+| Active phase | Phase 13 planned (2026-11-19), not started. Phases 1–12 complete; Phase 12 gate passed 2026-11-09, release `v0.1.0` |
 | Active task | None |
 | Last completed task | P12-T03 (Phase 12 gate) |
 | Latest verified commit | `d39d240` (validated code of release `v0.1.0`; the tagged commit adds release notes and this ledger) |
 | Validation evidence | P12-T03 (release, against `d39d240`): full suite 1,370 passed, 2 skipped; outage checks 2 passed; browser journey and evaluation review 2 passed; backend and frontend checks, schema check, lockfiles, Compose config pass; credentials review clean ([release notes](releases/v0.1.0.md)). P12-T02: `docs/demo.md` with screenshots from `apps/web/e2e/demo.e2e.ts` (passed on the rebuilt stack); unit and contract 714 passed; seven multi-agent and evaluation integration suites 36 passed; ruff, format, mypy (223 files), frontend lint, typecheck, test (72), link check pass. P12-T01: quick start followed from a clean copy on the default ports (task notes): stack healthy, fault detected, automatic investigation diagnosed with verified citations, worker crash resumed with step reuse, every API example run; `uv run pytest tests/unit tests/contract` 712 passed; ruff, format, mypy (222 files), `docker compose config --quiet`, relative-link and anchor check over README and docs pass. P11-T04: reports `docs/benchmarks/replay-1m.json` and `sustained-100.json` (both reconciled complete); `uv run pytest tests/unit tests/contract` 712 passed; outbox, consumer, normalizer, failure, incident, detection, and investigation integration suites 160 passed; ruff, format, mypy (222 files), `docker compose config --quiet` pass. P11-T05: `SIGNALOPS_INTEGRATION=1 uv run pytest` 1364 passed, 2 skipped (opt-in outage checks); retention and backup/restore suites in the task notes; ruff, format, mypy (221 files) pass; retention dry run on rebuilt Compose at 0019. P11-T03: outage checks passed on rebuilt Compose (task notes); unit and contract 708 passed; gateway, failure, lifecycle, and one-shot integration suites 44 passed; ruff, format, mypy pass. P11-T02: `SIGNALOPS_INTEGRATION=1 uv run pytest` 1356 passed, 2 skipped (opt-in outage checks), 1 unit failure from `.env` variables leaking into a settings test, fixed and rerun (`tests/unit` and `tests/contract` 707 passed with and without the sourced variables); ruff, format, mypy (218 files), `export-schemas --check` pass; Compose boundary and rotation checks in the task notes. No paid model was called |
-| Blockers | None |
-| Next task | None in this roadmap. Priorities after the release: a budgeted paid-model evaluation (needs an explicit request with scope and budget), detection false positives under load, throughput (partition key review, per-transaction batching), restore-time consumer rewind, public-exposure prerequisites ([release notes](releases/v0.1.0.md#next-priorities)) |
+| Blockers | P13-T08 (paid-model evaluation) needs an explicit request with scope and spend ceilings (Q12); P13-T09 needs P13-T08 and Q14. P13-T01–T07 are unblocked |
+| Next task | P13-T01 (catalog v2, stage labels, adversarial twins). Phase 13 implements release priority 1 with the harness from [eval-harness-prd.md](eval-harness-prd.md). Other priorities after the release: a budgeted paid-model evaluation (needs an explicit request with scope and budget), detection false positives under load, throughput (partition key review, per-transaction batching), restore-time consumer rewind, public-exposure prerequisites ([release notes](releases/v0.1.0.md#next-priorities)) |
 
 ### Scope and release boundaries
 
@@ -43,6 +43,7 @@ One local workspace; three initial adapters; read-only tools; human-applied reme
 | R1 First portfolio slice | Phases 1–8 | One agent diagnoses a fault with evidence in the UI |
 | R2 Multi-agent platform | Phase 9 | Durable specialist workflow survives a worker crash |
 | R3 Evaluated portfolio release | Phases 10–12 | Held-out comparisons, load results, and reproducible demonstration |
+| R4 Explained agent quality | Phase 13 | Stage scores, failure attribution, intervals, and a regression gate on every run; a bounded paid-model comparison once approved |
 
 ### Phase sequence and effort
 
@@ -62,6 +63,7 @@ Estimates are focused developer days, excluding learning time and external delay
 | 10 | Evaluation infrastructure | 9 | 4–7 days |
 | 11 | Operational hardening and scale | 10 | 3–5 days |
 | 12 | Portfolio packaging | 11 | 1–3 days |
+| 13 | Evaluation harness for the agentic pipeline | 12 | 12–18 days (excluding approval for paid runs) |
 
 Start the React shell in Phase 1 and add API-backed incident views in Phase 5; Phase 8 completes the UI. Add reliability checks alongside their owning feature rather than postponing all tests to Phase 11.
 
@@ -1146,6 +1148,96 @@ Start the React shell in Phase 1 and add API-backed incident views in Phase 5; P
 
 **Suggested phase commit:** `docs: publish reproducible SignalOps portfolio release`. Split this into task-sized commits as needed.
 
+## Phase 13 Evaluation harness for the agentic pipeline
+
+**Dependencies:** Phase 12. Requirements: [eval-harness-prd.md](eval-harness-prd.md). Decision: [ADR-040](decisions.md#adr-040-the-evaluation-harness-extends-signalopsevaluation-in-layers-with-deterministic-oracles-first) (proposed; accept it when P13-T01 starts, or record the deviation first).
+
+**Outcome:** Every evaluation run explains where the agentic pipeline is wrong, stage by stage, with intervals on every number; a fake-provider regression gate protects workflow behavior; a paid-model run is bounded by a run-level spend ceiling and, once approved, answers ADR-010's question.
+
+**Dependency order:** T01 → T02 → T03; T04 after T01; T05 after T02; T06 independent; T07 after T03 and T05; T08 after T04, T06, T07 and approval (Q12); T09 after T08 and Q14. Estimate 12–18 focused days excluding approval waits.
+
+**Cost rule:** T01–T07 use the fake provider only. T08 and T09 make paid calls and must not start without an explicit request stating scope and spend ceiling.
+
+### P13-T01 Extend the scenario catalog with stage labels and adversarial twins
+
+- [ ] Complete this task.
+
+**Implementation:** Catalog version 2 in `evaluation/catalog.py`: at least 5 held-out variants per diagnosable family and at least 35 held-out scenarios (other seeds, windows, intensities, targets), development variants grown in proportion; version 1 stays registered. Add stage labels to `ExpectedOutcome` (evaluator truth): `lead_roles`, `expected_contradiction`, `clean_twin`. Add an `adversarial` family that overlays the `fixtures/adversarial/v1` plants on diagnosable and insufficient-evidence scenarios, each paired with its clean twin in the same split. Regenerate label fixtures under `fixtures/scenarios/v2/`. Add "evaluation harness (in-process, ADR-040)" to the stack lines in `README.md`, `docs/architecture.md`, and `CLAUDE.md`.
+
+**Acceptance:** Every v2 scenario replays to its expected incident count (healthy none, others exactly one on affected services); v1 dataset hashes are unchanged; stage labels and adversarial labels are unreadable by the runtime role (access test extended); no label word or plant marker appears in records except the planted text itself; each adversarial scenario differs from its twin only by planted text.
+
+### P13-T02 Score workflow stages from stored step outputs
+
+- [ ] Complete this task.
+
+**Implementation:** `evaluation/stages.py`: after a case is scored, read its steps through the evaluator connection and compute the PRD FR-2 metrics: specialist lead recall (any, strict, per role, for `lead_roles`), per-role evidence precision, synthesis lead retention, the synthesis invariant, contradiction recall, the verifier verdict matrix, follow-up effect, limit endings by `ended_by`, and `v2` proposal-versus-conclusion. Store per case in `evaluation.cases.stage_scores` (JSONB, migration `0020`, evaluator-only by 0017's default privileges). Map role findings' `service_id` to names through the replay's catalog. Aggregate per variant in `evaluation/metrics.py`.
+
+**Acceptance:** Unit tests over constructed step outputs cover each metric's numerator and denominator. Mutations each move the intended metric and no unrelated one: a fake synthesizer that leads with its second hypothesis lowers lead retention; a fake verifier that accepts everything raises wrong-lead-accepted; a specialist with zero turns raises limit endings and lowers lead recall. A synthesis invariant violation planted in a stored step is reported as a harness defect. A development run on the fake provider stores stage scores for every agent case, and scoring makes no model call (gateway call count unchanged).
+
+### P13-T03 Attribute each incorrect case to its first failing stage
+
+- [ ] Complete this task.
+
+**Implementation:** `failure_stage` per PRD FR-3 (`harness_failure`, `detection_miss`, `no_lead`, `lead_lost_in_synthesis`, `verifier_false_reject`, `verifier_false_accept`, `conclude_dropped`, `wrong_failure_type`, `false_diagnosis_on_underdetermined`, `rule_error`) plus the orthogonal `limit_hit` flag; a column with a CHECK on `evaluation.cases` (migration `0020` or `0021`). Aggregate per variant. API views add the fields; the run page shows a failure-stage breakdown per variant and the case page shows the stage with the per-stage outputs (findings, leading hypothesis, verdict) linked to evidence.
+
+**Acceptance:** Every incorrect case has exactly one stage and correct cases have none; per-variant stage counts sum to incorrect counts. A constructed case for each stage is attributed correctly, including precedence when two stages fail. Frontend tests cover the breakdown, the case view, and the empty state; `pnpm lint`, `pnpm typecheck`, `pnpm test`, `pnpm build` pass.
+
+### P13-T04 Evaluate the synthesizer and verifier in isolation
+
+- [ ] Complete this task.
+
+**Implementation:** Corpus builder that replays scenarios and builds `SynthesisBrief` and `VerificationBrief` with the workflow's own code, then plants defects (non-fault citations, citations from another service, a correct lead in one role only, two roles in conflict, only weak findings) and records each case's expected handling outside the brief. Commit the versioned corpus under `fixtures/evaluation/v1/stage-corpus/`. `signalops evaluation-stage --role verifier|synthesizer --corpus v1 [--trials N]` runs each case through `AgentLoop` and the gateway under a holder investigation in its own evaluation replay scope, so reservations, accounting, and limits apply. Store results in the `evaluation` schema (`stage_runs`, `stage_cases`, or a `kind` on `runs`; decide and note it). Score verdict accuracy, false accept and reject rates, per-citation agreement, contradiction recall, and abstention correctness.
+
+**Acceptance:** On the fake provider every corpus case runs, results are marked `measures_model_quality: false`, and a fake verifier mutated to accept everything scores 100% false accepts on defect cases. Briefs contain no label fields (contract test). Each case's model calls are reserved and settled against its holder investigation's budget, and a case whose budget cannot fit a call ends `budget_exceeded` without affecting others.
+
+### P13-T05 Add intervals, paired comparisons, calibration, and report v2
+
+- [ ] Complete this task.
+
+**Implementation:** `evaluation/statistics.py` (standard library only): Wilson 95% intervals; seeded cluster bootstrap over scenarios (10,000 resamples) for paired accuracy, cost, and latency differences; exact McNemar for single-trial pairs; Brier score and five reliability bins for root-cause confidence; the smallest detectable difference for the run's sample size; cost per correct outcome. Report schema `evaluation-report/v2`, additive over current metrics, recording the bootstrap seed and git revision. `signalops evaluation-export <run>` writes JSON and a Markdown summary to `docs/evaluation-runs/`. The run page shows intervals and the paired comparison, and labels calibration "not meaningful" on the fake provider.
+
+**Acceptance:** Statistics functions match reference values computed independently (published Wilson and McNemar examples, a hand-computed bootstrap on a small fixed sample). Re-running export on the same run gives an identical file. Two variants with identical per-case outcomes report "no detectable difference"; a constructed run where one variant is right on every case the other gets wrong reports a significant difference. v1 report readers (UI, `7ac381af` export) still work.
+
+### P13-T06 Bound paid runs with a run-level spend ceiling
+
+- [ ] Complete this task.
+
+**Implementation:** `evaluation-run` and `POST /v1/evaluation-runs` take `max_spend_microusd`, `allow_paid`, and `approval_ref`; a non-fake provider requires all three, else the request is refused before queueing. Preflight refuses a worst case (agent cases × trials × `budget_microusd`) above the ceiling, showing both. During execution the runner checks spent plus reserved across the run's investigations before each request and ends remaining cases `failed` with category `run_budget` when the next one could pass the ceiling. `signalops evaluation-estimate` prints the worst case without queueing. Store the ceiling and approval reference on `evaluation.runs`.
+
+**Acceptance:** With a stub non-fake provider (no network): a run without a ceiling or `allow_paid` is refused; a worst case one microUSD over the ceiling is refused; a run whose investigations' recorded spend and unknown reservations reach the ceiling mid-run stops requesting, marks the rest `run_budget`, and completes. Concurrent cases cannot jointly pass the ceiling (integration test with parallel requests). The fake provider needs no ceiling and behaves as before.
+
+### P13-T07 Add the regression gate and a committed fake-provider baseline
+
+- [ ] Complete this task.
+
+**Implementation:** `signalops evaluation-compare <report> --baseline <file> [--tolerances <file>]`: invariant checks on any provider (zero harness failures, zero synthesis invariant violations, zero secrets in outputs, zero forbidden tools executed, no citation outside scope or cutoff, adversarial outcomes equal to their clean twins' or abstaining) and per-case equality of outcome, failure stage, and stage scores on the fake provider; non-zero exit with the moved cases listed. Commit `fixtures/evaluation/v1/baseline-fake-development.json` and a `--write-baseline` path whose diff is reviewed. An integration test runs the development suite in process and compares it. Resolve Q13 and, if a CI job is added, update `CLAUDE.md`, `docs/development.md`, and `.github/workflows/ci.yml` together.
+
+**Acceptance:** The gate passes on an unchanged tree twice in a row. Each mutation fails it and names the moved cases: a fake telemetry role that drops its top finding; a disabled handoff citation check; a redaction pattern removed (secret invariant). A report from a different catalog or workflow version is refused as incomparable rather than compared.
+
+### P13-T08 Run the budgeted paid-model evaluation
+
+- [ ] Complete this task.
+
+**Blocked:** needs an explicit request stating scope, model, per-investigation budget, and spend ceilings (Q12). Do not start without it.
+
+**Implementation:** First a development-split smoke run (7 scenarios, `v2` and `v3`, 1 trial) to measure real per-case cost, reservation-to-spend ratio, and failure modes; fix plumbing defects found (prompt tuning only on the development split). Then the held-out run (catalog v2, `d1`, `v2`, `v3`, at least 3 trials) and the component evaluations on the real provider, each within its approved ceiling. Export both reports; write the findings into `docs/evaluation.md` and `docs/demo.md`: paired differences with intervals, failure-stage breakdowns, calibration, cost per correct outcome, and the ADR-010 decision on keeping `v3`, revising ADR-031/ADR-033 if the evidence says so.
+
+**Acceptance:** Reports retained under `docs/evaluation-runs/` with provider, model, prompt versions, ceilings, actual spend, and unknown reservations; spend stayed within each ceiling; every claim in the docs cites a retained report; a variant difference is claimed only where the paired test supports it.
+
+### P13-T09 Optional: judge-model support scores calibrated against human audits
+
+- [ ] Complete this task.
+
+**Blocked:** after P13-T08 and only if Q14 is answered yes with a budget.
+
+**Implementation:** A judge prompt, through the gateway with its own budget, rating whether each cited signal supports the diagnosis's claim; stored apart from outcome and stage scores (`judge_model_scores`). Collect human audits on a stratified sample and measure agreement (Cohen's kappa) before showing any judge score.
+
+**Acceptance:** Judge scores never change outcome, stage, or failure-stage metrics (test); they are shown only with their measured agreement and sample size; below the agreement threshold set in the task notes they are reported as unreliable and not summarized.
+
+**Phase gate:** T01–T07 checked; a fake-provider development and held-out run on catalog v2 shows stage scores, failure stages, intervals, and passes the regression gate on Compose; T08 and T09 recorded as completed or blocked with the reason.
+
+**Suggested phase commit:** `feat(evaluation): score agent stages, attribute failures, and gate regressions`. Split this into task-sized commits.
+
 ## Cross-cutting implementation rules
 
 1. Keep PostgreSQL transactions short. Do not hold a job-claim transaction open during model calls or Kafka publication.
@@ -1822,6 +1914,16 @@ Keep these outside the release critical path unless measurements justify promoti
 - Deviations and reasons: the tag is local and the release unpushed (pushing was not requested); GitHub CI therefore has no run of this revision.
 - Remaining issues: see the release notes' known limits.
 - Next task: none in this roadmap.
+
+### 2026-11-19 — Phase 13 planning
+- Status: completed (planning only; no Phase 13 task started)
+- Commit: pending
+- Implemented: `docs/eval-harness-prd.md` (requirements for the evaluation harness); ADR-040 (proposed) and open questions Q12–Q14 in `docs/decisions.md`; Phase 13 with tasks P13-T01–T09, release R4, ledger, and estimate in this roadmap; links from `docs/evaluation.md` and `README.md`.
+- Validation commands and results: relative-link and anchor check over the changed documents (see session notes); no code changed, so no backend or frontend checks were run.
+- Evidence or artifact references: gap analysis against `evaluation/scoring.py`, `evaluation/metrics.py`, `contracts/evaluation.py`, `contracts/roles.py`, and run `7ac381af`.
+- Deviations and reasons: none; ADR-040 is proposed and must be accepted (or revised) when P13-T01 starts.
+- Remaining issues: Q12 (paid-run ceilings) blocks P13-T08; Q13 (CI job for the gate) is decided in P13-T07; Q14 (judge model) blocks P13-T09.
+- Next task: P13-T01
 
 ## Work log template
 

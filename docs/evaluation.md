@@ -2,6 +2,8 @@
 
 > Status: implemented (Phase 10). One held-out run on the fake provider is retained: [`evaluation-runs/7ac381af-heldout-fake.json`](evaluation-runs/7ac381af-heldout-fake.json), summarized in [demo.md](demo.md#5-comparison-against-simpler-baselines). It demonstrates the harness, not diagnostic quality; no paid model has run. Sources: [SignalOps_Implementation_Plan.md](SignalOps_Implementation_Plan.md) §12 and roadmap Phase 10.
 
+> Planned (Phase 13): an evaluation harness that adds stage scores, failure attribution, component evaluations of the synthesizer and verifier, intervals and paired comparisons, a fake-provider regression gate, and run-level spend ceilings. Requirements in [eval-harness-prd.md](eval-harness-prd.md), decision in [ADR-040](decisions.md#adr-040-the-evaluation-harness-extends-signalopsevaluation-in-layers-with-deterministic-oracles-first) (proposed). Nothing below describes it until those tasks are complete.
+
 ## Goal
 
 Find out whether agent investigations actually beat simpler approaches. Correctness, latency, and cost are reported **together**, and the comparison holds evidence, tools, and budget equal.
