@@ -20,6 +20,7 @@ Nothing here calls a model: the inputs are rows already stored. Findings name se
 by ID, mapped to names through the workspace's catalog.
 """
 
+import json
 import uuid
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
@@ -50,8 +51,10 @@ from signalops.contracts.roles import (
 )
 from signalops.contracts.steps import ProposedDiagnosis
 from signalops.contracts.workflow import AgentRole, StepStatus
+from signalops.evaluation.invariants import forbidden_calls, secrets_in
 from signalops.persistence.database import Database
-from signalops.persistence.models import AgentStep, Investigation, Service, Signal
+from signalops.persistence.models import AgentStep, Investigation, Service, Signal, ToolCall
+from signalops.persistence.repositories.evidence import EvidenceRepository
 from signalops.persistence.repositories.scope import EvidenceScope
 
 SPECIALIST_STEPS: Final = ("telemetry", "deployment", "dependency")
@@ -74,6 +77,11 @@ class StageInputs:
     # For cited signals in the case's scope: source event ID and service name.
     event_ids: Mapping[uuid.UUID, str] = field(default_factory=dict)
     signal_services: Mapping[uuid.UUID, str] = field(default_factory=dict)
+    # Invariant inputs (P13-T07): stored texts, tool calls by step, and citations that
+    # are not in scope or not known by the cutoff.
+    texts: tuple[str, ...] = ()
+    tool_calls: tuple[tuple[str, str], ...] = ()
+    out_of_scope: int = 0
 
 
 def _parse[T: BaseModel](model: type[T], steps: Mapping[str, dict[str, Any]], key: str) -> T | None:
@@ -104,10 +112,20 @@ def _supported(expected: ExpectedOutcome, inputs: StageInputs, ids: Iterable[uui
 def score_stages(expected: ExpectedOutcome, inputs: StageInputs) -> StageScores | None:
     """Stage scores of an agent case; None for a workflow without stages (`d1`)."""
     if inputs.workflow_version == "v3":
-        return _score_v3(expected, inputs)
-    if inputs.workflow_version == "v2":
-        return _score_v2(expected, inputs)
-    return None
+        scores = _score_v3(expected, inputs)
+    elif inputs.workflow_version == "v2":
+        scores = _score_v2(expected, inputs)
+    else:
+        return None
+    round_ = _parse(FollowUpOutput, inputs.steps, "follow_up")
+    follow_up_role = round_.findings.role if round_ and round_.findings else None
+    return scores.model_copy(
+        update={
+            "secrets_exposed": secrets_in(inputs.texts),
+            "forbidden_tool_calls": forbidden_calls(inputs.tool_calls, follow_up_role),
+            "out_of_scope_citations": inputs.out_of_scope,
+        }
+    )
 
 
 def _score_v3(expected: ExpectedOutcome, inputs: StageInputs) -> StageScores:
@@ -340,7 +358,15 @@ async def load_stage_inputs(
                 AgentStep.status == StepStatus.COMPLETED,
             )
         )
-        steps = {row.step_key: row.output for row in rows if row.output is not None}
+        stored = list(rows)
+        steps = {row.step_key: row.output for row in stored if row.output is not None}
+        calls = (
+            await session.execute(
+                select(AgentStep.step_key, ToolCall.tool_name, ToolCall.arguments)
+                .join(ToolCall, ToolCall.agent_step_id == AgentStep.id)
+                .where(AgentStep.investigation_id == investigation_id)
+            )
+        ).all()
         diagnosis = (
             None
             if investigation.diagnosis is None
@@ -351,6 +377,11 @@ async def load_stage_inputs(
         )
         names = {service_id: name for service_id, name in services}
         cited = _cited_ids(steps, diagnosis)
+        if diagnosis is not None and diagnosis.root_cause is not None:
+            cited |= set(diagnosis.root_cause.evidence_signal_ids)
+        known = await EvidenceRepository(session).known_signals(
+            scope, cited, known_by=investigation.evidence_cutoff_at
+        )
         event_ids: dict[uuid.UUID, str] = {}
         signal_services: dict[uuid.UUID, str] = {}
         if cited:
@@ -370,4 +401,11 @@ async def load_stage_inputs(
         service_names=names,
         event_ids=event_ids,
         signal_services=signal_services,
+        texts=(
+            *(json.dumps(output, sort_keys=True) for output in steps.values()),
+            json.dumps(investigation.diagnosis, sort_keys=True),
+            *(json.dumps(arguments, sort_keys=True) for _, _, arguments in calls),
+        ),
+        tool_calls=tuple((step, tool) for step, tool, _ in calls),
+        out_of_scope=len(cited - set(known)),
     )

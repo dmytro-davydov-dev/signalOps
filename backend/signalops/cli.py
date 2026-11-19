@@ -227,6 +227,23 @@ def build_parser() -> argparse.ArgumentParser:
     export_run.add_argument(
         "--out-dir", default="docs/evaluation-runs", help="directory (default docs/evaluation-runs)"
     )
+    gate = commands.add_parser(
+        "evaluation-compare",
+        help="regression gate: compare an exported report with a baseline (exit 1 on a "
+        "regression, 2 when incomparable)",
+    )
+    gate.add_argument("report", help="report JSON written by evaluation-export")
+    gate.add_argument(
+        "--baseline",
+        default="fixtures/evaluation/v1/baseline-fake-development.json",
+        help="baseline file (default the committed fake-provider development baseline)",
+    )
+    gate.add_argument("--tolerances", help="JSON of allowed rate drops, for a real provider")
+    gate.add_argument(
+        "--write-baseline",
+        action="store_true",
+        help="write the report's baseline to --baseline instead of comparing (review the diff)",
+    )
     estimate = commands.add_parser(
         "evaluation-estimate",
         help="print a run request's case count and worst-case spend without queueing it",
@@ -896,6 +913,25 @@ def run_evaluation_export(args: argparse.Namespace) -> int:
     return 0
 
 
+def run_evaluation_compare(args: argparse.Namespace) -> int:
+    import json
+    from pathlib import Path
+
+    from signalops.evaluation.gate import baseline_text, compare
+
+    report = json.loads(Path(args.report).read_text())
+    baseline_path = Path(args.baseline)
+    if args.write_baseline:
+        baseline_path.parent.mkdir(parents=True, exist_ok=True)
+        baseline_path.write_text(baseline_text(report))
+        print(f"wrote {baseline_path}; review its diff before committing")
+        return 0
+    tolerances = json.loads(Path(args.tolerances).read_text()) if args.tolerances else None
+    result = compare(report, json.loads(baseline_path.read_text()), tolerances)
+    print(result.text())
+    return int(result.status)
+
+
 def run_evaluation_estimate(args: argparse.Namespace) -> int:
     import json
 
@@ -1511,6 +1547,8 @@ def main(argv: list[str] | None = None) -> int:
         return run_evaluation_worker(args)
     if args.command == "evaluation-export":
         return run_evaluation_export(args)
+    if args.command == "evaluation-compare":
+        return run_evaluation_compare(args)
     if args.command == "evaluation-estimate":
         return run_evaluation_estimate(args)
     if args.command == "evaluation-stage":

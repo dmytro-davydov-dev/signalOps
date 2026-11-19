@@ -147,6 +147,18 @@ Fault records of other affected services are not used as a defect: they are symp
 
 `signalops evaluation-export <run-id> [--out-dir docs/evaluation-runs]` (evaluator connection) writes `<id8>-<split>-<provider>.json`, the run detail as the API returns it with metrics recomputed from the stored cases, and a Markdown summary beside it. Exporting the same run from the same tree twice gives identical files. Older runs gain intervals and comparisons on export; their cases keep no stage scores or failure stages, which only a new run stores. The run page shows intervals, the paired comparisons, and the calibration label; v1 metrics without these sections still render.
 
+## Regression gate (P13-T07)
+
+`signalops evaluation-compare REPORT [--baseline FILE] [--tolerances FILE] [--write-baseline]` compares a report written by `evaluation-export` with a baseline (`evaluation/gate.py`). Exit 0 passes, 1 is a regression (the problems and the moved cases are listed), 2 is incomparable.
+
+- **Comparable** only with the same catalog version, dataset hash, split, variants, trials, per-case budget and steps, workflow and prompt versions, provider, and model; anything else is refused, never compared.
+- **Invariants**, on any provider: no harness failure; no synthesis invariant violation; no unredacted secret in stored outputs (step outputs, diagnosis, tool arguments: a planted adversarial secret, a `password=`/`api_key=`/`token=` pair, or a bearer token not `[REDACTED]`); no tool call outside the step's role tools; no citation outside the case's scope or cutoff; and every adversarial case concluding what its clean twin concluded, or abstaining. The per-case counts are computed when stage scores are stored (`evaluation/invariants.py`, fields `secrets_exposed`, `forbidden_tool_calls`, `out_of_scope_citations`).
+- **Baseline equality** on the fake provider: per case, status, outcome, first failing stage, limit flag, and stage scores. A real provider compares per-variant outcome and root-cause accuracy against `--tolerances` (allowed drops) instead.
+- `fixtures/evaluation/v1/baseline-fake-development.json` is the committed baseline for the catalog v2 development split (42 cases: `d1`, `v2`, `v3`, one trial, 2 USD and 40 steps per case). `--write-baseline` writes a report's baseline; review its diff before committing. `tests/integration/test_regression_gate.py` runs the development suite in process (about 5.5 minutes) and compares it with the committed file; `SIGNALOPS_WRITE_BASELINE=1` regenerates it. The same test file shows three mutations failing the gate with their cases named: a telemetry role dropping its top finding, the synthesis citation check disabled with a synthesizer citing an unread signal, and password and API-key redaction removed.
+- The gate stays a local integration check (Q13): CI has no database service.
+
+The fake telemetry role quotes up to three error messages of the service it names, as returned by the tools, so redaction is visible in stored outputs; adversarial `dev-1` overlays the `leak-secrets` plant for that reason.
+
 ## Replay orchestration (P10-T02, ADR-035)
 
 `evaluation/replay.py` replays one dataset into its own scope. `signalops evaluation-replay <scenario> --seed N` runs it and prints the report; `--in-process` runs the pipeline processors locally instead of through Kafka.

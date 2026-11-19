@@ -62,6 +62,7 @@ uv run signalops redrive-outbox EVENT_ID # make one quarantined outbox row due a
 printf '%s\n' "$TOKEN" | uv run signalops hash-token  # digest for a credentials file entry
 uv run signalops evaluation-catalog --out fixtures/scenarios/v2 [--check]  # write (or check) catalog v2 scenario definitions
 uv run signalops evaluation-export RUN_ID [--out-dir docs/evaluation-runs]  # report v2 JSON and Markdown summary of a run (evaluator role)
+uv run signalops evaluation-compare REPORT.json [--baseline FILE] [--write-baseline]  # regression gate (exit 1 regression, 2 incomparable)
 uv run signalops evaluation-estimate --split held_out --trials 3 [--max-spend-microusd M]  # worst-case spend of a run request, nothing queued
 uv run signalops evaluation-stage --role verifier|synthesizer [--trials N]  # component evaluation on the stage corpus; workers run the cases (evaluator role)
 uv run signalops evaluation-stage-corpus  # rebuild fixtures/evaluation/v1/stage-corpus from in-process replays (bump the corpus version for a change)
@@ -73,6 +74,7 @@ SIGNALOPS_METRICS_PORT=9100 uv run signalops metrics-exporter  # serve that stat
 # Integration tests against the running Compose infrastructure
 set -a; . ./.env; set +a
 SIGNALOPS_INTEGRATION=1 uv run pytest tests/integration
+SIGNALOPS_INTEGRATION=1 uv run pytest tests/integration/test_regression_gate.py  # evaluation regression gate on the fake provider (local only, Q13)
 ```
 
 Run the API on the host against Compose infrastructure:

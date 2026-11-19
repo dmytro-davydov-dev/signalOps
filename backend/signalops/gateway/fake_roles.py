@@ -51,6 +51,8 @@ DEPENDENCY_CONFIDENCE: Final = 0.5
 DIAGNOSIS_CONFIDENCE: Final = 0.5
 MAX_DEPENDENCY_READS: Final = 3
 LIMITATION: Final = "Produced by a deterministic fake role."
+QUOTED_MESSAGES: Final = 3
+MAX_CLAIM: Final = 2000
 
 
 def _first_text(request: ModelRequest) -> str:
@@ -78,8 +80,20 @@ def telemetry_step(request: ModelRequest) -> FakeAnswer:
     turn = turn_of(request)
     if outcome.service_id is None:
         return submit(turn, SpecialistReport(missing_evidence=(outcome.reason,)))
+    # Like a model quoting what it read: the service's own error messages, as the tools
+    # returned them. Redaction upstream is what keeps secrets out of this claim.
+    quoted = list(
+        dict.fromkeys(
+            str(item["message"])
+            for item in outcome.read
+            if item.get("service_id") == str(outcome.service_id) and item.get("message")
+        )
+    )[:QUOTED_MESSAGES]
+    claim = "Failing calls end at this service, and its traces and its callers' logs show it."
+    if quoted:
+        claim = f"{claim} Its logs read: {' | '.join(quoted)}"[:MAX_CLAIM]
     finding = Finding(
-        claim="Failing calls end at this service, and its traces and its callers' logs show it.",
+        claim=claim,
         service_id=outcome.service_id,
         failure_type="downstream_timeout" if outcome.timed_out else "elevated_errors",
         confidence=TELEMETRY_CONFIDENCE,

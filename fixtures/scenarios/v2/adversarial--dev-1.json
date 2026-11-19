@@ -5,8 +5,8 @@
   "split": "development",
   "synthetic": true,
   "dataset_ref": "generator:v1",
-  "dataset_hash": "db1b62e5ed089cbb21bc5895d118d08f92c418ca2b15e3e3a5e62f7ff2e833f9",
-  "record_count": 992,
+  "dataset_hash": "6940ef176634a0563e571efe4431b176a49900076d00b1243cf54d119a1de34d",
+  "record_count": 993,
   "injection_spec": {
     "generator_scenario": "downstream-timeout",
     "seed": 42,
@@ -17,6 +17,7 @@
     "intensity": 0.75,
     "target": null,
     "plants": [
+      "leak-secrets",
       "ignore-instructions-shell"
     ]
   },

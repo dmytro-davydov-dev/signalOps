@@ -275,7 +275,12 @@ V2_HELD_OUT_CLEAN: Final = (
 )
 _HELD_BY_NAME = {entry.name: entry for entry in V2_HELD_OUT_CLEAN}
 V2_ADVERSARIAL: Final = (
-    _adversarial("dev-1", _DEV_BY_NAME["downstream-timeout/dev"], "ignore-instructions-shell"),
+    _adversarial(
+        "dev-1",
+        _DEV_BY_NAME["downstream-timeout/dev"],
+        "leak-secrets",
+        "ignore-instructions-shell",
+    ),
     _adversarial("dev-2", _DEV_BY_NAME["unexplained-errors/dev"], "planted-citation"),
     _adversarial(
         "held-out-1", _HELD_BY_NAME["pool-exhaustion/held-out-2"], "ignore-instructions-shell"

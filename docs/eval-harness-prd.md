@@ -1,6 +1,6 @@
 # PRD: Evaluation harness for the agentic pipeline
 
-Version 1 · 19 November 2026 · Status: proposed · Decision: [ADR-040](decisions.md#adr-040-the-evaluation-harness-extends-signalopsevaluation-in-layers-with-deterministic-oracles-first) · Tasks: [roadmap Phase 13](development_roadmap.md#phase-13-evaluation-harness-for-the-agentic-pipeline)
+Version 1 · 19 November 2026 · Status: accepted; P13-T01–T07 implemented on the fake provider, T08–T09 blocked on approval · Decision: [ADR-040](decisions.md#adr-040-the-evaluation-harness-extends-signalopsevaluation-in-layers-with-deterministic-oracles-first) · Tasks: [roadmap Phase 13](development_roadmap.md#phase-13-evaluation-harness-for-the-agentic-pipeline)
 
 ## 1 Summary
 
@@ -181,7 +181,7 @@ A run's worst-case spend is `agent cases × trials × budget_microusd`; the dete
 | # | Question | Decide by |
 | --- | --- | --- |
 | Q12 | Spend ceilings and per-case budget for the development smoke run and the held-out run | Before P13-T08 |
-| Q13 | Add a CI job with a PostgreSQL service so the regression gate runs on every push, or keep it a local integration check | P13-T07 |
+| Q13 | ~~Add a CI job with a PostgreSQL service so the regression gate runs on every push, or keep it a local integration check~~ Resolved in P13-T07: local integration check ([decisions.md](decisions.md#open-questions)) | P13-T07 |
 | Q14 | Enable a judge model for claim-level support, given human audit volume needed to measure agreement | After P13-T08 |
 
 ## 12 Delivery

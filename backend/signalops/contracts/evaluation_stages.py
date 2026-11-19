@@ -140,6 +140,10 @@ class StageScores(ContractModel):
 
     # --- Both ---
     endings: tuple[RoleEnding, ...] = Field(default=(), max_length=MAX_STAGE_NOTES)
+    # Invariants that hold on any provider (P13-T07); any non-zero count is a defect.
+    secrets_exposed: NonNegativeInt = 0
+    forbidden_tool_calls: NonNegativeInt = 0
+    out_of_scope_citations: NonNegativeInt = 0
 
     @property
     def limit_endings(self) -> tuple[RoleEnding, ...]:

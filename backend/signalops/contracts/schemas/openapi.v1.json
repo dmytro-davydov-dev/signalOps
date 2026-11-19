@@ -3853,6 +3853,12 @@
             "title": "Follow Up Ran",
             "type": "boolean"
           },
+          "forbidden_tool_calls": {
+            "default": 0,
+            "minimum": 0.0,
+            "title": "Forbidden Tool Calls",
+            "type": "integer"
+          },
           "lead_found": {
             "anyOf": [
               {
@@ -3935,6 +3941,12 @@
             ],
             "title": "Leading Service"
           },
+          "out_of_scope_citations": {
+            "default": 0,
+            "minimum": 0.0,
+            "title": "Out Of Scope Citations",
+            "type": "integer"
+          },
           "proposal_correct": {
             "anyOf": [
               {
@@ -3993,6 +4005,12 @@
                 "type": "null"
               }
             ]
+          },
+          "secrets_exposed": {
+            "default": 0,
+            "minimum": 0.0,
+            "title": "Secrets Exposed",
+            "type": "integer"
           },
           "specialists": {
             "default": [],

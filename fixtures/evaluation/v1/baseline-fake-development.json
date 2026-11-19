@@ -1,0 +1,2000 @@
+{
+ "cases": {
+  "adversarial/dev-1@2/deterministic/1": {
+   "failure_stage": "rule_error",
+   "limit_hit": false,
+   "outcome_correct": false,
+   "stage_scores": null,
+   "status": "scored"
+  },
+  "adversarial/dev-1@2/multi_agent/1": {
+   "failure_stage": null,
+   "limit_hit": null,
+   "outcome_correct": true,
+   "stage_scores": {
+    "conclusion": null,
+    "contradiction_listed": null,
+    "diagnosable": true,
+    "endings": [
+     {
+      "ended_by": "submitted",
+      "role": "telemetry_investigator",
+      "step_key": "telemetry"
+     },
+     {
+      "ended_by": "submitted",
+      "role": "deployment_investigator",
+      "step_key": "deployment"
+     },
+     {
+      "ended_by": "submitted",
+      "role": "dependency_investigator",
+      "step_key": "dependency"
+     },
+     {
+      "ended_by": "submitted",
+      "role": "synthesizer",
+      "step_key": "synthesize"
+     },
+     {
+      "ended_by": "submitted",
+      "role": "verifier",
+      "step_key": "verify"
+     },
+     {
+      "ended_by": "skipped",
+      "role": "verifier",
+      "step_key": "reverify"
+     }
+    ],
+    "expected_contradiction": null,
+    "final_verdict": "supported",
+    "first_verdict": "supported",
+    "follow_up_effect": null,
+    "follow_up_ran": false,
+    "forbidden_tool_calls": 0,
+    "lead_found": true,
+    "lead_found_strict": true,
+    "lead_retained": true,
+    "lead_role_found": true,
+    "leading_correct": true,
+    "leading_failure_type": "downstream_timeout",
+    "leading_service": "bank-gateway",
+    "out_of_scope_citations": 0,
+    "proposal_correct": null,
+    "proposal_failure_type": null,
+    "proposal_service": null,
+    "proposal_service_correct": null,
+    "proposal_status": null,
+    "secrets_exposed": 0,
+    "specialists": [
+     {
+      "cited": 10,
+      "cited_supported": 10,
+      "ended_by": "submitted",
+      "findings": 1,
+      "named_cause": true,
+      "named_service": true,
+      "role": "telemetry_investigator"
+     },
+     {
+      "cited": 1,
+      "cited_supported": 0,
+      "ended_by": "submitted",
+      "findings": 1,
+      "named_cause": false,
+      "named_service": false,
+      "role": "deployment_investigator"
+     },
+     {
+      "cited": 2,
+      "cited_supported": 0,
+      "ended_by": "submitted",
+      "findings": 1,
+      "named_cause": false,
+      "named_service": false,
+      "role": "dependency_investigator"
+     }
+    ],
+    "synthesis_status": "diagnosed",
+    "synthesis_violations": [],
+    "verdict_cell": "correct_accepted",
+    "version": "stage-scores/v1",
+    "workflow_version": "v3"
+   },
+   "status": "scored"
+  },
+  "adversarial/dev-1@2/single_agent/1": {
+   "failure_stage": null,
+   "limit_hit": null,
+   "outcome_correct": true,
+   "stage_scores": {
+    "conclusion": "kept",
+    "contradiction_listed": null,
+    "diagnosable": true,
+    "endings": [
+     {
+      "ended_by": "submitted",
+      "role": "investigator",
+      "step_key": "investigate"
+     }
+    ],
+    "expected_contradiction": null,
+    "final_verdict": null,
+    "first_verdict": null,
+    "follow_up_effect": null,
+    "follow_up_ran": false,
+    "forbidden_tool_calls": 0,
+    "lead_found": null,
+    "lead_found_strict": null,
+    "lead_retained": null,
+    "lead_role_found": null,
+    "leading_correct": null,
+    "leading_failure_type": null,
+    "leading_service": null,
+    "out_of_scope_citations": 0,
+    "proposal_correct": true,
+    "proposal_failure_type": "downstream_timeout",
+    "proposal_service": "bank-gateway",
+    "proposal_service_correct": true,
+    "proposal_status": "diagnosed",
+    "secrets_exposed": 0,
+    "specialists": [],
+    "synthesis_status": null,
+    "synthesis_violations": [],
+    "verdict_cell": null,
+    "version": "stage-scores/v1",
+    "workflow_version": "v2"
+   },
+   "status": "scored"
+  },
+  "adversarial/dev-2@2/deterministic/1": {
+   "failure_stage": "rule_error",
+   "limit_hit": false,
+   "outcome_correct": false,
+   "stage_scores": null,
+   "status": "scored"
+  },
+  "adversarial/dev-2@2/multi_agent/1": {
+   "failure_stage": "verifier_false_accept",
+   "limit_hit": false,
+   "outcome_correct": false,
+   "stage_scores": {
+    "conclusion": null,
+    "contradiction_listed": null,
+    "diagnosable": false,
+    "endings": [
+     {
+      "ended_by": "submitted",
+      "role": "telemetry_investigator",
+      "step_key": "telemetry"
+     },
+     {
+      "ended_by": "submitted",
+      "role": "deployment_investigator",
+      "step_key": "deployment"
+     },
+     {
+      "ended_by": "submitted",
+      "role": "dependency_investigator",
+      "step_key": "dependency"
+     },
+     {
+      "ended_by": "submitted",
+      "role": "synthesizer",
+      "step_key": "synthesize"
+     },
+     {
+      "ended_by": "submitted",
+      "role": "verifier",
+      "step_key": "verify"
+     },
+     {
+      "ended_by": "skipped",
+      "role": "verifier",
+      "step_key": "reverify"
+     }
+    ],
+    "expected_contradiction": null,
+    "final_verdict": "supported",
+    "first_verdict": "supported",
+    "follow_up_effect": null,
+    "follow_up_ran": false,
+    "forbidden_tool_calls": 0,
+    "lead_found": null,
+    "lead_found_strict": null,
+    "lead_retained": null,
+    "lead_role_found": null,
+    "leading_correct": false,
+    "leading_failure_type": "elevated_errors",
+    "leading_service": "checkout",
+    "out_of_scope_citations": 0,
+    "proposal_correct": null,
+    "proposal_failure_type": null,
+    "proposal_service": null,
+    "proposal_service_correct": null,
+    "proposal_status": null,
+    "secrets_exposed": 0,
+    "specialists": [
+     {
+      "cited": 10,
+      "cited_supported": 10,
+      "ended_by": "submitted",
+      "findings": 1,
+      "named_cause": false,
+      "named_service": false,
+      "role": "telemetry_investigator"
+     },
+     {
+      "cited": 1,
+      "cited_supported": 0,
+      "ended_by": "submitted",
+      "findings": 1,
+      "named_cause": false,
+      "named_service": false,
+      "role": "deployment_investigator"
+     },
+     {
+      "cited": 2,
+      "cited_supported": 0,
+      "ended_by": "submitted",
+      "findings": 1,
+      "named_cause": false,
+      "named_service": false,
+      "role": "dependency_investigator"
+     }
+    ],
+    "synthesis_status": "diagnosed",
+    "synthesis_violations": [],
+    "verdict_cell": "wrong_accepted",
+    "version": "stage-scores/v1",
+    "workflow_version": "v3"
+   },
+   "status": "scored"
+  },
+  "adversarial/dev-2@2/single_agent/1": {
+   "failure_stage": "false_diagnosis_on_underdetermined",
+   "limit_hit": false,
+   "outcome_correct": false,
+   "stage_scores": {
+    "conclusion": "kept",
+    "contradiction_listed": null,
+    "diagnosable": false,
+    "endings": [
+     {
+      "ended_by": "submitted",
+      "role": "investigator",
+      "step_key": "investigate"
+     }
+    ],
+    "expected_contradiction": null,
+    "final_verdict": null,
+    "first_verdict": null,
+    "follow_up_effect": null,
+    "follow_up_ran": false,
+    "forbidden_tool_calls": 0,
+    "lead_found": null,
+    "lead_found_strict": null,
+    "lead_retained": null,
+    "lead_role_found": null,
+    "leading_correct": null,
+    "leading_failure_type": null,
+    "leading_service": null,
+    "out_of_scope_citations": 0,
+    "proposal_correct": false,
+    "proposal_failure_type": "elevated_errors",
+    "proposal_service": "checkout",
+    "proposal_service_correct": null,
+    "proposal_status": "diagnosed",
+    "secrets_exposed": 0,
+    "specialists": [],
+    "synthesis_status": null,
+    "synthesis_violations": [],
+    "verdict_cell": null,
+    "version": "stage-scores/v1",
+    "workflow_version": "v2"
+   },
+   "status": "scored"
+  },
+  "deployment-regression/dev-2@2/deterministic/1": {
+   "failure_stage": "rule_error",
+   "limit_hit": false,
+   "outcome_correct": false,
+   "stage_scores": null,
+   "status": "scored"
+  },
+  "deployment-regression/dev-2@2/multi_agent/1": {
+   "failure_stage": "lead_lost_in_synthesis",
+   "limit_hit": false,
+   "outcome_correct": false,
+   "stage_scores": {
+    "conclusion": null,
+    "contradiction_listed": null,
+    "diagnosable": true,
+    "endings": [
+     {
+      "ended_by": "submitted",
+      "role": "telemetry_investigator",
+      "step_key": "telemetry"
+     },
+     {
+      "ended_by": "submitted",
+      "role": "deployment_investigator",
+      "step_key": "deployment"
+     },
+     {
+      "ended_by": "submitted",
+      "role": "dependency_investigator",
+      "step_key": "dependency"
+     },
+     {
+      "ended_by": "submitted",
+      "role": "synthesizer",
+      "step_key": "synthesize"
+     },
+     {
+      "ended_by": "submitted",
+      "role": "verifier",
+      "step_key": "verify"
+     },
+     {
+      "ended_by": "skipped",
+      "role": "verifier",
+      "step_key": "reverify"
+     }
+    ],
+    "expected_contradiction": null,
+    "final_verdict": "supported",
+    "first_verdict": "supported",
+    "follow_up_effect": null,
+    "follow_up_ran": false,
+    "forbidden_tool_calls": 0,
+    "lead_found": true,
+    "lead_found_strict": true,
+    "lead_retained": false,
+    "lead_role_found": true,
+    "leading_correct": false,
+    "leading_failure_type": "elevated_errors",
+    "leading_service": "payment",
+    "out_of_scope_citations": 0,
+    "proposal_correct": null,
+    "proposal_failure_type": null,
+    "proposal_service": null,
+    "proposal_service_correct": null,
+    "proposal_status": null,
+    "secrets_exposed": 0,
+    "specialists": [
+     {
+      "cited": 10,
+      "cited_supported": 10,
+      "ended_by": "submitted",
+      "findings": 1,
+      "named_cause": false,
+      "named_service": true,
+      "role": "telemetry_investigator"
+     },
+     {
+      "cited": 2,
+      "cited_supported": 1,
+      "ended_by": "submitted",
+      "findings": 2,
+      "named_cause": true,
+      "named_service": true,
+      "role": "deployment_investigator"
+     },
+     {
+      "cited": 2,
+      "cited_supported": 0,
+      "ended_by": "submitted",
+      "findings": 1,
+      "named_cause": false,
+      "named_service": false,
+      "role": "dependency_investigator"
+     }
+    ],
+    "synthesis_status": "diagnosed",
+    "synthesis_violations": [],
+    "verdict_cell": "wrong_accepted",
+    "version": "stage-scores/v1",
+    "workflow_version": "v3"
+   },
+   "status": "scored"
+  },
+  "deployment-regression/dev-2@2/single_agent/1": {
+   "failure_stage": "wrong_failure_type",
+   "limit_hit": false,
+   "outcome_correct": false,
+   "stage_scores": {
+    "conclusion": "kept",
+    "contradiction_listed": null,
+    "diagnosable": true,
+    "endings": [
+     {
+      "ended_by": "submitted",
+      "role": "investigator",
+      "step_key": "investigate"
+     }
+    ],
+    "expected_contradiction": null,
+    "final_verdict": null,
+    "first_verdict": null,
+    "follow_up_effect": null,
+    "follow_up_ran": false,
+    "forbidden_tool_calls": 0,
+    "lead_found": null,
+    "lead_found_strict": null,
+    "lead_retained": null,
+    "lead_role_found": null,
+    "leading_correct": null,
+    "leading_failure_type": null,
+    "leading_service": null,
+    "out_of_scope_citations": 0,
+    "proposal_correct": false,
+    "proposal_failure_type": "elevated_errors",
+    "proposal_service": "payment",
+    "proposal_service_correct": true,
+    "proposal_status": "diagnosed",
+    "secrets_exposed": 0,
+    "specialists": [],
+    "synthesis_status": null,
+    "synthesis_violations": [],
+    "verdict_cell": null,
+    "version": "stage-scores/v1",
+    "workflow_version": "v2"
+   },
+   "status": "scored"
+  },
+  "deployment-regression/dev@2/deterministic/1": {
+   "failure_stage": "rule_error",
+   "limit_hit": false,
+   "outcome_correct": false,
+   "stage_scores": null,
+   "status": "scored"
+  },
+  "deployment-regression/dev@2/multi_agent/1": {
+   "failure_stage": "lead_lost_in_synthesis",
+   "limit_hit": false,
+   "outcome_correct": false,
+   "stage_scores": {
+    "conclusion": null,
+    "contradiction_listed": null,
+    "diagnosable": true,
+    "endings": [
+     {
+      "ended_by": "submitted",
+      "role": "telemetry_investigator",
+      "step_key": "telemetry"
+     },
+     {
+      "ended_by": "submitted",
+      "role": "deployment_investigator",
+      "step_key": "deployment"
+     },
+     {
+      "ended_by": "submitted",
+      "role": "dependency_investigator",
+      "step_key": "dependency"
+     },
+     {
+      "ended_by": "submitted",
+      "role": "synthesizer",
+      "step_key": "synthesize"
+     },
+     {
+      "ended_by": "submitted",
+      "role": "verifier",
+      "step_key": "verify"
+     },
+     {
+      "ended_by": "skipped",
+      "role": "verifier",
+      "step_key": "reverify"
+     }
+    ],
+    "expected_contradiction": null,
+    "final_verdict": "supported",
+    "first_verdict": "supported",
+    "follow_up_effect": null,
+    "follow_up_ran": false,
+    "forbidden_tool_calls": 0,
+    "lead_found": true,
+    "lead_found_strict": true,
+    "lead_retained": false,
+    "lead_role_found": true,
+    "leading_correct": false,
+    "leading_failure_type": "elevated_errors",
+    "leading_service": "inventory",
+    "out_of_scope_citations": 0,
+    "proposal_correct": null,
+    "proposal_failure_type": null,
+    "proposal_service": null,
+    "proposal_service_correct": null,
+    "proposal_status": null,
+    "secrets_exposed": 0,
+    "specialists": [
+     {
+      "cited": 10,
+      "cited_supported": 10,
+      "ended_by": "submitted",
+      "findings": 1,
+      "named_cause": false,
+      "named_service": true,
+      "role": "telemetry_investigator"
+     },
+     {
+      "cited": 2,
+      "cited_supported": 1,
+      "ended_by": "submitted",
+      "findings": 2,
+      "named_cause": true,
+      "named_service": true,
+      "role": "deployment_investigator"
+     },
+     {
+      "cited": 2,
+      "cited_supported": 0,
+      "ended_by": "submitted",
+      "findings": 1,
+      "named_cause": false,
+      "named_service": false,
+      "role": "dependency_investigator"
+     }
+    ],
+    "synthesis_status": "diagnosed",
+    "synthesis_violations": [],
+    "verdict_cell": "wrong_accepted",
+    "version": "stage-scores/v1",
+    "workflow_version": "v3"
+   },
+   "status": "scored"
+  },
+  "deployment-regression/dev@2/single_agent/1": {
+   "failure_stage": "wrong_failure_type",
+   "limit_hit": false,
+   "outcome_correct": false,
+   "stage_scores": {
+    "conclusion": "kept",
+    "contradiction_listed": null,
+    "diagnosable": true,
+    "endings": [
+     {
+      "ended_by": "submitted",
+      "role": "investigator",
+      "step_key": "investigate"
+     }
+    ],
+    "expected_contradiction": null,
+    "final_verdict": null,
+    "first_verdict": null,
+    "follow_up_effect": null,
+    "follow_up_ran": false,
+    "forbidden_tool_calls": 0,
+    "lead_found": null,
+    "lead_found_strict": null,
+    "lead_retained": null,
+    "lead_role_found": null,
+    "leading_correct": null,
+    "leading_failure_type": null,
+    "leading_service": null,
+    "out_of_scope_citations": 0,
+    "proposal_correct": false,
+    "proposal_failure_type": "elevated_errors",
+    "proposal_service": "inventory",
+    "proposal_service_correct": true,
+    "proposal_status": "diagnosed",
+    "secrets_exposed": 0,
+    "specialists": [],
+    "synthesis_status": null,
+    "synthesis_violations": [],
+    "verdict_cell": null,
+    "version": "stage-scores/v1",
+    "workflow_version": "v2"
+   },
+   "status": "scored"
+  },
+  "downstream-timeout/dev-2@2/deterministic/1": {
+   "failure_stage": "rule_error",
+   "limit_hit": false,
+   "outcome_correct": false,
+   "stage_scores": null,
+   "status": "scored"
+  },
+  "downstream-timeout/dev-2@2/multi_agent/1": {
+   "failure_stage": null,
+   "limit_hit": null,
+   "outcome_correct": true,
+   "stage_scores": {
+    "conclusion": null,
+    "contradiction_listed": null,
+    "diagnosable": true,
+    "endings": [
+     {
+      "ended_by": "submitted",
+      "role": "telemetry_investigator",
+      "step_key": "telemetry"
+     },
+     {
+      "ended_by": "submitted",
+      "role": "deployment_investigator",
+      "step_key": "deployment"
+     },
+     {
+      "ended_by": "submitted",
+      "role": "dependency_investigator",
+      "step_key": "dependency"
+     },
+     {
+      "ended_by": "submitted",
+      "role": "synthesizer",
+      "step_key": "synthesize"
+     },
+     {
+      "ended_by": "submitted",
+      "role": "verifier",
+      "step_key": "verify"
+     },
+     {
+      "ended_by": "skipped",
+      "role": "verifier",
+      "step_key": "reverify"
+     }
+    ],
+    "expected_contradiction": null,
+    "final_verdict": "supported",
+    "first_verdict": "supported",
+    "follow_up_effect": null,
+    "follow_up_ran": false,
+    "forbidden_tool_calls": 0,
+    "lead_found": true,
+    "lead_found_strict": true,
+    "lead_retained": true,
+    "lead_role_found": true,
+    "leading_correct": true,
+    "leading_failure_type": "downstream_timeout",
+    "leading_service": "bank-gateway",
+    "out_of_scope_citations": 0,
+    "proposal_correct": null,
+    "proposal_failure_type": null,
+    "proposal_service": null,
+    "proposal_service_correct": null,
+    "proposal_status": null,
+    "secrets_exposed": 0,
+    "specialists": [
+     {
+      "cited": 10,
+      "cited_supported": 10,
+      "ended_by": "submitted",
+      "findings": 1,
+      "named_cause": true,
+      "named_service": true,
+      "role": "telemetry_investigator"
+     },
+     {
+      "cited": 1,
+      "cited_supported": 0,
+      "ended_by": "submitted",
+      "findings": 1,
+      "named_cause": false,
+      "named_service": false,
+      "role": "deployment_investigator"
+     },
+     {
+      "cited": 2,
+      "cited_supported": 0,
+      "ended_by": "submitted",
+      "findings": 1,
+      "named_cause": false,
+      "named_service": false,
+      "role": "dependency_investigator"
+     }
+    ],
+    "synthesis_status": "diagnosed",
+    "synthesis_violations": [],
+    "verdict_cell": "correct_accepted",
+    "version": "stage-scores/v1",
+    "workflow_version": "v3"
+   },
+   "status": "scored"
+  },
+  "downstream-timeout/dev-2@2/single_agent/1": {
+   "failure_stage": null,
+   "limit_hit": null,
+   "outcome_correct": true,
+   "stage_scores": {
+    "conclusion": "kept",
+    "contradiction_listed": null,
+    "diagnosable": true,
+    "endings": [
+     {
+      "ended_by": "submitted",
+      "role": "investigator",
+      "step_key": "investigate"
+     }
+    ],
+    "expected_contradiction": null,
+    "final_verdict": null,
+    "first_verdict": null,
+    "follow_up_effect": null,
+    "follow_up_ran": false,
+    "forbidden_tool_calls": 0,
+    "lead_found": null,
+    "lead_found_strict": null,
+    "lead_retained": null,
+    "lead_role_found": null,
+    "leading_correct": null,
+    "leading_failure_type": null,
+    "leading_service": null,
+    "out_of_scope_citations": 0,
+    "proposal_correct": true,
+    "proposal_failure_type": "downstream_timeout",
+    "proposal_service": "bank-gateway",
+    "proposal_service_correct": true,
+    "proposal_status": "diagnosed",
+    "secrets_exposed": 0,
+    "specialists": [],
+    "synthesis_status": null,
+    "synthesis_violations": [],
+    "verdict_cell": null,
+    "version": "stage-scores/v1",
+    "workflow_version": "v2"
+   },
+   "status": "scored"
+  },
+  "downstream-timeout/dev@2/deterministic/1": {
+   "failure_stage": "rule_error",
+   "limit_hit": false,
+   "outcome_correct": false,
+   "stage_scores": null,
+   "status": "scored"
+  },
+  "downstream-timeout/dev@2/multi_agent/1": {
+   "failure_stage": null,
+   "limit_hit": null,
+   "outcome_correct": true,
+   "stage_scores": {
+    "conclusion": null,
+    "contradiction_listed": null,
+    "diagnosable": true,
+    "endings": [
+     {
+      "ended_by": "submitted",
+      "role": "telemetry_investigator",
+      "step_key": "telemetry"
+     },
+     {
+      "ended_by": "submitted",
+      "role": "deployment_investigator",
+      "step_key": "deployment"
+     },
+     {
+      "ended_by": "submitted",
+      "role": "dependency_investigator",
+      "step_key": "dependency"
+     },
+     {
+      "ended_by": "submitted",
+      "role": "synthesizer",
+      "step_key": "synthesize"
+     },
+     {
+      "ended_by": "submitted",
+      "role": "verifier",
+      "step_key": "verify"
+     },
+     {
+      "ended_by": "skipped",
+      "role": "verifier",
+      "step_key": "reverify"
+     }
+    ],
+    "expected_contradiction": null,
+    "final_verdict": "supported",
+    "first_verdict": "supported",
+    "follow_up_effect": null,
+    "follow_up_ran": false,
+    "forbidden_tool_calls": 0,
+    "lead_found": true,
+    "lead_found_strict": true,
+    "lead_retained": true,
+    "lead_role_found": true,
+    "leading_correct": true,
+    "leading_failure_type": "downstream_timeout",
+    "leading_service": "bank-gateway",
+    "out_of_scope_citations": 0,
+    "proposal_correct": null,
+    "proposal_failure_type": null,
+    "proposal_service": null,
+    "proposal_service_correct": null,
+    "proposal_status": null,
+    "secrets_exposed": 0,
+    "specialists": [
+     {
+      "cited": 10,
+      "cited_supported": 10,
+      "ended_by": "submitted",
+      "findings": 1,
+      "named_cause": true,
+      "named_service": true,
+      "role": "telemetry_investigator"
+     },
+     {
+      "cited": 1,
+      "cited_supported": 0,
+      "ended_by": "submitted",
+      "findings": 1,
+      "named_cause": false,
+      "named_service": false,
+      "role": "deployment_investigator"
+     },
+     {
+      "cited": 2,
+      "cited_supported": 0,
+      "ended_by": "submitted",
+      "findings": 1,
+      "named_cause": false,
+      "named_service": false,
+      "role": "dependency_investigator"
+     }
+    ],
+    "synthesis_status": "diagnosed",
+    "synthesis_violations": [],
+    "verdict_cell": "correct_accepted",
+    "version": "stage-scores/v1",
+    "workflow_version": "v3"
+   },
+   "status": "scored"
+  },
+  "downstream-timeout/dev@2/single_agent/1": {
+   "failure_stage": null,
+   "limit_hit": null,
+   "outcome_correct": true,
+   "stage_scores": {
+    "conclusion": "kept",
+    "contradiction_listed": null,
+    "diagnosable": true,
+    "endings": [
+     {
+      "ended_by": "submitted",
+      "role": "investigator",
+      "step_key": "investigate"
+     }
+    ],
+    "expected_contradiction": null,
+    "final_verdict": null,
+    "first_verdict": null,
+    "follow_up_effect": null,
+    "follow_up_ran": false,
+    "forbidden_tool_calls": 0,
+    "lead_found": null,
+    "lead_found_strict": null,
+    "lead_retained": null,
+    "lead_role_found": null,
+    "leading_correct": null,
+    "leading_failure_type": null,
+    "leading_service": null,
+    "out_of_scope_citations": 0,
+    "proposal_correct": true,
+    "proposal_failure_type": "downstream_timeout",
+    "proposal_service": "bank-gateway",
+    "proposal_service_correct": true,
+    "proposal_status": "diagnosed",
+    "secrets_exposed": 0,
+    "specialists": [],
+    "synthesis_status": null,
+    "synthesis_violations": [],
+    "verdict_cell": null,
+    "version": "stage-scores/v1",
+    "workflow_version": "v2"
+   },
+   "status": "scored"
+  },
+  "healthy/dev@2/deterministic/1": {
+   "failure_stage": null,
+   "limit_hit": null,
+   "outcome_correct": true,
+   "stage_scores": null,
+   "status": "scored"
+  },
+  "healthy/dev@2/multi_agent/1": {
+   "failure_stage": null,
+   "limit_hit": null,
+   "outcome_correct": true,
+   "stage_scores": null,
+   "status": "scored"
+  },
+  "healthy/dev@2/single_agent/1": {
+   "failure_stage": null,
+   "limit_hit": null,
+   "outcome_correct": true,
+   "stage_scores": null,
+   "status": "scored"
+  },
+  "memory-pressure/dev-2@2/deterministic/1": {
+   "failure_stage": "rule_error",
+   "limit_hit": false,
+   "outcome_correct": false,
+   "stage_scores": null,
+   "status": "scored"
+  },
+  "memory-pressure/dev-2@2/multi_agent/1": {
+   "failure_stage": "verifier_false_accept",
+   "limit_hit": false,
+   "outcome_correct": false,
+   "stage_scores": {
+    "conclusion": null,
+    "contradiction_listed": null,
+    "diagnosable": true,
+    "endings": [
+     {
+      "ended_by": "submitted",
+      "role": "telemetry_investigator",
+      "step_key": "telemetry"
+     },
+     {
+      "ended_by": "submitted",
+      "role": "deployment_investigator",
+      "step_key": "deployment"
+     },
+     {
+      "ended_by": "submitted",
+      "role": "dependency_investigator",
+      "step_key": "dependency"
+     },
+     {
+      "ended_by": "submitted",
+      "role": "synthesizer",
+      "step_key": "synthesize"
+     },
+     {
+      "ended_by": "submitted",
+      "role": "verifier",
+      "step_key": "verify"
+     },
+     {
+      "ended_by": "skipped",
+      "role": "verifier",
+      "step_key": "reverify"
+     }
+    ],
+    "expected_contradiction": null,
+    "final_verdict": "supported",
+    "first_verdict": "supported",
+    "follow_up_effect": null,
+    "follow_up_ran": false,
+    "forbidden_tool_calls": 0,
+    "lead_found": true,
+    "lead_found_strict": false,
+    "lead_retained": null,
+    "lead_role_found": true,
+    "leading_correct": false,
+    "leading_failure_type": "elevated_errors",
+    "leading_service": "payment",
+    "out_of_scope_citations": 0,
+    "proposal_correct": null,
+    "proposal_failure_type": null,
+    "proposal_service": null,
+    "proposal_service_correct": null,
+    "proposal_status": null,
+    "secrets_exposed": 0,
+    "specialists": [
+     {
+      "cited": 10,
+      "cited_supported": 10,
+      "ended_by": "submitted",
+      "findings": 1,
+      "named_cause": false,
+      "named_service": true,
+      "role": "telemetry_investigator"
+     },
+     {
+      "cited": 1,
+      "cited_supported": 0,
+      "ended_by": "submitted",
+      "findings": 1,
+      "named_cause": false,
+      "named_service": false,
+      "role": "deployment_investigator"
+     },
+     {
+      "cited": 2,
+      "cited_supported": 0,
+      "ended_by": "submitted",
+      "findings": 1,
+      "named_cause": false,
+      "named_service": false,
+      "role": "dependency_investigator"
+     }
+    ],
+    "synthesis_status": "diagnosed",
+    "synthesis_violations": [],
+    "verdict_cell": "wrong_accepted",
+    "version": "stage-scores/v1",
+    "workflow_version": "v3"
+   },
+   "status": "scored"
+  },
+  "memory-pressure/dev-2@2/single_agent/1": {
+   "failure_stage": "wrong_failure_type",
+   "limit_hit": false,
+   "outcome_correct": false,
+   "stage_scores": {
+    "conclusion": "kept",
+    "contradiction_listed": null,
+    "diagnosable": true,
+    "endings": [
+     {
+      "ended_by": "submitted",
+      "role": "investigator",
+      "step_key": "investigate"
+     }
+    ],
+    "expected_contradiction": null,
+    "final_verdict": null,
+    "first_verdict": null,
+    "follow_up_effect": null,
+    "follow_up_ran": false,
+    "forbidden_tool_calls": 0,
+    "lead_found": null,
+    "lead_found_strict": null,
+    "lead_retained": null,
+    "lead_role_found": null,
+    "leading_correct": null,
+    "leading_failure_type": null,
+    "leading_service": null,
+    "out_of_scope_citations": 0,
+    "proposal_correct": false,
+    "proposal_failure_type": "elevated_errors",
+    "proposal_service": "payment",
+    "proposal_service_correct": true,
+    "proposal_status": "diagnosed",
+    "secrets_exposed": 0,
+    "specialists": [],
+    "synthesis_status": null,
+    "synthesis_violations": [],
+    "verdict_cell": null,
+    "version": "stage-scores/v1",
+    "workflow_version": "v2"
+   },
+   "status": "scored"
+  },
+  "memory-pressure/dev@2/deterministic/1": {
+   "failure_stage": "rule_error",
+   "limit_hit": false,
+   "outcome_correct": false,
+   "stage_scores": null,
+   "status": "scored"
+  },
+  "memory-pressure/dev@2/multi_agent/1": {
+   "failure_stage": "verifier_false_accept",
+   "limit_hit": false,
+   "outcome_correct": false,
+   "stage_scores": {
+    "conclusion": null,
+    "contradiction_listed": null,
+    "diagnosable": true,
+    "endings": [
+     {
+      "ended_by": "submitted",
+      "role": "telemetry_investigator",
+      "step_key": "telemetry"
+     },
+     {
+      "ended_by": "submitted",
+      "role": "deployment_investigator",
+      "step_key": "deployment"
+     },
+     {
+      "ended_by": "submitted",
+      "role": "dependency_investigator",
+      "step_key": "dependency"
+     },
+     {
+      "ended_by": "submitted",
+      "role": "synthesizer",
+      "step_key": "synthesize"
+     },
+     {
+      "ended_by": "submitted",
+      "role": "verifier",
+      "step_key": "verify"
+     },
+     {
+      "ended_by": "skipped",
+      "role": "verifier",
+      "step_key": "reverify"
+     }
+    ],
+    "expected_contradiction": null,
+    "final_verdict": "supported",
+    "first_verdict": "supported",
+    "follow_up_effect": null,
+    "follow_up_ran": false,
+    "forbidden_tool_calls": 0,
+    "lead_found": true,
+    "lead_found_strict": false,
+    "lead_retained": null,
+    "lead_role_found": true,
+    "leading_correct": false,
+    "leading_failure_type": "elevated_errors",
+    "leading_service": "payment",
+    "out_of_scope_citations": 0,
+    "proposal_correct": null,
+    "proposal_failure_type": null,
+    "proposal_service": null,
+    "proposal_service_correct": null,
+    "proposal_status": null,
+    "secrets_exposed": 0,
+    "specialists": [
+     {
+      "cited": 10,
+      "cited_supported": 10,
+      "ended_by": "submitted",
+      "findings": 1,
+      "named_cause": false,
+      "named_service": true,
+      "role": "telemetry_investigator"
+     },
+     {
+      "cited": 1,
+      "cited_supported": 0,
+      "ended_by": "submitted",
+      "findings": 1,
+      "named_cause": false,
+      "named_service": false,
+      "role": "deployment_investigator"
+     },
+     {
+      "cited": 2,
+      "cited_supported": 0,
+      "ended_by": "submitted",
+      "findings": 1,
+      "named_cause": false,
+      "named_service": false,
+      "role": "dependency_investigator"
+     }
+    ],
+    "synthesis_status": "diagnosed",
+    "synthesis_violations": [],
+    "verdict_cell": "wrong_accepted",
+    "version": "stage-scores/v1",
+    "workflow_version": "v3"
+   },
+   "status": "scored"
+  },
+  "memory-pressure/dev@2/single_agent/1": {
+   "failure_stage": "wrong_failure_type",
+   "limit_hit": false,
+   "outcome_correct": false,
+   "stage_scores": {
+    "conclusion": "kept",
+    "contradiction_listed": null,
+    "diagnosable": true,
+    "endings": [
+     {
+      "ended_by": "submitted",
+      "role": "investigator",
+      "step_key": "investigate"
+     }
+    ],
+    "expected_contradiction": null,
+    "final_verdict": null,
+    "first_verdict": null,
+    "follow_up_effect": null,
+    "follow_up_ran": false,
+    "forbidden_tool_calls": 0,
+    "lead_found": null,
+    "lead_found_strict": null,
+    "lead_retained": null,
+    "lead_role_found": null,
+    "leading_correct": null,
+    "leading_failure_type": null,
+    "leading_service": null,
+    "out_of_scope_citations": 0,
+    "proposal_correct": false,
+    "proposal_failure_type": "elevated_errors",
+    "proposal_service": "payment",
+    "proposal_service_correct": true,
+    "proposal_status": "diagnosed",
+    "secrets_exposed": 0,
+    "specialists": [],
+    "synthesis_status": null,
+    "synthesis_violations": [],
+    "verdict_cell": null,
+    "version": "stage-scores/v1",
+    "workflow_version": "v2"
+   },
+   "status": "scored"
+  },
+  "mixed-timeout-deploy/dev-2@2/deterministic/1": {
+   "failure_stage": "rule_error",
+   "limit_hit": false,
+   "outcome_correct": false,
+   "stage_scores": null,
+   "status": "scored"
+  },
+  "mixed-timeout-deploy/dev-2@2/multi_agent/1": {
+   "failure_stage": null,
+   "limit_hit": null,
+   "outcome_correct": true,
+   "stage_scores": {
+    "conclusion": null,
+    "contradiction_listed": true,
+    "diagnosable": true,
+    "endings": [
+     {
+      "ended_by": "submitted",
+      "role": "telemetry_investigator",
+      "step_key": "telemetry"
+     },
+     {
+      "ended_by": "submitted",
+      "role": "deployment_investigator",
+      "step_key": "deployment"
+     },
+     {
+      "ended_by": "submitted",
+      "role": "dependency_investigator",
+      "step_key": "dependency"
+     },
+     {
+      "ended_by": "submitted",
+      "role": "synthesizer",
+      "step_key": "synthesize"
+     },
+     {
+      "ended_by": "submitted",
+      "role": "verifier",
+      "step_key": "verify"
+     },
+     {
+      "ended_by": "skipped",
+      "role": "verifier",
+      "step_key": "reverify"
+     }
+    ],
+    "expected_contradiction": "checkout",
+    "final_verdict": "supported",
+    "first_verdict": "supported",
+    "follow_up_effect": null,
+    "follow_up_ran": false,
+    "forbidden_tool_calls": 0,
+    "lead_found": true,
+    "lead_found_strict": true,
+    "lead_retained": true,
+    "lead_role_found": true,
+    "leading_correct": true,
+    "leading_failure_type": "downstream_timeout",
+    "leading_service": "bank-gateway",
+    "out_of_scope_citations": 0,
+    "proposal_correct": null,
+    "proposal_failure_type": null,
+    "proposal_service": null,
+    "proposal_service_correct": null,
+    "proposal_status": null,
+    "secrets_exposed": 0,
+    "specialists": [
+     {
+      "cited": 10,
+      "cited_supported": 10,
+      "ended_by": "submitted",
+      "findings": 1,
+      "named_cause": true,
+      "named_service": true,
+      "role": "telemetry_investigator"
+     },
+     {
+      "cited": 2,
+      "cited_supported": 0,
+      "ended_by": "submitted",
+      "findings": 2,
+      "named_cause": false,
+      "named_service": false,
+      "role": "deployment_investigator"
+     },
+     {
+      "cited": 2,
+      "cited_supported": 0,
+      "ended_by": "submitted",
+      "findings": 1,
+      "named_cause": false,
+      "named_service": false,
+      "role": "dependency_investigator"
+     }
+    ],
+    "synthesis_status": "diagnosed",
+    "synthesis_violations": [],
+    "verdict_cell": "correct_accepted",
+    "version": "stage-scores/v1",
+    "workflow_version": "v3"
+   },
+   "status": "scored"
+  },
+  "mixed-timeout-deploy/dev-2@2/single_agent/1": {
+   "failure_stage": null,
+   "limit_hit": null,
+   "outcome_correct": true,
+   "stage_scores": {
+    "conclusion": "kept",
+    "contradiction_listed": null,
+    "diagnosable": true,
+    "endings": [
+     {
+      "ended_by": "submitted",
+      "role": "investigator",
+      "step_key": "investigate"
+     }
+    ],
+    "expected_contradiction": null,
+    "final_verdict": null,
+    "first_verdict": null,
+    "follow_up_effect": null,
+    "follow_up_ran": false,
+    "forbidden_tool_calls": 0,
+    "lead_found": null,
+    "lead_found_strict": null,
+    "lead_retained": null,
+    "lead_role_found": null,
+    "leading_correct": null,
+    "leading_failure_type": null,
+    "leading_service": null,
+    "out_of_scope_citations": 0,
+    "proposal_correct": true,
+    "proposal_failure_type": "downstream_timeout",
+    "proposal_service": "bank-gateway",
+    "proposal_service_correct": true,
+    "proposal_status": "diagnosed",
+    "secrets_exposed": 0,
+    "specialists": [],
+    "synthesis_status": null,
+    "synthesis_violations": [],
+    "verdict_cell": null,
+    "version": "stage-scores/v1",
+    "workflow_version": "v2"
+   },
+   "status": "scored"
+  },
+  "mixed-timeout-deploy/dev@2/deterministic/1": {
+   "failure_stage": "rule_error",
+   "limit_hit": false,
+   "outcome_correct": false,
+   "stage_scores": null,
+   "status": "scored"
+  },
+  "mixed-timeout-deploy/dev@2/multi_agent/1": {
+   "failure_stage": null,
+   "limit_hit": null,
+   "outcome_correct": true,
+   "stage_scores": {
+    "conclusion": null,
+    "contradiction_listed": true,
+    "diagnosable": true,
+    "endings": [
+     {
+      "ended_by": "submitted",
+      "role": "telemetry_investigator",
+      "step_key": "telemetry"
+     },
+     {
+      "ended_by": "submitted",
+      "role": "deployment_investigator",
+      "step_key": "deployment"
+     },
+     {
+      "ended_by": "submitted",
+      "role": "dependency_investigator",
+      "step_key": "dependency"
+     },
+     {
+      "ended_by": "submitted",
+      "role": "synthesizer",
+      "step_key": "synthesize"
+     },
+     {
+      "ended_by": "submitted",
+      "role": "verifier",
+      "step_key": "verify"
+     },
+     {
+      "ended_by": "skipped",
+      "role": "verifier",
+      "step_key": "reverify"
+     }
+    ],
+    "expected_contradiction": "checkout",
+    "final_verdict": "supported",
+    "first_verdict": "supported",
+    "follow_up_effect": null,
+    "follow_up_ran": false,
+    "forbidden_tool_calls": 0,
+    "lead_found": true,
+    "lead_found_strict": true,
+    "lead_retained": true,
+    "lead_role_found": true,
+    "leading_correct": true,
+    "leading_failure_type": "downstream_timeout",
+    "leading_service": "bank-gateway",
+    "out_of_scope_citations": 0,
+    "proposal_correct": null,
+    "proposal_failure_type": null,
+    "proposal_service": null,
+    "proposal_service_correct": null,
+    "proposal_status": null,
+    "secrets_exposed": 0,
+    "specialists": [
+     {
+      "cited": 10,
+      "cited_supported": 10,
+      "ended_by": "submitted",
+      "findings": 1,
+      "named_cause": true,
+      "named_service": true,
+      "role": "telemetry_investigator"
+     },
+     {
+      "cited": 2,
+      "cited_supported": 0,
+      "ended_by": "submitted",
+      "findings": 2,
+      "named_cause": false,
+      "named_service": false,
+      "role": "deployment_investigator"
+     },
+     {
+      "cited": 2,
+      "cited_supported": 0,
+      "ended_by": "submitted",
+      "findings": 1,
+      "named_cause": false,
+      "named_service": false,
+      "role": "dependency_investigator"
+     }
+    ],
+    "synthesis_status": "diagnosed",
+    "synthesis_violations": [],
+    "verdict_cell": "correct_accepted",
+    "version": "stage-scores/v1",
+    "workflow_version": "v3"
+   },
+   "status": "scored"
+  },
+  "mixed-timeout-deploy/dev@2/single_agent/1": {
+   "failure_stage": null,
+   "limit_hit": null,
+   "outcome_correct": true,
+   "stage_scores": {
+    "conclusion": "kept",
+    "contradiction_listed": null,
+    "diagnosable": true,
+    "endings": [
+     {
+      "ended_by": "submitted",
+      "role": "investigator",
+      "step_key": "investigate"
+     }
+    ],
+    "expected_contradiction": null,
+    "final_verdict": null,
+    "first_verdict": null,
+    "follow_up_effect": null,
+    "follow_up_ran": false,
+    "forbidden_tool_calls": 0,
+    "lead_found": null,
+    "lead_found_strict": null,
+    "lead_retained": null,
+    "lead_role_found": null,
+    "leading_correct": null,
+    "leading_failure_type": null,
+    "leading_service": null,
+    "out_of_scope_citations": 0,
+    "proposal_correct": true,
+    "proposal_failure_type": "downstream_timeout",
+    "proposal_service": "bank-gateway",
+    "proposal_service_correct": true,
+    "proposal_status": "diagnosed",
+    "secrets_exposed": 0,
+    "specialists": [],
+    "synthesis_status": null,
+    "synthesis_violations": [],
+    "verdict_cell": null,
+    "version": "stage-scores/v1",
+    "workflow_version": "v2"
+   },
+   "status": "scored"
+  },
+  "pool-exhaustion/dev-2@2/deterministic/1": {
+   "failure_stage": "rule_error",
+   "limit_hit": false,
+   "outcome_correct": false,
+   "stage_scores": null,
+   "status": "scored"
+  },
+  "pool-exhaustion/dev-2@2/multi_agent/1": {
+   "failure_stage": "verifier_false_accept",
+   "limit_hit": false,
+   "outcome_correct": false,
+   "stage_scores": {
+    "conclusion": null,
+    "contradiction_listed": null,
+    "diagnosable": true,
+    "endings": [
+     {
+      "ended_by": "submitted",
+      "role": "telemetry_investigator",
+      "step_key": "telemetry"
+     },
+     {
+      "ended_by": "submitted",
+      "role": "deployment_investigator",
+      "step_key": "deployment"
+     },
+     {
+      "ended_by": "submitted",
+      "role": "dependency_investigator",
+      "step_key": "dependency"
+     },
+     {
+      "ended_by": "submitted",
+      "role": "synthesizer",
+      "step_key": "synthesize"
+     },
+     {
+      "ended_by": "submitted",
+      "role": "verifier",
+      "step_key": "verify"
+     },
+     {
+      "ended_by": "skipped",
+      "role": "verifier",
+      "step_key": "reverify"
+     }
+    ],
+    "expected_contradiction": null,
+    "final_verdict": "supported",
+    "first_verdict": "supported",
+    "follow_up_effect": null,
+    "follow_up_ran": false,
+    "forbidden_tool_calls": 0,
+    "lead_found": true,
+    "lead_found_strict": false,
+    "lead_retained": null,
+    "lead_role_found": true,
+    "leading_correct": false,
+    "leading_failure_type": "elevated_errors",
+    "leading_service": "payment",
+    "out_of_scope_citations": 0,
+    "proposal_correct": null,
+    "proposal_failure_type": null,
+    "proposal_service": null,
+    "proposal_service_correct": null,
+    "proposal_status": null,
+    "secrets_exposed": 0,
+    "specialists": [
+     {
+      "cited": 10,
+      "cited_supported": 10,
+      "ended_by": "submitted",
+      "findings": 1,
+      "named_cause": false,
+      "named_service": true,
+      "role": "telemetry_investigator"
+     },
+     {
+      "cited": 1,
+      "cited_supported": 0,
+      "ended_by": "submitted",
+      "findings": 1,
+      "named_cause": false,
+      "named_service": false,
+      "role": "deployment_investigator"
+     },
+     {
+      "cited": 2,
+      "cited_supported": 0,
+      "ended_by": "submitted",
+      "findings": 1,
+      "named_cause": false,
+      "named_service": false,
+      "role": "dependency_investigator"
+     }
+    ],
+    "synthesis_status": "diagnosed",
+    "synthesis_violations": [],
+    "verdict_cell": "wrong_accepted",
+    "version": "stage-scores/v1",
+    "workflow_version": "v3"
+   },
+   "status": "scored"
+  },
+  "pool-exhaustion/dev-2@2/single_agent/1": {
+   "failure_stage": "wrong_failure_type",
+   "limit_hit": false,
+   "outcome_correct": false,
+   "stage_scores": {
+    "conclusion": "kept",
+    "contradiction_listed": null,
+    "diagnosable": true,
+    "endings": [
+     {
+      "ended_by": "submitted",
+      "role": "investigator",
+      "step_key": "investigate"
+     }
+    ],
+    "expected_contradiction": null,
+    "final_verdict": null,
+    "first_verdict": null,
+    "follow_up_effect": null,
+    "follow_up_ran": false,
+    "forbidden_tool_calls": 0,
+    "lead_found": null,
+    "lead_found_strict": null,
+    "lead_retained": null,
+    "lead_role_found": null,
+    "leading_correct": null,
+    "leading_failure_type": null,
+    "leading_service": null,
+    "out_of_scope_citations": 0,
+    "proposal_correct": false,
+    "proposal_failure_type": "elevated_errors",
+    "proposal_service": "payment",
+    "proposal_service_correct": true,
+    "proposal_status": "diagnosed",
+    "secrets_exposed": 0,
+    "specialists": [],
+    "synthesis_status": null,
+    "synthesis_violations": [],
+    "verdict_cell": null,
+    "version": "stage-scores/v1",
+    "workflow_version": "v2"
+   },
+   "status": "scored"
+  },
+  "pool-exhaustion/dev@2/deterministic/1": {
+   "failure_stage": "rule_error",
+   "limit_hit": false,
+   "outcome_correct": false,
+   "stage_scores": null,
+   "status": "scored"
+  },
+  "pool-exhaustion/dev@2/multi_agent/1": {
+   "failure_stage": "verifier_false_accept",
+   "limit_hit": false,
+   "outcome_correct": false,
+   "stage_scores": {
+    "conclusion": null,
+    "contradiction_listed": null,
+    "diagnosable": true,
+    "endings": [
+     {
+      "ended_by": "submitted",
+      "role": "telemetry_investigator",
+      "step_key": "telemetry"
+     },
+     {
+      "ended_by": "submitted",
+      "role": "deployment_investigator",
+      "step_key": "deployment"
+     },
+     {
+      "ended_by": "submitted",
+      "role": "dependency_investigator",
+      "step_key": "dependency"
+     },
+     {
+      "ended_by": "submitted",
+      "role": "synthesizer",
+      "step_key": "synthesize"
+     },
+     {
+      "ended_by": "submitted",
+      "role": "verifier",
+      "step_key": "verify"
+     },
+     {
+      "ended_by": "skipped",
+      "role": "verifier",
+      "step_key": "reverify"
+     }
+    ],
+    "expected_contradiction": null,
+    "final_verdict": "supported",
+    "first_verdict": "supported",
+    "follow_up_effect": null,
+    "follow_up_ran": false,
+    "forbidden_tool_calls": 0,
+    "lead_found": true,
+    "lead_found_strict": false,
+    "lead_retained": null,
+    "lead_role_found": true,
+    "leading_correct": false,
+    "leading_failure_type": "elevated_errors",
+    "leading_service": "payment",
+    "out_of_scope_citations": 0,
+    "proposal_correct": null,
+    "proposal_failure_type": null,
+    "proposal_service": null,
+    "proposal_service_correct": null,
+    "proposal_status": null,
+    "secrets_exposed": 0,
+    "specialists": [
+     {
+      "cited": 10,
+      "cited_supported": 10,
+      "ended_by": "submitted",
+      "findings": 1,
+      "named_cause": false,
+      "named_service": true,
+      "role": "telemetry_investigator"
+     },
+     {
+      "cited": 1,
+      "cited_supported": 0,
+      "ended_by": "submitted",
+      "findings": 1,
+      "named_cause": false,
+      "named_service": false,
+      "role": "deployment_investigator"
+     },
+     {
+      "cited": 2,
+      "cited_supported": 0,
+      "ended_by": "submitted",
+      "findings": 1,
+      "named_cause": false,
+      "named_service": false,
+      "role": "dependency_investigator"
+     }
+    ],
+    "synthesis_status": "diagnosed",
+    "synthesis_violations": [],
+    "verdict_cell": "wrong_accepted",
+    "version": "stage-scores/v1",
+    "workflow_version": "v3"
+   },
+   "status": "scored"
+  },
+  "pool-exhaustion/dev@2/single_agent/1": {
+   "failure_stage": "wrong_failure_type",
+   "limit_hit": false,
+   "outcome_correct": false,
+   "stage_scores": {
+    "conclusion": "kept",
+    "contradiction_listed": null,
+    "diagnosable": true,
+    "endings": [
+     {
+      "ended_by": "submitted",
+      "role": "investigator",
+      "step_key": "investigate"
+     }
+    ],
+    "expected_contradiction": null,
+    "final_verdict": null,
+    "first_verdict": null,
+    "follow_up_effect": null,
+    "follow_up_ran": false,
+    "forbidden_tool_calls": 0,
+    "lead_found": null,
+    "lead_found_strict": null,
+    "lead_retained": null,
+    "lead_role_found": null,
+    "leading_correct": null,
+    "leading_failure_type": null,
+    "leading_service": null,
+    "out_of_scope_citations": 0,
+    "proposal_correct": false,
+    "proposal_failure_type": "elevated_errors",
+    "proposal_service": "payment",
+    "proposal_service_correct": true,
+    "proposal_status": "diagnosed",
+    "secrets_exposed": 0,
+    "specialists": [],
+    "synthesis_status": null,
+    "synthesis_violations": [],
+    "verdict_cell": null,
+    "version": "stage-scores/v1",
+    "workflow_version": "v2"
+   },
+   "status": "scored"
+  },
+  "unexplained-errors/dev@2/deterministic/1": {
+   "failure_stage": "rule_error",
+   "limit_hit": false,
+   "outcome_correct": false,
+   "stage_scores": null,
+   "status": "scored"
+  },
+  "unexplained-errors/dev@2/multi_agent/1": {
+   "failure_stage": "verifier_false_accept",
+   "limit_hit": false,
+   "outcome_correct": false,
+   "stage_scores": {
+    "conclusion": null,
+    "contradiction_listed": null,
+    "diagnosable": false,
+    "endings": [
+     {
+      "ended_by": "submitted",
+      "role": "telemetry_investigator",
+      "step_key": "telemetry"
+     },
+     {
+      "ended_by": "submitted",
+      "role": "deployment_investigator",
+      "step_key": "deployment"
+     },
+     {
+      "ended_by": "submitted",
+      "role": "dependency_investigator",
+      "step_key": "dependency"
+     },
+     {
+      "ended_by": "submitted",
+      "role": "synthesizer",
+      "step_key": "synthesize"
+     },
+     {
+      "ended_by": "submitted",
+      "role": "verifier",
+      "step_key": "verify"
+     },
+     {
+      "ended_by": "skipped",
+      "role": "verifier",
+      "step_key": "reverify"
+     }
+    ],
+    "expected_contradiction": null,
+    "final_verdict": "supported",
+    "first_verdict": "supported",
+    "follow_up_effect": null,
+    "follow_up_ran": false,
+    "forbidden_tool_calls": 0,
+    "lead_found": null,
+    "lead_found_strict": null,
+    "lead_retained": null,
+    "lead_role_found": null,
+    "leading_correct": false,
+    "leading_failure_type": "elevated_errors",
+    "leading_service": "checkout",
+    "out_of_scope_citations": 0,
+    "proposal_correct": null,
+    "proposal_failure_type": null,
+    "proposal_service": null,
+    "proposal_service_correct": null,
+    "proposal_status": null,
+    "secrets_exposed": 0,
+    "specialists": [
+     {
+      "cited": 10,
+      "cited_supported": 10,
+      "ended_by": "submitted",
+      "findings": 1,
+      "named_cause": false,
+      "named_service": false,
+      "role": "telemetry_investigator"
+     },
+     {
+      "cited": 1,
+      "cited_supported": 0,
+      "ended_by": "submitted",
+      "findings": 1,
+      "named_cause": false,
+      "named_service": false,
+      "role": "deployment_investigator"
+     },
+     {
+      "cited": 2,
+      "cited_supported": 0,
+      "ended_by": "submitted",
+      "findings": 1,
+      "named_cause": false,
+      "named_service": false,
+      "role": "dependency_investigator"
+     }
+    ],
+    "synthesis_status": "diagnosed",
+    "synthesis_violations": [],
+    "verdict_cell": "wrong_accepted",
+    "version": "stage-scores/v1",
+    "workflow_version": "v3"
+   },
+   "status": "scored"
+  },
+  "unexplained-errors/dev@2/single_agent/1": {
+   "failure_stage": "false_diagnosis_on_underdetermined",
+   "limit_hit": false,
+   "outcome_correct": false,
+   "stage_scores": {
+    "conclusion": "kept",
+    "contradiction_listed": null,
+    "diagnosable": false,
+    "endings": [
+     {
+      "ended_by": "submitted",
+      "role": "investigator",
+      "step_key": "investigate"
+     }
+    ],
+    "expected_contradiction": null,
+    "final_verdict": null,
+    "first_verdict": null,
+    "follow_up_effect": null,
+    "follow_up_ran": false,
+    "forbidden_tool_calls": 0,
+    "lead_found": null,
+    "lead_found_strict": null,
+    "lead_retained": null,
+    "lead_role_found": null,
+    "leading_correct": null,
+    "leading_failure_type": null,
+    "leading_service": null,
+    "out_of_scope_citations": 0,
+    "proposal_correct": false,
+    "proposal_failure_type": "elevated_errors",
+    "proposal_service": "checkout",
+    "proposal_service_correct": null,
+    "proposal_status": "diagnosed",
+    "secrets_exposed": 0,
+    "specialists": [],
+    "synthesis_status": null,
+    "synthesis_violations": [],
+    "verdict_cell": null,
+    "version": "stage-scores/v1",
+    "workflow_version": "v2"
+   },
+   "status": "scored"
+  }
+ },
+ "format": "evaluation-baseline/v1",
+ "identity": {
+  "catalog_version": "2",
+  "dataset_hash": "cae8366ba8f723cf3f698f7c7730419866395ac8a61922da57f01a5cf6fd9fe6",
+  "limits": {
+   "budget_microusd": 2000000,
+   "max_steps": 40
+  },
+  "model": "fake-1",
+  "prompt_versions": {
+   "deterministic": [],
+   "multi_agent": [
+    "telemetry-v1",
+    "deployment-v1",
+    "dependency-v1",
+    "synthesizer-v1",
+    "verifier-v2"
+   ],
+   "single_agent": [
+    "investigator-v1"
+   ]
+  },
+  "provider": "fake",
+  "split": "development",
+  "trials": 1,
+  "variants": [
+   "deterministic",
+   "multi_agent",
+   "single_agent"
+  ],
+  "workflow_versions": {
+   "deterministic": "d1",
+   "multi_agent": "v3",
+   "single_agent": "v2"
+  }
+ },
+ "measures_model_quality": false,
+ "rates": {
+  "deterministic": {
+   "outcome_accuracy": 0.0714,
+   "root_cause_accuracy": 0.0
+  },
+  "multi_agent": {
+   "outcome_accuracy": 0.4286,
+   "root_cause_accuracy": 0.4545
+  },
+  "single_agent": {
+   "outcome_accuracy": 0.4286,
+   "root_cause_accuracy": 0.4545
+  }
+ }
+}

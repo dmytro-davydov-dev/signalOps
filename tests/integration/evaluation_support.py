@@ -31,14 +31,18 @@ SETTINGS = Settings(database_url="postgresql+psycopg://unused@localhost/unused")
 AGENTS = (SystemVariant.SINGLE_AGENT, SystemVariant.MULTI_AGENT)
 
 
+REDACTED_FIELDS = ("password", "token", "api_key")
+
+
 def engine_for(
     database: db.Database,
     provider: ModelProvider,
     workflows: Mapping[str, Workflow] = WORKFLOWS,
+    redactor: TextRedactor | None = None,
 ) -> WorkflowEngine:
     runtime = AgentRuntime(
         gateway=ModelGateway(database, provider, policy=RETRIES),
-        tools=ToolExecutor(database, TextRedactor(("password", "token", "api_key"))),
+        tools=ToolExecutor(database, redactor or TextRedactor(REDACTED_FIELDS)),
         model=FAKE_MODEL,
         limits=V3_LIMITS,
     )

@@ -157,6 +157,8 @@ class TelemetryVerdict:
     reason: str = ""
     cited: tuple[dict[str, Any], ...] = ()
     logs: tuple[dict[str, Any], ...] = ()
+    # Every error log read, as the tools returned it (already redacted).
+    read: tuple[dict[str, Any], ...] = ()
 
     @property
     def timed_out(self) -> bool:
@@ -209,6 +211,16 @@ def telemetry_turn(
                     "limit": ROW_LIMIT,
                 },
             ),
+            # The callee's own error logs, which the first, busiest-first read may have missed.
+            (
+                ToolName.QUERY_LOGS,
+                {
+                    **window,
+                    "service_id": str(callee),
+                    "minimum_severity": Severity.ERROR.value,
+                    "limit": ROW_LIMIT,
+                },
+            ),
         )
     caller_traces = [item for item in errors if item["service_id"] == str(failing)]
     caller_logs = tuple(item for item in logs if item["service_id"] == str(failing))
@@ -220,8 +232,12 @@ def telemetry_turn(
         and item["duration_ms"] >= SLOW_TRACE_MS
     ]
     if callee is not None and slow:
-        return TelemetryVerdict(callee, cited=(*slow, *caller_logs), logs=caller_logs)
-    return TelemetryVerdict(failing, cited=(*caller_traces, *caller_logs), logs=caller_logs)
+        return TelemetryVerdict(
+            callee, cited=(*slow, *caller_logs), logs=caller_logs, read=tuple(logs)
+        )
+    return TelemetryVerdict(
+        failing, cited=(*caller_traces, *caller_logs), logs=caller_logs, read=tuple(logs)
+    )
 
 
 def investigator_step(request: ModelRequest) -> FakeAnswer:
