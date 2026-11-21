@@ -431,7 +431,7 @@ Revision `0015_investigation_outcomes` adds a partial unique index allowing one 
 
 ## ADR-040: The evaluation harness extends `signalops.evaluation` in layers, with deterministic oracles first
 
-*Status: accepted (2026-11-19, when P13-T01 started). Requirements: [eval-harness-prd.md](eval-harness-prd.md); tasks: roadmap Phase 13.*
+*Status: accepted (2026-11-19, when P13-T01 started). Design: [evaluation.md](evaluation.md#design-and-flow); tasks: roadmap Phase 13.*
 
 **Context:** The Phase 10 lab scores final outcomes only. Stage outputs (`SpecialistFindings`, `SynthesisOutput`, `VerificationOutput`, each with `Provenance`) are persisted per step but never scored, comparisons carry no intervals, nothing detects a behavior regression, and nothing bounds a paid run's total spend. The first paid evaluation is the top release priority, and its results must be explainable.
 
@@ -472,6 +472,6 @@ Revision `0015_investigation_outcomes` adds a partial unique index allowing one 
 | Q9 | ~~Operator authentication mechanism before public exposure~~ **Resolved (P11-T02):** hashed, named, expiring credentials in a reloadable file, disjoint from source credentials; public exposure needs an authenticating proxy or OIDC first (ADR-038) | P11-T02 |
 | Q10 | ~~Whether the OpenTelemetry Demo fits local resources, or a smaller synthetic app suffices~~ **Resolved (P10-T03):** a small real instrumented app (`demo/shop.py`, Compose `demo-shop`) | P10-T03 |
 | Q11 | ~~Planning files live in `docs/`, but `CLAUDE.md` expects them at the repository root. Move them, or update `CLAUDE.md`?~~ **Resolved (Phase 8 gate):** the files stay in `docs/`; `CLAUDE.md` points at `docs/development_roadmap.md` and `docs/SignalOps_Implementation_Plan.md` | Before P01-T01 |
-| Q12 | Spend ceilings and per-investigation budget for the paid development smoke run and the paid held-out run (worst-case model in [eval-harness-prd.md §9](eval-harness-prd.md#9-paid-run-budget-model)) | Before P13-T08 |
+| Q12 | Spend ceilings and per-investigation budget for the paid development smoke run and the paid held-out run (worst-case model and run order in [evaluation.md](evaluation.md#paid-runs-p13-t08-not-started)) | Before P13-T08 |
 | Q13 | ~~Add a CI job with a PostgreSQL service so the evaluation regression gate runs on every push, or keep it a local integration check~~ **Resolved (P13-T07):** keep it a local integration check for now (`tests/integration/test_regression_gate.py`, about 5.5 minutes for the development suite). CI has no database service today, and a new job could not be run and verified from this environment; revisit when CI gains integration jobs or the gate's runtime falls | P13-T07 |
 | Q14 | Enable a judge model for claim-level support, given the human audit volume needed to measure its agreement | After P13-T08 |

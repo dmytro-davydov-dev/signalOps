@@ -2,11 +2,75 @@
 
 > Status: implemented (Phase 10). One held-out run on the fake provider is retained: [`evaluation-runs/7ac381af-heldout-fake.json`](evaluation-runs/7ac381af-heldout-fake.json), summarized in [demo.md](demo.md#5-comparison-against-simpler-baselines). It demonstrates the harness, not diagnostic quality; no paid model has run. Sources: [SignalOps_Implementation_Plan.md](SignalOps_Implementation_Plan.md) §12 and roadmap Phase 10.
 
-> Phase 13 (in progress): an evaluation harness that adds stage scores, failure attribution, component evaluations of the synthesizer and verifier, intervals and paired comparisons, a fake-provider regression gate, and run-level spend ceilings. Requirements in [eval-harness-prd.md](eval-harness-prd.md), decision in [ADR-040](decisions.md#adr-040-the-evaluation-harness-extends-signalopsevaluation-in-layers-with-deterministic-oracles-first). Sections marked with a Phase 13 task ID describe what is implemented so far.
+> Phase 13 (in progress): an evaluation harness that adds stage scores, failure attribution, component evaluations of the synthesizer and verifier, intervals and paired comparisons, a fake-provider regression gate, and run-level spend ceilings. Decision in [ADR-040](decisions.md#adr-040-the-evaluation-harness-extends-signalopsevaluation-in-layers-with-deterministic-oracles-first). Sections marked with a Phase 13 task ID describe what is implemented so far.
 
 ## Goal
 
 Find out whether agent investigations actually beat simpler approaches. Correctness, latency, and cost are reported **together**, and the comparison holds evidence, tools, and budget equal.
+
+## Design and flow
+
+The harness is part of the backend (`backend/signalops/evaluation/`), not a separate service or framework (ADR-040). It reuses the production pipeline end to end: replayed records go through the same normalizer, detector, and graph projector, and investigations run on ordinary investigation workers through the model gateway, with the same budgets, limits, and tools. Ground truth lives only in the `evaluation` PostgreSQL schema, which the runtime role cannot read. The harness reads and writes it through a separate evaluator connection (`SIGNALOPS_EVALUATION_DATABASE_URL`).
+
+It evaluates in three layers:
+
+| Layer | Question | Model calls |
+| --- | --- | --- |
+| Outcome | Did the replayed incident end with the right diagnosis or a correct abstention? | Only the investigations themselves |
+| Trajectory | Which stage of the investigation went wrong: lead finding, synthesis, verification, or conclusion? | None: computed from stored steps |
+| Component | How does one role (synthesizer or verifier) behave on frozen inputs with planted defects? | One role call per case |
+
+### End-to-end run
+
+```
+evaluation-run / POST /v1/evaluation-runs
+  │  preflight: scenarios from catalog, worst-case spend vs. ceiling, paid-run approval
+  ▼
+evaluation.runs (queued) ──► evaluation-worker claims it (lease, renewed per scenario)
+  │
+  │  for each scenario of the split:
+  │    1. replay   regenerate records from the seed, check the dataset hash,
+  │                replay into a fresh replay:<uuid> scope, wait for completion markers
+  │    2. detect   match the scope's incidents against the expected fault
+  │    3. cases    one case per variant × trial (d1 once per scenario)
+  │    4. request  per case: check the run ceiling, create an investigation on the first
+  │                incident (cutoff = its detection time, equal budget/steps/deadline)
+  │                ──► investigation workers run d1 / v2 / v3
+  │    5. score    outcome vs. labels; stage scores from stored steps;
+  │                first failing stage for incorrect cases; invariant counts
+  ▼
+metrics: rates with Wilson intervals, stage and failure breakdowns, paired comparisons,
+         calibration, spend  ──► evaluation.runs (completed)
+  │
+  ├─► run and case pages in the web app (API reads the evaluator schema)
+  ├─► evaluation-export: JSON + Markdown report with the git revision
+  └─► evaluation-compare: regression gate against a committed baseline (exit 0 / 1 / 2)
+```
+
+1. **Queue.** A run names a catalog version, split, variants, trials, and per-case limits. Before anything is queued, the request is checked: scenarios exist, the worst case (`agent cases × trials × budget`) fits the ceiling, and a non-fake provider carries `allow_paid` and an approval reference.
+2. **Claim.** `evaluation-worker` claims a queued run with a lease and renews it before each scenario. A runner that loses its lease stops, and another runner resumes the run. Cases already in a terminal state are kept, and investigations are reused by their request key.
+3. **Replay.** Each scenario is replayed once per run into its own scope with simulated event time (see [Replay orchestration](#replay-orchestration-p10-t02-adr-035)). All variants and trials then investigate the same incident with the same evidence. A replay that does not drain fails its cases rather than scoring partial evidence.
+4. **Investigate.** The runner only requests investigations. Ordinary workers execute them, so evaluation exercises the real job leases, checkpoints, reservations, and progress events. Before each agent request, the runner locks the run row and checks committed spend against the run ceiling.
+5. **Score.** When an investigation ends, the case is scored against the labels (`scoring.py`). The runner then reads the investigation's stored steps and computes stage scores (`stages.py`), the first failing stage (`attribution.py`), and invariant counts (`invariants.py`). None of these steps calls a model.
+6. **Summarize.** On completion, `metrics.py` and `report.py` aggregate the cases per variant and compare variants pairwise on identical cases. Exports recompute the metrics from stored cases, so an old run can be re-reported with newer statistics.
+
+### Component run
+
+```
+evaluation-stage-corpus  ──► fixtures/evaluation/v1/stage-corpus/<role>/*.json
+                             (briefs built by the workflow's own code from replayed scenarios,
+                              expected handling stored beside each brief)
+evaluation-stage --role R ──► per case × trial: a holder incident and investigation
+                              (workflow s1-verifier / s1-synthesizer) in its own scope;
+                              the brief is written as the first completed step
+                          ──► an investigation worker runs the role step through AgentLoop
+                          ──► the output is scored against the expected handling
+                          ──► evaluation.stage_runs / stage_cases
+```
+
+### Determinism and the gate
+
+On the fake provider every step is deterministic, so two runs of the development split give identical reports apart from IDs, timestamps, latencies, and costs. The regression gate depends on this. It compares each case's status, outcome, failure stage, and stage scores with a committed baseline, and it checks the invariants that must hold on any provider. Fake results show that the plumbing works, not diagnostic quality: reports carry `measures_model_quality: false`. Only a paid run (P13-T08) measures the models.
 
 ## Scenario families
 
@@ -197,3 +261,17 @@ Each investigation already has a durable budget (ADR-026). A run adds a ceiling 
 - **During execution:** before requesting each agent investigation, the runner locks the run row and adds up its investigations: spent plus reserved for those that ended (reserved keeps unknown calls' reservations, which are never released) and the whole budget for those still running. If that plus one more budget would pass the ceiling, the case and every later one end `failed` with an error starting `run_budget`, and the run completes with what it has. Because the preflight already bounds the worst case, this is a second line of defence (for a ceiling lowered after queueing, or a resumed run), and the row lock keeps concurrent requests from jointly passing it.
 - The run stores `max_spend_microusd` and `approval_ref` (migration `0024`) and `limits.worst_case_microusd`; metrics add `spend` (ceiling, worst case, spent, unknown reservations, approval reference) and each variant's `run_budget_stops`.
 - `signalops evaluation-estimate [--split S] [--variant V…] [--trials N] [--budget-microusd B] [--max-spend-microusd M]` prints the case count and worst case without queueing anything (exit 1 if it does not fit the ceiling). The catalog v2 held-out split with `v2` and `v3`, 3 trials, and 3 USD per case is 37 × 2 × 3 × 3 USD = 666 USD worst case.
+
+### Paid runs (P13-T08, not started)
+
+Order: first a development-split smoke run (`v2` and `v3`, one trial) to measure real per-case cost and the reservation-to-spend ratio, then a held-out run whose per-case budget and ceiling are set from that measurement. Actual spend should be well below the worst case, because reservations assume every request byte is a cache-write token and every output token is used (ADR-026). No real call has measured this yet. Both ceilings need explicit approval (Q12).
+
+## Known limitations
+
+| Limitation | Mitigation |
+| --- | --- |
+| Sample sizes may be too small to separate variants | Reports state `min_detectable_difference`; trials are clustered by scenario, not treated as independent |
+| Labels are coarse: `supporting_event_ids` counts any fault record as support | Stage metrics state their oracle; human audits remain the semantic check; label changes need a new catalog version |
+| The fake baseline couples the gate to fake rules | Baseline updates are an explicit command (`--write-baseline`) reviewed as a diff |
+| Component briefs could drift from what the workflow builds | Briefs are generated by the workflow's own code and regenerated with a corpus version bump |
+| "First failing stage" hides later failures | It is a convention; every case keeps its per-stage scores and outputs |

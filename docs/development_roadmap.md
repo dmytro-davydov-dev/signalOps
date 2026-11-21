@@ -1150,7 +1150,7 @@ Start the React shell in Phase 1 and add API-backed incident views in Phase 5; P
 
 ## Phase 13 Evaluation harness for the agentic pipeline
 
-**Dependencies:** Phase 12. Requirements: [eval-harness-prd.md](eval-harness-prd.md). Decision: [ADR-040](decisions.md#adr-040-the-evaluation-harness-extends-signalopsevaluation-in-layers-with-deterministic-oracles-first) (accepted 2026-11-19 when P13-T01 started).
+**Dependencies:** Phase 12. Design: [evaluation.md](evaluation.md#design-and-flow). Decision: [ADR-040](decisions.md#adr-040-the-evaluation-harness-extends-signalopsevaluation-in-layers-with-deterministic-oracles-first) (accepted 2026-11-19 when P13-T01 started).
 
 **Outcome:** Every evaluation run explains where the agentic pipeline is wrong, stage by stage, with intervals on every number; a fake-provider regression gate protects workflow behavior; a paid-model run is bounded by a run-level spend ceiling and, once approved, answers ADR-010's question.
 
@@ -1179,7 +1179,7 @@ Start the React shell in Phase 1 and add API-backed incident views in Phase 5; P
 
 - [x] Complete this task. Completed 2026-11-19; see the work log for the commit.
 
-**Implementation:** `evaluation/stages.py`: after a case is scored, read its steps through the evaluator connection and compute the PRD FR-2 metrics: specialist lead recall (any, strict, per role, for `lead_roles`), per-role evidence precision, synthesis lead retention, the synthesis invariant, contradiction recall, the verifier verdict matrix, follow-up effect, limit endings by `ended_by`, and `v2` proposal-versus-conclusion. Store per case in `evaluation.cases.stage_scores` (JSONB, migration `0020`, evaluator-only by 0017's default privileges). Map role findings' `service_id` to names through the replay's catalog. Aggregate per variant in `evaluation/metrics.py`.
+**Implementation:** `evaluation/stages.py`: after a case is scored, read its steps through the evaluator connection and compute the stage metrics: specialist lead recall (any, strict, per role, for `lead_roles`), per-role evidence precision, synthesis lead retention, the synthesis invariant, contradiction recall, the verifier verdict matrix, follow-up effect, limit endings by `ended_by`, and `v2` proposal-versus-conclusion. Store per case in `evaluation.cases.stage_scores` (JSONB, migration `0020`, evaluator-only by 0017's default privileges). Map role findings' `service_id` to names through the replay's catalog. Aggregate per variant in `evaluation/metrics.py`.
 
 **Acceptance:** Unit tests over constructed step outputs cover each metric's numerator and denominator. Mutations each move the intended metric and no unrelated one: a fake synthesizer that leads with its second hypothesis lowers lead retention; a fake verifier that accepts everything raises wrong-lead-accepted; a specialist with zero turns raises limit endings and lowers lead recall. A synthesis invariant violation planted in a stored step is reported as a harness defect. A development run on the fake provider stores stage scores for every agent case, and scoring makes no model call (gateway call count unchanged).
 
@@ -1195,14 +1195,14 @@ Start the React shell in Phase 1 and add API-backed incident views in Phase 5; P
 
 - [x] Complete this task. Completed 2026-11-19; see the work log for the commit.
 
-**Implementation:** `failure_stage` per PRD FR-3 (`harness_failure`, `detection_miss`, `no_lead`, `lead_lost_in_synthesis`, `verifier_false_reject`, `verifier_false_accept`, `conclude_dropped`, `wrong_failure_type`, `false_diagnosis_on_underdetermined`, `rule_error`) plus the orthogonal `limit_hit` flag; a column with a CHECK on `evaluation.cases` (migration `0020` or `0021`). Aggregate per variant. API views add the fields; the run page shows a failure-stage breakdown per variant and the case page shows the stage with the per-stage outputs (findings, leading hypothesis, verdict) linked to evidence.
+**Implementation:** `failure_stage` (`harness_failure`, `detection_miss`, `no_lead`, `lead_lost_in_synthesis`, `verifier_false_reject`, `verifier_false_accept`, `conclude_dropped`, `wrong_failure_type`, `false_diagnosis_on_underdetermined`, `rule_error`) plus the orthogonal `limit_hit` flag; a column with a CHECK on `evaluation.cases` (migration `0020` or `0021`). Aggregate per variant. API views add the fields; the run page shows a failure-stage breakdown per variant and the case page shows the stage with the per-stage outputs (findings, leading hypothesis, verdict) linked to evidence.
 
 **Acceptance:** Every incorrect case has exactly one stage and correct cases have none; per-variant stage counts sum to incorrect counts. A constructed case for each stage is attributed correctly, including precedence when two stages fail. Frontend tests cover the breakdown, the case view, and the empty state; `pnpm lint`, `pnpm typecheck`, `pnpm test`, `pnpm build` pass.
 
 **Notes (2026-11-19):**
 - `evaluation/attribution.py`; columns `failure_stage` (CHECK), `failure_origin`, and `limit_hit` on `evaluation.cases` in migration `0022_failure_stage` (`0020` and `0021` were taken).
 - Deviation: an eleventh value, `unattributed`, for an agent case whose stage scores are missing (older rows, or a stored step that no longer validates), so no stage is guessed. Detection misses include an incident opened on healthy traffic.
-- With the PRD's order, a wrong lead the verifier accepts is `verifier_false_accept` even on underdetermined evidence; `false_diagnosis_on_underdetermined` therefore applies to `v2` (origin `investigate`) and to a `v3` assertion no verifier accepted.
+- With this order, a wrong lead the verifier accepts is `verifier_false_accept` even on underdetermined evidence; `false_diagnosis_on_underdetermined` therefore applies to `v2` (origin `investigate`) and to a `v3` assertion no verifier accepted.
 - The case API adds `stage_outputs` (each stored step: findings, leading hypothesis or proposal, verdict and citation checks, endings) and `stage_signals` (every signal they cite, with its fault-evidence label); the case page links each to the investigation's evidence anchor. The run page adds the per-variant breakdown and a first-failing-stage column. Frontend validators accept the new fields as optional so older responses still load.
 - Observed on the fake provider (development subset): `deployment-regression/dev` multi-agent is `lead_lost_in_synthesis`; `unexplained-errors/dev` is `verifier_false_accept` (multi-agent) and `false_diagnosis_on_underdetermined` (single agent).
 
@@ -2048,6 +2048,14 @@ Keep these outside the release critical path unless measurements justify promoti
 - Evidence or artifact references: `fixtures/evaluation/v1/baseline-fake-development.json`.
 - Deviations and reasons: fake telemetry quoting; mutations on a subset; gate kept out of CI (task notes).
 - Remaining issues: the Phase 13 gate on Compose has not been run; T08 and T09 blocked. `test_agent_tools.py::test_secrets_in_free_text_are_masked` is flaky (fails 2 of 4 module runs at `f30c256` as well, so it predates this task; not investigated).
+- Next task: Phase 13 gate on Compose; P13-T08 on an explicit request
+
+### 2026-11-21 — Documentation (no task ID)
+- Status: completed
+- Commit: see git log for `docs(evaluation)`
+- Implemented: "Design and flow" section in `docs/evaluation.md` (layers, end-to-end run, component run, determinism and the gate); the PRD's paid-run order and risks moved into `docs/evaluation.md` ("Paid runs", "Known limitations"); `docs/eval-harness-prd.md` removed, since T01–T07 are implemented and documented; links in `README.md`, `docs/decisions.md` (ADR-040, Q12), and Phase 13 repointed to `docs/evaluation.md`. Earlier work log entries still name the PRD as history.
+- Validation commands and results: `grep -rn eval-harness-prd README.md docs/` finds only earlier work log entries.
+- Remaining issues: unchanged (Phase 13 gate on Compose; T08 and T09 blocked).
 - Next task: Phase 13 gate on Compose; P13-T08 on an explicit request
 
 ## Work log template

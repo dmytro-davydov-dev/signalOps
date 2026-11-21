@@ -55,8 +55,7 @@ flowchart LR
 | [Observability](docs/observability.md) | Metrics, dashboards, correlation fields, following a fault |
 | [Security](docs/security.md) | Principals, credentials and rotation, limits, redaction |
 | [Retention](docs/retention.md) | Retention cleanup, backup and restore, single-node limits |
-| [Evaluation](docs/evaluation.md) | Fault scenarios, baselines, metrics, leakage prevention |
-| [Evaluation harness PRD](docs/eval-harness-prd.md) | Planned (Phase 13): stage scoring, failure attribution, component evaluations, statistics, regression gate, paid-run ceilings |
+| [Evaluation](docs/evaluation.md) | Harness design and flow, fault scenarios, baselines, metrics, stage scoring, failure attribution, component evaluations, statistics, regression gate, paid-run ceilings |
 | [Benchmarks](docs/benchmarks.md) | One-million-record replay and 30-minute sustained run, with retained reports |
 | [Development](docs/development.md) | Repository layout, commands, configuration reference, conventions |
 | [Decisions](docs/decisions.md) | Architecture decision records |
